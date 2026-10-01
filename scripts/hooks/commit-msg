@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Enforce Conventional Commits on the subject line.
+set -euo pipefail
+
+subject=$(head -1 "$1")
+
+# Ignore merges, reverts and fixup/squash markers.
+case "$subject" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+
+if ! printf '%s' "$subject" | grep -qE "$pattern"; then
+  cat >&2 <<MSG
+Commit message rejected.
+
+  got:  $subject
+
+Subject must be:  <type>(<scope>): <description>
+
+  types  feat fix docs style refactor perf test build ci chore revert
+  scope  optional, lowercase, e.g. (repo) (app) (paypal) (agent) (webhooks)
+
+  feat(paypal): capture the order once the buyer approves
+  fix(agent): stop retrying a payout that already succeeded
+  docs: add the architecture overview
+MSG
+  exit 1
+fi
+
+if [ ${#subject} -gt 72 ]; then
+  echo "Subject is ${#subject} characters; keep it under 72." >&2
+  exit 1
+fi

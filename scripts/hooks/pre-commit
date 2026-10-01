@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Refuse to commit a credential or the private workspace. The repo is public
+# for judging, so anything staged here is effectively published.
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+fail=0
+while IFS= read -r f; do
+  case "$f" in
+    private/*|*.private.md)
+      echo "BLOCKED  $f is private and must never be committed."
+      fail=1; continue;;
+    .env|.env.local|.env.*.local)
+      echo "BLOCKED  $f holds real credentials and must never be committed."
+      fail=1; continue;;
+  esac
+  [ -f "$f" ] || continue
+  case "$f" in *.lock|package-lock.json|*.png|*.jpg|*.jpeg|*.webp|*.gif) continue;; esac
+
+  # Any KEY= line in a committed env template must be empty.
+  if [ "$(basename "$f")" = ".env.example" ]; then
+    if git show ":$f" | grep -qE '^[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD|_ID)[A-Z_]*=.+'; then
+      echo "BLOCKED  $f has a non-empty credential value. Templates must ship empty."
+      fail=1
+    fi
+  fi
+
+  # Known provider key shapes, anywhere: Google, Anthropic, OpenAI, GitHub,
+  # and PayPal OAuth access tokens.
+  if git show ":$f" | grep -qE 'AIza[0-9A-Za-z_-]{30,}|AQ\.[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{40,}|ghp_[A-Za-z0-9]{30,}|gho_[A-Za-z0-9]{30,}|A21AA[A-Za-z0-9_-]{30,}'; then
+    echo "BLOCKED  $f looks like it contains an API key or access token."
+    fail=1
+  fi
+
+  # A PayPal client secret assigned anywhere outside the env files.
+  if git show ":$f" | grep -qE 'PAYPAL_CLIENT_SECRET["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_-]{40,}'; then
+    echo "BLOCKED  $f appears to contain a PayPal client secret."
+    fail=1
+  fi
+done <<< "$staged"
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "Nothing was committed. Remove the secret, or bypass with --no-verify if you are certain."
+  exit 1
+fi

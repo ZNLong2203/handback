@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────
+#  Private — never pushed. The repo goes public; these do not.
+# ─────────────────────────────────────────────────────────────
+/private/
+*.private.md
+
+# ─── Secrets ─────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ─── Dependencies ────────────────────────────────────────────
+/node_modules
+/.pnp
+.pnp.*
+
+# ─── Build output ────────────────────────────────────────────
+/.next/
+/out/
+/build
+/dist
+*.tsbuildinfo
+next-env.d.ts
+
+# ─── Test / coverage ─────────────────────────────────────────
+/coverage
+/test-results
+/playwright-report
+
+# ─── Local data ──────────────────────────────────────────────
+/.data/
+
+# ─── Tooling caches ──────────────────────────────────────────
+.eslintcache
+.turbo
+.vercel
+
+# ─── Editor / OS ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ─── Media working files (video edit, raw captures) ──────────
+/media/raw/
+*.mp4
+*.mov
+
+# ─── Local agent tooling (installed by CLIs, not part of the app) ───
+/.agents/
+/.claude/skills/
+.claude/settings.local.json
+/skills-lock.json
