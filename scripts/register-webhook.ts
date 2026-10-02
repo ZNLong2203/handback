@@ -2,11 +2,12 @@
  * Registers this deployment's webhook URL with the PayPal sandbox app and
  * prints the webhook id to put in PAYPAL_WEBHOOK_ID. PayPal only delivers to
  * public HTTPS on port 443, so run it against the deployed URL.
- *   npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/register-webhook.ts https://your-app.onrender.com
+ *   npm run paypal:webhook -- https://your-app.onrender.com
+ * From the Render Shell of the web service the URL can be left out.
  */
 import { paypalRest } from "@/lib/paypal/rest";
 
-const base = (process.argv[2] ?? process.env.APP_URL ?? "").replace(/\/$/, "");
+const base = (process.argv[2] || process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
 if (!base.startsWith("https://")) throw new Error("Pass the public https URL of the deployment");
 const url = `${base}/api/paypal/webhooks`;
 

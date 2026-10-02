@@ -6,6 +6,7 @@ export const SHOP = {
   maxRentalDays: 21,
 } as const;
 
+/** The public URL: APP_URL when set (a custom domain), else the onrender.com URL Render provides. */
 export function appUrl(): string {
-  return (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  return (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000").replace(/\/$/, "");
 }
