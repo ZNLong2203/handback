@@ -27,8 +27,13 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const query = await props.searchParams;
   // PayPal sends the renter back here from its approval page; an approval is
   // captured on the server, then the URL is cleaned so a reload does nothing.
-  const back = await returnFromPayPal(token, { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) });
+  const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) };
+  const back = fromPayPal.token || fromPayPal.paypal ? await returnFromPayPal(token, fromPayPal) : "none";
   if (back === "approved") redirect(`/r/${token}`);
+  // After a refused capture the URL still carries PayPal's parameters, so a
+  // live refresh would try the capture again on every update (each failure is
+  // itself an update). Only a reload by the renter retries it.
+  const live = typeof back !== "object";
 
   const view = await loadRentalView({ token });
   if (!view) notFound();
@@ -54,7 +59,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             </div>
             <div className="flex flex-col items-end gap-2">
               <Badge tone={status.tone}>{status.customerLabel ?? status.label}</Badge>
-              <LiveRefresh channel={rental.id} />
+              {live && <LiveRefresh channel={rental.id} />}
             </div>
           </div>
           <p className="mt-4 text-ink-soft">{status.customer}</p>
