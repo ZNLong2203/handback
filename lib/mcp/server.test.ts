@@ -90,6 +90,9 @@ describe("MCP tools", () => {
     );
     expect(await refusal(client, "quote_rental", { itemId: "jetpack", startDate, endDate })).toBe('There is no rental item "jetpack".');
     expect(await refusal(client, "quote_rental", { itemId: "drone-kit", startDate: "this weekend", endDate })).toMatch(/YYYY-MM-DD/);
+    expect(await refusal(client, "quote_rental", { itemId: "drone-kit", startDate: "2027-02-30", endDate: "2027-03-02" })).toBe(
+      "Give the dates as real days, YYYY-MM-DD.",
+    );
     expect(await refusal(client, "create_booking", { itemId: "drone-kit", startDate, endDate, name: "Sam", email: "not an email" })).toMatch(/email/i);
   });
 
@@ -152,6 +155,22 @@ describe("MCP tools", () => {
     });
     status = await call(client, "get_rental_status", { token });
     expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: null, kept: { usd: "$89.00" }, released: { usd: "$211.00" } } });
+  });
+
+  it("still reports the deposit as held when a dispute comes before settlement", async () => {
+    const booking = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam });
+    const token = booking.rentalPageUrl.split("/r/")[1];
+    await svc.returnFromPayPal(token, { token: booking.approveUrl.split("token=")[1], PayerID: "DEMOPAYER" });
+    await svc.addPhoto(booking.rentalId, "checkout", { sample: "drone-kit/before" });
+    await svc.holdDeposit(booking.rentalId);
+    const feeCapture = (await repo.rentalById(await getDb(), booking.rentalId))!.feeCaptureId!;
+    await applyPayPalWebhook({
+      id: `WH-${booking.rentalId}-fee`,
+      event_type: "CUSTOMER.DISPUTE.CREATED",
+      resource: { dispute_id: "PP-D-FEE", disputed_transactions: [{ seller_transaction_id: feeCapture }] },
+    });
+    const status = await call(client, "get_rental_status", { token });
+    expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: { usd: "$300.00" }, kept: null, released: null } });
   });
 
   it("does not find a rental without its token", async () => {

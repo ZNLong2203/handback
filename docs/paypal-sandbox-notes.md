@@ -70,8 +70,10 @@ An assistant books over the MCP endpoint (`docs/agents.md`) and hands the person
 Design consequences:
 
 - The return handler acts only when `token` matches the rental's order id and a `PayerID` is present. It ignores `ba_token`, which PayPal adds because the order saves the wallet.
-- PayPal did not replay the refusal for the reused `PayPal-Request-Id`: once the buyer had approved, the capture with that id went through (seen twice). So a return URL opened too early, by the renter or anyone holding the link, does not block the real approval.
+- PayPal did not replay the refusal for the reused `PayPal-Request-Id`: once the buyer had approved, the capture with that id went through (seen in three runs). So a return URL opened too early, by the renter or anyone holding the link, does not block the real approval.
 - A forged return cannot move money: PayPal will not capture an order the buyer has not approved.
 - The first run of row 2 found a bug: the page answered 500 instead of showing PayPal's refusal. The MCP route had created the shared gateway, and Next.js gives route handlers and pages separate copies of `lib/paypal/errors.ts`, so the page's `instanceof PayPalError` check failed. Errors now carry a `Symbol.for` brand checked by `PayPalError.is()`.
+
+A later run of all three options in one go, against the production build (`next start`), matched: order `5EN77778JK710894B`, early-return refusal debug_id `ca44245ae4b34`, fee capture `1NM41915M7482094K`, deposit authorization `06944361YF840141F`, final capture `68V25968GR105344W` ($89.00 kept, $211.00 released).
 
 Run: start the app in sandbox mode with `APP_URL` set to its address, then `npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts --early-return --cancel-first`, or `--rental <rentalPageUrl>` to approve a booking an assistant made, or `--settle` to run it to the end.

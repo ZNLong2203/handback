@@ -12,7 +12,7 @@ import { Timeline } from "@/components/timeline";
 import { Badge, ButtonAnchor, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
-import { returnFromPayPal } from "@/lib/rentals/service";
+import { captureRefusal, returnFromPayPal } from "@/lib/rentals/service";
 import { STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
 import { SHOP } from "@/lib/shop";
@@ -25,15 +25,13 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { token } = await props.params;
   const query = await props.searchParams;
-  // PayPal sends the renter back here from its approval page; an approval is
-  // captured on the server, then the URL is cleaned so a reload does nothing.
+  // PayPal sends the renter back here from its approval page. The capture
+  // runs once, on the server, and the page then moves off PayPal's URL either
+  // way, so neither a reload nor a live update can run it again.
   const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) };
   const back = fromPayPal.token || fromPayPal.paypal ? await returnFromPayPal(token, fromPayPal) : "none";
   if (back === "approved") redirect(`/r/${token}`);
-  // After a refused capture the URL still carries PayPal's parameters, so a
-  // live refresh would try the capture again on every update (each failure is
-  // itself an update). Only a reload by the renter retries it.
-  const live = typeof back !== "object";
+  if (back === "failed") redirect(`/r/${token}?paypal=failed`);
 
   const view = await loadRentalView({ token });
   if (!view) notFound();
@@ -41,6 +39,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const status = STATUS[rental.status];
   const firstName = rental.customerName.split(" ")[0];
   const byAssistant = view.mandate?.mandate.issuedTo.party === "assistant";
+  const refused = fromPayPal.paypal === "failed" && rental.status === "draft" ? (captureRefusal(view.events) ?? "PayPal has not completed the payment yet.") : null;
 
   return (
     <>
@@ -59,7 +58,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             </div>
             <div className="flex flex-col items-end gap-2">
               <Badge tone={status.tone}>{status.customerLabel ?? status.label}</Badge>
-              {live && <LiveRefresh channel={rental.id} />}
+              <LiveRefresh channel={rental.id} />
             </div>
           </div>
           <p className="mt-4 text-ink-soft">{status.customer}</p>
@@ -91,10 +90,10 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                 <Notice title="You left PayPal without paying">Nothing was charged. The booking waits here until you approve it.</Notice>
               </div>
             )}
-            {typeof back === "object" && (
+            {refused && (
               <div className="mt-3">
                 <Notice tone="charged" title="PayPal did not complete the payment">
-                  {back.error}
+                  {refused}
                 </Notice>
               </div>
             )}

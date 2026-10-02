@@ -146,11 +146,31 @@ describe("rental flow (demo mode)", () => {
 });
 
 describe("deposit mandate", () => {
-  /** Replaces the stored mandate, re-sealed so its hash still matches: a mandate approved on other terms. */
-  async function restoreMandate(rentalId: string, change: (m: DepositMandate) => DepositMandate) {
+  /**
+   * Replaces the stored mandate with a re-sealed one. With `asIssued`, the
+   * audit entry from booking is changed to match too, which stands for a
+   * mandate genuinely issued on other terms; without it, the row was edited
+   * after the fact.
+   */
+  async function replaceMandate(rentalId: string, change: (m: DepositMandate) => DepositMandate, asIssued = false) {
     const r = await rental(rentalId);
     const { json, sha256 } = sealMandate(change(openMandate(r.mandateJson!, r.mandateSha256!)!.mandate));
-    await (await getDb()).query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [rentalId, json, sha256]);
+    const db = await getDb();
+    await db.query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [rentalId, json, sha256]);
+    if (asIssued) {
+      await db.query("update events set data = jsonb_set(data, '{sha256}', to_jsonb($2::text)) where rental_id = $1 and type = 'mandate.issued'", [rentalId, sha256]);
+    }
+  }
+
+  /** A rental whose renter has accepted the $35 missing-hood charge, ready to settle. */
+  async function acceptedHood() {
+    const { rentalId, token } = await outRental();
+    await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__missing-hood" });
+    await svc.inspect(rentalId);
+    const charges = (await assessment(rentalId)).findings.filter((f) => f.staff === "keep");
+    await svc.sendToCustomer(rentalId);
+    await svc.respondAsCustomer(token, charges.map((f) => ({ findingId: f.id, answer: "accept" as const })));
+    return rentalId;
   }
 
   it("is issued with every web booking, stored as hashed canonical JSON and recorded in the audit chain", async () => {
@@ -186,26 +206,35 @@ describe("deposit mandate", () => {
     ]);
   });
 
-  it("blocks a charge priced differently from the mandate, and any charge under a tampered mandate", async () => {
-    const { rentalId, token } = await outRental();
-    await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__missing-hood" });
-    await svc.inspect(rentalId);
-    const charges = (await assessment(rentalId)).findings.filter((f) => f.staff === "keep");
-    await svc.sendToCustomer(rentalId);
-    await svc.respondAsCustomer(token, charges.map((f) => ({ findingId: f.id, answer: "accept" as const })));
-
+  it("blocks a charge priced differently from the mandate the renter approved", async () => {
+    const rentalId = await acceptedHood();
     // The renter approved a $20 hood; the price list now says $35.
-    await restoreMandate(rentalId, (m) => ({ ...m, priceList: m.priceList.map((p) => (p.id === "missing-hood" ? { ...p, cents: 2000 } : p)) }));
+    await replaceMandate(rentalId, (m) => ({ ...m, priceList: m.priceList.map((p) => (p.id === "missing-hood" ? { ...p, cents: 2000 } : p)) }), true);
     await expect(svc.settle(rentalId)).rejects.toThrow(/Replace lens hood at \$35\.00 is not on the price list the renter agreed to/);
-
-    // Someone edits the stored text without re-hashing it.
-    const r = await rental(rentalId);
-    await (await getDb()).query("update rentals set mandate_json = $2 where id = $1", [rentalId, r.mandateJson!.replace('"cents":2000', '"cents":3500')]);
-    await expect(svc.settle(rentalId)).rejects.toThrow(/does not match its hash/);
-
     expect(await rental(rentalId)).toMatchObject({ status: "responded", settlementCaptureId: null });
-    const types = (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
-    expect(types.slice(-2)).toEqual(["mandate.refused", "mandate.refused"]);
+    expect((await repo.eventsFor(await getDb(), rentalId)).at(-1)).toMatchObject({ type: "mandate.refused", data: { step: "settle the deposit" } });
+  });
+
+  it("charges nothing when the mandate was edited, re-sealed, swapped or removed after booking", async () => {
+    const db = await getDb();
+    const tamperings: [string, (rentalId: string) => Promise<void>][] = [
+      ["edited without re-hashing", async (id) => {
+        const r = await rental(id);
+        await db.query("update rentals set mandate_json = $2 where id = $1", [id, r.mandateJson!.replace('"cents":3500', '"cents":350')]);
+      }],
+      ["re-sealed with new terms", (id) => replaceMandate(id, (m) => ({ ...m, hold: { ...m.hold, maxCents: 99900 } }))],
+      ["swapped for another rental's", async (id) => {
+        const other = await rental((await bookedRental()).rentalId);
+        await db.query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [id, other.mandateJson, other.mandateSha256]);
+      }],
+      ["removed", (id) => db.query("update rentals set mandate_json = null, mandate_sha256 = null where id = $1", [id]).then(() => {})],
+    ];
+    for (const [what, tamper] of tamperings) {
+      const rentalId = await acceptedHood();
+      await tamper(rentalId);
+      await expect(svc.settle(rentalId), what).rejects.toThrow(/not the one recorded when the booking started/);
+      expect(await rental(rentalId), what).toMatchObject({ status: "responded", settlementCaptureId: null });
+    }
   });
 
   it("never needs the mandate to give a deposit back", async () => {
@@ -220,7 +249,7 @@ describe("deposit mandate", () => {
   it("will not hold a deposit once the mandate has ended", async () => {
     const { rentalId } = await bookedRental();
     await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
-    await restoreMandate(rentalId, (m) => ({ ...m, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+    await replaceMandate(rentalId, (m) => ({ ...m, expiresAt: new Date(Date.now() - 1000).toISOString() }), true);
     await expect(svc.holdDeposit(rentalId)).rejects.toThrow(/mandate ended/);
     expect((await rental(rentalId)).status).toBe("booked");
   });
@@ -266,15 +295,17 @@ describe("approving by redirect", () => {
       },
     });
     try {
-      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "NOTAPPROVED1" })).toEqual({
-        error: "PayPal has no approval for this payment yet, so nothing was charged. Approve it in PayPal first (PayPal reference f73514956e4a5).",
-      });
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "NOTAPPROVED1" })).toBe("failed");
     } finally {
       shared.depositGateway = real;
     }
     expect((await rental(b.rentalId)).status).toBe("draft");
-    const refused = (await repo.eventsFor(await getDb(), b.rentalId)).at(-1);
-    expect(refused).toMatchObject({ type: "paypal.error", data: { issue: "ORDER_NOT_APPROVED", debugId: "f73514956e4a5" } });
+    const events = await repo.eventsFor(await getDb(), b.rentalId);
+    expect(events.at(-1)).toMatchObject({ type: "paypal.error", data: { issue: "ORDER_NOT_APPROVED", debugId: "f73514956e4a5" } });
+    // The page explains it from the audit log after moving off PayPal's URL.
+    expect(svc.captureRefusal(events)).toBe(
+      "PayPal has no approval for this payment yet, so nothing was charged. Approve it in PayPal first (PayPal reference f73514956e4a5).",
+    );
 
     expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
     expect((await rental(b.rentalId)).status).toBe("booked");

@@ -48,26 +48,19 @@ export async function listRentals(db: Query): Promise<Rental[]> {
   return rows.map(toRental);
 }
 
-/** Updates the given columns (snake_case keys) and bumps updated_at. */
-export async function updateRental(db: Query, id: string, fields: Record<string, unknown>): Promise<void> {
-  const keys = Object.keys(fields);
-  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  await db.query(`update rentals set ${sets}${keys.length ? ", " : ""}updated_at = now() where id = $1`, [id, ...keys.map((k) => fields[k])]);
-}
-
 /**
- * Like updateRental, but only while the rental still has status `from`.
- * Returns false when another request moved it first, so two requests racing
- * through the same step record it once.
+ * Updates the given columns (snake_case keys) and bumps updated_at. With
+ * `onlyFrom`, the row changes only while the rental still has that status,
+ * and the result is false when another request moved it first, so two
+ * requests racing through the same step record it once.
  */
-export async function updateRentalFrom(db: Query, id: string, from: RentalStatus, fields: Record<string, unknown>): Promise<boolean> {
+export async function updateRental(db: Query, id: string, fields: Record<string, unknown>, onlyFrom?: RentalStatus): Promise<boolean> {
   const keys = Object.keys(fields);
-  const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(", ");
-  const rows = await db.query(`update rentals set ${sets}${keys.length ? ", " : ""}updated_at = now() where id = $1 and status = $2 returning id`, [
-    id,
-    from,
-    ...keys.map((k) => fields[k]),
-  ]);
+  const params: unknown[] = [id, ...keys.map((k) => fields[k])];
+  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
+  if (onlyFrom) params.push(onlyFrom);
+  const guard = onlyFrom ? ` and status = $${params.length}` : "";
+  const rows = await db.query(`update rentals set ${sets}${keys.length ? ", " : ""}updated_at = now() where id = $1${guard} returning id`, params);
   return rows.length > 0;
 }
 

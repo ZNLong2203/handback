@@ -127,7 +127,7 @@ Every booking, from an assistant or from the website, gets a deposit mandate. It
 | `hold` | `maxCents`, the most the shop may hold, starting `at_pickup` |
 | `charges` | The rules the code applies: amounts only `from` the `price_list`, `onlyAfter` the charge was `shown_to_renter`; an `accepted` charge is `charged`; a `questioned` one is decided by the shop (`shop_decides`); anything `aboveHold` goes to the `saved_paypal` wallet |
 | `priceList` | The repair price list at the time of booking. Later changes to the shop's prices do not apply to this rental |
-| `expiresAt` | 29 days after the pickup date, the life of a PayPal authorization placed at pickup. Nothing can be held or charged under the mandate after it |
+| `expiresAt` | 29 days after the scheduled pickup date, the life of a PayPal authorization placed at pickup. Nothing can be held or charged under the mandate after it. Rentals last at most 21 days, so this leaves at least 8 days after the scheduled return to settle; a late pickup does not move it |
 | `createdAt` | When it was issued |
 
 Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is shorter than a real one):
@@ -163,7 +163,7 @@ node -e 'const c=v=>Array.isArray(v)?`[${v.map(c)}]`:v&&typeof v=="object"?`{${O
 
 **Where it shows up.** `create_booking` returns it to the assistant. The renter's page shows it in plain sentences, with the price list and the exact JSON with its hash: open before payment, folded away afterwards. The timeline records who it was issued to.
 
-**What enforces it.** `holdDeposit` and `settle` check it before calling PayPal (`mandateViolations` in `lib/rentals/mandate.ts`). They refuse a hold above `maxCents`, a charge whose price-list entry or amount differs from the mandate's, a charge the renter has not answered, anything after `expiresAt`, and anything at all when the stored text no longer matches its hash. A refusal is written to the audit log as `mandate.refused`. Giving a deposit back never needs the mandate.
+**What enforces it.** `holdDeposit` and `settle` check it before calling PayPal (`mandateViolations` in `lib/rentals/mandate.ts`). They refuse a hold above `maxCents`, a charge whose price-list entry or amount differs from the mandate's, a charge the renter has not answered, and anything after `expiresAt`. They refuse everything when the stored mandate is not the one recorded in the audit chain at booking: edited, re-sealed with a new hash, swapped for another rental's, or removed. A refusal is written to the audit log as `mandate.refused`. Giving a deposit back never needs the mandate.
 
 ## Approval by redirect
 
@@ -172,7 +172,7 @@ An assistant's booking is approved on PayPal's site rather than with the JS SDK 
 - on approval: `/r/<token>?token=<order id>&PayerID=<payer id>&ba_token=<billing agreement token>`;
 - on cancel: `/r/<token>?paypal=cancelled&token=<order id>`.
 
-When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor rather than a Next.js `Link`, so the framework never prefetches it and triggers a capture. A cancel shows the renter that nothing was charged, with the PayPal button again. If PayPal refuses the capture, the renter sees the reason and the rental stays unpaid; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval. That page does not refresh itself, so the capture is tried again only when the renter reloads it.
+When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor rather than a Next.js `Link`, so the framework never prefetches it and triggers a capture. A cancel shows the renter that nothing was charged, with the PayPal button again. If PayPal refuses the capture, the rental stays unpaid and the page moves to `?paypal=failed`, where it explains the refusal from the audit log; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval. Either way the page leaves PayPal's URL, so neither a reload nor a live update runs the capture again; the renter retries through PayPal.
 
 PayPal expects the payer to be sent to the approval link within 6 hours of creating the order (the default in the Orders v2 schema), so assistants should book when the person is ready to approve.
 
@@ -190,5 +190,5 @@ In demo mode (no PayPal keys) the approval link opens `/demo/paypal`, a page lab
 
 - The endpoint has no rate limit. Anyone can create unpaid drafts, as with the booking form.
 - The assistant's name in the mandate is whatever it says it is.
-- The mandate is hashed and chained, not signed. Anyone with write access to the database could rewrite the mandate together with the audit chain. A copy of the hash kept outside the database, such as the one the assistant received from `create_booking`, is what would show the change.
+- The mandate is hashed, and holds and charges are checked against the hash the audit chain recorded at booking, but nothing is signed. Someone with write access to the database could rewrite the mandate together with the whole chain. A copy of the hash kept outside the database, such as the one the assistant received from `create_booking`, is what would show the change.
 - A renter who approves in PayPal but closes the window before PayPal sends them back stays unpaid. The app captures only when PayPal returns the renter to their page, or when the in-page button reports the approval; it does not yet capture approved orders from the `CHECKOUT.ORDER.APPROVED` webhook.

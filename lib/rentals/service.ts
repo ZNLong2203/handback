@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { CATALOG, catalogItem, type RentalItem } from "@/lib/catalog";
-import { rentalDays, todayIso } from "@/lib/dates";
+import { isIsoDay, rentalDays, todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { inspectReturn } from "@/lib/inspection/run";
 import { publish } from "@/lib/live";
@@ -15,9 +15,9 @@ import { loadPhoto, storePhoto } from "@/lib/photos";
 import { appUrl, SHOP } from "@/lib/shop";
 import { appendEvent } from "./audit";
 import { buildMandate, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
-import { inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental, updateRentalFrom } from "./repo";
+import { inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
 import { awaitingCustomer, awaitingResolution, isCharged, planSettlement } from "./settlement";
-import { UserError, type Phase, type Rental, type ReviewedFinding } from "./types";
+import { UserError, type AuditEvent, type Phase, type Rental, type ReviewedFinding } from "./types";
 
 const ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const newRentalId = () => `R-${[...randomBytes(6)].map((b) => ID_ALPHABET[b % 32]).join("")}`;
@@ -33,13 +33,17 @@ async function paypalStep<T>(rentalId: string, step: string, fn: () => Promise<T
   } catch (err) {
     if (!PayPalError.is(err)) throw err;
     const db = await getDb();
-    await appendEvent(db, rentalId, "paypal", "paypal.error", { step, status: err.status, name: err.errorName, issue: err.issue ?? null, debugId: err.debugId ?? null });
+    const refusal = { step, status: err.status, name: err.errorName, issue: err.issue ?? null, debugId: err.debugId ?? null, message: err.message };
+    await appendEvent(db, rentalId, "paypal", "paypal.error", refusal);
     publish(rentalId, "paypal.error");
-    throw new UserError(friendlyPayPalMessage(step, err));
+    throw new UserError(explainPayPalError(refusal));
   }
 }
 
-function friendlyPayPalMessage(step: string, err: PayPalError): string {
+type PayPalRefusal = { step: string; status: number; issue: string | null; debugId: string | null; message: string };
+
+/** A PayPal failure in words staff or customers can act on; also rebuilds one from its audit entry. */
+function explainPayPalError(err: PayPalRefusal): string {
   const ref = err.debugId ? ` (PayPal reference ${err.debugId})` : "";
   switch (err.issue) {
     case "INSTRUMENT_DECLINED":
@@ -55,8 +59,8 @@ function friendlyPayPalMessage(step: string, err: PayPalError): string {
     case "REAUTHORIZATION_TOO_SOON":
       return `A hold can only be renewed from day 4 of the rental${ref}.`;
     default:
-      if (err.retryable) return `PayPal is not answering right now. Try again in a moment; nothing was charged twice${ref}.`;
-      return `PayPal could not complete "${step}": ${err.message}${ref}`;
+      if (err.status === 429 || err.status >= 500) return `PayPal is not answering right now. Try again in a moment; nothing was charged twice${ref}.`;
+      return `PayPal could not complete "${err.step}": ${err.message}${ref}`;
   }
 }
 
@@ -74,24 +78,32 @@ function expectStatus(rental: Rental, allowed: Rental["status"][], action: strin
 
 /**
  * The deterministic check in front of every hold and charge: what the shop is
- * about to do must fit the deposit mandate the renter approved. A refusal is
- * written to the audit log. Rentals booked before mandates existed have none.
+ * about to do must fit the deposit mandate the renter approved. The stored
+ * mandate must hash to the value the audit chain recorded when the booking
+ * started, so re-sealing, swapping or clearing it after the fact stops the
+ * money instead of changing the terms. A refusal is written to the audit log.
+ * Rentals booked before mandates existed have neither and are not checked.
  */
 async function assertWithinMandate(rental: Rental, step: string, act: { holdCents?: Cents; charges?: MandatedCharge[] }) {
-  if (!rental.mandateJson || !rental.mandateSha256) return;
-  const opened = openMandate(rental.mandateJson, rental.mandateSha256);
-  const problems = opened?.intact
-    ? mandateViolations(opened.mandate, { at: new Date(), ...act })
-    : ["The stored mandate does not match its hash, so nothing can be held or charged under it."];
+  const db = await getDb();
+  const issued = await db.query<{ sha256: string | null }>(
+    "select data->>'sha256' as sha256 from events where rental_id = $1 and type = 'mandate.issued' order by seq limit 1",
+    [rental.id],
+  );
+  const recorded = issued[0]?.sha256 ?? null;
+  if (!recorded && !rental.mandateJson && !rental.mandateSha256) return;
+  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
+  const problems =
+    opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id
+      ? mandateViolations(opened.mandate, { at: new Date(), ...act })
+      : ["The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it."];
   if (problems.length === 0) return;
-  await appendEvent(await getDb(), rental.id, "system", "mandate.refused", { step, problems });
+  await appendEvent(db, rental.id, "system", "mandate.refused", { step, problems });
   publish(rental.id, "mandate.refused");
   throw new UserError(`Outside the renter's deposit mandate: ${problems.join(" ")}`);
 }
 
 // ─── Booking ────────────────────────────────────────────────
-
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The renter's private page. PayPal sends them back here after approving or cancelling. */
 export const rentalPageUrl = (token: string) => `${appUrl()}/r/${token}`;
@@ -102,7 +114,7 @@ export type Quote = { item: RentalItem; startDate: string; endDate: string; days
 export function quoteRental(input: { itemId: string; startDate: string; endDate: string }, today = todayIso()): Quote {
   const item = CATALOG.find((i) => i.id === input.itemId);
   if (!item) throw new UserError(`There is no rental item "${input.itemId}".`);
-  if (!ISO_DAY.test(input.startDate) || !ISO_DAY.test(input.endDate)) throw new UserError("Give the dates as YYYY-MM-DD.");
+  if (!isIsoDay(input.startDate) || !isIsoDay(input.endDate)) throw new UserError("Give the dates as real days, YYYY-MM-DD.");
   if (input.startDate < today) throw new UserError("Pick a pickup date from today on.");
   let days: number;
   try {
@@ -216,12 +228,12 @@ export async function confirmBooking(orderId: string): Promise<{ token: string }
     throw new UserError("PayPal has not completed the payment yet. Check back in a few minutes.");
   }
   const booked = await db.tx(async (tx) => {
-    const moved = await updateRentalFrom(tx, rental.id, "draft", {
-      status: "booked",
-      fee_capture_id: paid.captureId,
-      vault_id: paid.vaultId ?? null,
-      payer_email: paid.payerEmail ?? null,
-    });
+    const moved = await updateRental(
+      tx,
+      rental.id,
+      { status: "booked", fee_capture_id: paid.captureId, vault_id: paid.vaultId ?? null, payer_email: paid.payerEmail ?? null },
+      "draft",
+    );
     if (moved) {
       await appendEvent(tx, rental.id, "paypal", "booking.paid", {
         captureId: paid.captureId,
@@ -235,7 +247,7 @@ export async function confirmBooking(orderId: string): Promise<{ token: string }
   return { token: rental.token };
 }
 
-export type PayPalReturn = "none" | "approved" | "cancelled" | { error: string };
+export type PayPalReturn = "none" | "approved" | "cancelled" | "failed";
 
 /**
  * PayPal sends the renter back to their page after the approval step: with
@@ -253,9 +265,27 @@ export async function returnFromPayPal(rentalToken: string, query: { token?: str
     await confirmBooking(query.token);
     return "approved";
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserError) return "failed";
     throw err;
   }
+}
+
+/**
+ * Why the last attempt to capture the booking failed, from the audit log, so
+ * the page can explain it after moving to a URL that does not retry it. Null
+ * when PayPal did not refuse (a capture still pending).
+ */
+export function captureRefusal(events: AuditEvent[]): string | null {
+  const last = events.findLast((e) => e.type === "paypal.error" && e.data.step === "capture the rental fee");
+  if (!last) return null;
+  const d = last.data as Partial<PayPalRefusal>;
+  return explainPayPalError({
+    step: "capture the rental fee",
+    status: Number(d.status ?? 0),
+    issue: d.issue ?? null,
+    debugId: d.debugId ?? null,
+    message: d.message ?? "PayPal refused the payment",
+  });
 }
 
 // ─── Photos ─────────────────────────────────────────────────

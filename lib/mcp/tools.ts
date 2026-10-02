@@ -161,9 +161,6 @@ export async function createBooking(args: z.infer<typeof BookingArgs>): Promise<
   };
 }
 
-/** Statuses in which PayPal holds the deposit. */
-const HOLDING: Rental["status"][] = ["out", "inspecting", "customer_review", "responded"];
-
 /** Accepts the bare token or the whole rental page URL. */
 function tokenFrom(input: string): string {
   return /\/r\/([A-Za-z0-9_-]+)/.exec(input)?.[1] ?? input.trim();
@@ -191,9 +188,10 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
   const item = CATALOG.find((i) => i.id === rental.itemId);
   const assessment = rental.status === "customer_review" ? await latestAssessment(db, rental.id) : null;
   const pageUrl = svc.rentalPageUrl(rental.token);
-  // A dispute can follow settlement, so "settled" is about money, not status.
+  // Follow the money, not the status: a dispute can come before or after
+  // settlement, and PayPal holds the deposit from pickup until settlement.
   const settled = rental.settledAt !== null;
-  const holding = !settled && rental.authorizedCents !== null && HOLDING.includes(rental.status);
+  const holding = !settled && rental.authorizationId !== null && rental.authorizedCents !== null;
   return {
     rentalId: rental.id,
     item: { id: rental.itemId, name: item?.name ?? rental.itemId },
