@@ -60,6 +60,11 @@ describe("rentalStatusFor", () => {
     expect(rentalStatusFor("disputed", "RESOLVED")).toBe("settled");
   });
 
+  it("keeps the rental disputed while another of its disputes is still open", () => {
+    expect(rentalStatusFor("disputed", "RESOLVED", true)).toBe("disputed");
+    expect(rentalStatusFor("disputed", "RESOLVED", false)).toBe("settled");
+  });
+
   it("leaves a running rental where it is", () => {
     expect(rentalStatusFor("booked", "OPEN")).toBe("booked");
     expect(rentalStatusFor("out", "RESOLVED")).toBe("out");

@@ -192,6 +192,34 @@ describe("dispute webhooks", () => {
     expect(log).toEqual(["dispute.opened", "dispute.updated", "webhook.received", "dispute.updated", "dispute.resolved"]);
   });
 
+  it("keeps a rental disputed until every dispute on it is closed, and shows the open one", async () => {
+    const id = await settledRental();
+    const r = await rental(id);
+    const damage = `PP-R-DMG-${id}`;
+    const fee = `PP-R-FEE2-${id}`;
+    const send = (n: number, type: string, disputeId: string, captureId: string, over: Record<string, unknown>) =>
+      applyPayPalWebhook({ id: `WH-${id}-two-${n}`, event_type: type, resource: resource(disputeId, captureId, over) });
+
+    await send(1, "CUSTOMER.DISPUTE.CREATED", damage, r.settlementCaptureId!, {});
+    await send(2, "CUSTOMER.DISPUTE.CREATED", fee, r.feeCaptureId!, { create_time: "2026-10-02T07:41:00.000Z", dispute_amount: { currency_code: "USD", value: "87.00" } });
+    let d = (await deskFor(id))!;
+    expect(d.dispute.id).toBe(fee);
+    expect(d.others.map((o) => o.id)).toEqual([damage]);
+
+    // The newer one closes; the older one is still open, so the desk moves to it and the rental stays disputed.
+    await send(3, "CUSTOMER.DISPUTE.RESOLVED", fee, r.feeCaptureId!, { status: "RESOLVED", update_time: "2026-10-02T08:00:00.000Z", dispute_outcome: { outcome_code: "RESOLVED_SELLER_FAVOUR" } });
+    expect(await rental(id)).toMatchObject({ status: "disputed" });
+    d = (await deskFor(id))!;
+    expect(d.dispute.id).toBe(damage);
+    expect(d.others.map((o) => [o.id, o.status])).toEqual([[fee, "RESOLVED"]]);
+
+    // An action names its dispute, and a dispute from another rental is refused.
+    await expect(desk.refreshDispute(id, `PP-R-NOT-${id}`)).rejects.toThrow(/not on this rental/);
+
+    await send(4, "CUSTOMER.DISPUTE.RESOLVED", damage, r.settlementCaptureId!, { status: "RESOLVED", update_time: "2026-10-02T08:05:00.000Z", dispute_outcome: { outcome_code: "RESOLVED_SELLER_FAVOUR" } });
+    expect(await rental(id)).toMatchObject({ status: "settled" });
+  });
+
   it("does not change where a running rental is when its fee is disputed", async () => {
     const { rentalId, orderId } = await svc.startBooking({ itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) });
     await svc.confirmBooking(orderId);

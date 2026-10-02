@@ -39,10 +39,16 @@ import { claimAction, disputesFor, finishAction, insertPack, latestPack, packByF
 
 // ─── Reading PayPal ─────────────────────────────────────────
 
-async function currentDispute(rentalId: string): Promise<{ rental: Rental; stored: StoredDispute }> {
+/**
+ * The dispute an action is for. The counter's buttons name the dispute they
+ * were drawn for, so a second dispute arriving in between cannot redirect
+ * them; without an id it is the one the desk shows (open first, newest).
+ */
+async function currentDispute(rentalId: string, disputeId?: string): Promise<{ rental: Rental; stored: StoredDispute }> {
   const rental = await mustRental(rentalId);
-  const [stored] = await disputesFor(await getDb(), rentalId);
-  if (!stored) throw new UserError("There is no PayPal dispute on this rental.");
+  const all = await disputesFor(await getDb(), rentalId);
+  const stored = disputeId === undefined ? all[0] : all.find((d) => d.id === disputeId);
+  if (!stored) throw new UserError(disputeId === undefined ? "There is no PayPal dispute on this rental." : "That PayPal dispute is not on this rental.");
   return { rental, stored };
 }
 
@@ -55,8 +61,8 @@ async function pull(rentalId: string, disputeId: string): Promise<Dispute> {
   return d;
 }
 
-export async function refreshDispute(rentalId: string): Promise<void> {
-  const { stored } = await currentDispute(rentalId);
+export async function refreshDispute(rentalId: string, disputeId?: string): Promise<void> {
+  const { stored } = await currentDispute(rentalId, disputeId);
   await pull(rentalId, stored.id);
 }
 
@@ -137,8 +143,8 @@ async function buildPack(rental: Rental, stored: StoredDispute): Promise<Prepare
   return { sha256, bytes, facts, narrative, photos };
 }
 
-export async function prepareEvidence(rentalId: string): Promise<string> {
-  const { rental, stored } = await currentDispute(rentalId);
+export async function prepareEvidence(rentalId: string, disputeId?: string): Promise<string> {
+  const { rental, stored } = await currentDispute(rentalId, disputeId);
   const pack = await buildPack(rental, stored);
   publish(rentalId, "dispute.pack");
   return pack.sha256;
@@ -206,8 +212,8 @@ async function followUp(rentalId: string, before: Dispute): Promise<void> {
  * original photos, under the evidence type PayPal asked for when the pack
  * really is that, otherwise OTHER.
  */
-export async function submitEvidence(rentalId: string): Promise<string> {
-  const { rental, stored } = await currentDispute(rentalId);
+export async function submitEvidence(rentalId: string, disputeId?: string): Promise<string> {
+  const { rental, stored } = await currentDispute(rentalId, disputeId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).provideEvidence) throw new UserError(notOffered("send evidence", d));
   const pack = await buildPack(rental, stored);
@@ -243,8 +249,8 @@ export async function submitEvidence(rentalId: string): Promise<string> {
 }
 
 /** Accepts liability: PayPal refunds the disputed amount to the customer and closes the case. */
-export async function acceptClaim(rentalId: string): Promise<void> {
-  const { rental, stored } = await currentDispute(rentalId);
+export async function acceptClaim(rentalId: string, disputeId?: string): Promise<void> {
+  const { rental, stored } = await currentDispute(rentalId, disputeId);
   const d = await pull(rentalId, stored.id);
   const types = availableActions(d).acceptClaim;
   if (!types) throw new UserError(notOffered("accept the claim", d));
@@ -266,8 +272,8 @@ export async function acceptClaim(rentalId: string): Promise<void> {
 }
 
 /** Offers a refund of part of the disputed amount; PayPal shows it to the customer. */
-export async function makeOffer(rentalId: string, cents: Cents): Promise<void> {
-  const { rental, stored } = await currentDispute(rentalId);
+export async function makeOffer(rentalId: string, cents: Cents, disputeId?: string): Promise<void> {
+  const { rental, stored } = await currentDispute(rentalId, disputeId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).makeOffer?.includes("REFUND")) throw new UserError(notOffered("make an offer", d));
   const disputed = usdCents(d.dispute_amount) ?? 0;
@@ -294,9 +300,9 @@ function sandboxOnly() {
 }
 
 /** Sandbox only: PayPal's test system asks the shop for evidence (require-evidence). */
-export async function sandboxRequireEvidence(rentalId: string): Promise<void> {
+export async function sandboxRequireEvidence(rentalId: string, disputeId?: string): Promise<void> {
   sandboxOnly();
-  const { stored } = await currentDispute(rentalId);
+  const { stored } = await currentDispute(rentalId, disputeId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).requireEvidence) throw new UserError(notOffered("ask for evidence", d));
   const receipt = await guarded(
@@ -314,9 +320,9 @@ export async function sandboxRequireEvidence(rentalId: string): Promise<void> {
 }
 
 /** Sandbox only: PayPal's test system decides the case (adjudicate). */
-export async function sandboxDecide(rentalId: string, outcome: "SELLER_FAVOR" | "BUYER_FAVOR"): Promise<void> {
+export async function sandboxDecide(rentalId: string, outcome: "SELLER_FAVOR" | "BUYER_FAVOR", disputeId?: string): Promise<void> {
   sandboxOnly();
-  const { stored } = await currentDispute(rentalId);
+  const { stored } = await currentDispute(rentalId, disputeId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).adjudicate) throw new UserError(notOffered("decide the case", d));
   const receipt = await guarded(
@@ -365,6 +371,8 @@ export async function demoOpenDispute(rentalId: string): Promise<void> {
 
 export type DisputeDesk = {
   dispute: StoredDispute;
+  /** The rental's other disputes, open ones first; the desk works on one at a time. */
+  others: StoredDispute[];
   /** PayPal's last full view, when the stored object is complete. */
   paypal: Dispute | null;
   actions: DisputeActions;
@@ -386,7 +394,7 @@ export type DisputeDesk = {
 export async function loadDisputeDesk(view: RentalView, now = new Date()): Promise<DisputeDesk | null> {
   const { rental } = view;
   const db = await getDb();
-  const [stored] = await disputesFor(db, rental.id);
+  const [stored, ...others] = await disputesFor(db, rental.id);
   if (!stored) return null;
   const parsed = DisputeSchema.safeParse(stored.paypal);
   const paypal = parsed.success ? parsed.data : null;
@@ -433,6 +441,7 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
     .map((e) => ({ sha256: String(e.data.sha256), at: e.at, evidenceType: String(e.data.evidenceType), files: (e.data.files as string[]) ?? [] }));
   return {
     dispute: stored,
+    others,
     paypal,
     actions,
     requested: paypal ? requestedEvidence(paypal) : [],

@@ -4,7 +4,7 @@ import { usdCents, type Dispute } from "@/lib/paypal/dispute-model";
 import { appendEvent } from "@/lib/rentals/audit";
 import { rentalById, updateRental } from "@/lib/rentals/repo";
 import type { RentalStatus } from "@/lib/rentals/types";
-import { disputeById, saveDispute } from "./repo";
+import { disputeById, disputesFor, saveDispute } from "./repo";
 
 type Query = Pick<Db, "query">;
 
@@ -14,12 +14,13 @@ export type DisputeLike = Partial<Dispute> & { dispute_id: string };
 export type RecordResult = "opened" | "updated" | "resolved" | "unchanged" | "stale";
 
 /**
- * A settled rental shows as disputed while PayPal has an open case, and as
- * settled again once PayPal closes it. A dispute on a rental that is still
- * running is recorded without changing where the rental is.
+ * A settled rental shows as disputed while PayPal has an open case on any
+ * of its payments, and as settled again once PayPal has closed them all. A
+ * dispute on a rental that is still running is recorded without changing
+ * where the rental is.
  */
-export function rentalStatusFor(current: RentalStatus, disputeStatus: string): RentalStatus {
-  if (disputeStatus === "RESOLVED") return current === "disputed" ? "settled" : current;
+export function rentalStatusFor(current: RentalStatus, disputeStatus: string, otherOpen = false): RentalStatus {
+  if (disputeStatus === "RESOLVED") return current === "disputed" && !otherOpen ? "settled" : current;
   return current === "settled" ? "disputed" : current;
 }
 
@@ -77,7 +78,8 @@ export async function recordDispute(
   };
   await saveDispute(tx, row);
 
-  const next = rentalStatusFor(rental.status, status);
+  const otherOpen = (await disputesFor(tx, rentalId)).some((o) => o.id !== row.id && o.status !== "RESOLVED");
+  const next = rentalStatusFor(rental.status, status, otherOpen);
   const fields = { ...(rental.disputeId !== row.id ? { dispute_id: row.id } : {}), ...(next !== rental.status ? { status: next } : {}) };
   if (Object.keys(fields).length) await updateRental(tx, rentalId, fields);
 

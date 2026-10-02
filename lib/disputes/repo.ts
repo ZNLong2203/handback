@@ -52,9 +52,13 @@ export async function disputeById(db: Query, id: string): Promise<StoredDispute 
   return rows[0] ? toDispute(rows[0]) : null;
 }
 
-/** The rental's disputes, newest first. */
+/**
+ * The rental's disputes, open ones first, each group newest first. The first
+ * is the one the counter's desk works on, so a rental with a closed and an
+ * open dispute shows the open one.
+ */
 export async function disputesFor(db: Query, rentalId: string): Promise<StoredDispute[]> {
-  const rows = await db.query<Row>("select * from disputes where rental_id = $1 order by opened_at desc nulls last, id", [rentalId]);
+  const rows = await db.query<Row>("select * from disputes where rental_id = $1 order by (status = 'RESOLVED'), opened_at desc nulls last, id", [rentalId]);
   return rows.map(toDispute);
 }
 

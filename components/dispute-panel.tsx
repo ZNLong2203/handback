@@ -1,6 +1,7 @@
 import { ExternalLink, FileText, FlaskConical, RefreshCw, Scale } from "lucide-react";
 import {
   acceptClaimAction,
+  findDisputesAction,
   makeOfferAction,
   prepareEvidenceAction,
   refreshDisputeAction,
@@ -197,12 +198,12 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
         )}
         <div className="flex flex-wrap items-start gap-3">
           {(!pack || (!pack.current && actions.provideEvidence)) && (
-            <ActionButton action={prepareEvidenceAction.bind(null, rental.id)} variant={actions.provideEvidence ? "outline" : "primary"} pendingLabel="Building the pack…">
+            <ActionButton action={prepareEvidenceAction.bind(null, rental.id, d.id)} variant={actions.provideEvidence ? "outline" : "primary"} pendingLabel="Building the pack…">
               {pack ? "Rebuild from the latest record" : "Prepare the evidence pack"}
             </ActionButton>
           )}
           {actions.provideEvidence && (
-            <ActionButton action={submitEvidenceAction.bind(null, rental.id)} variant="brand" confirmLabel="Send the pack and both photos to PayPal" pendingLabel="Sending to PayPal…">
+            <ActionButton action={submitEvidenceAction.bind(null, rental.id, d.id)} variant="brand" confirmLabel="Send the pack and both photos to PayPal" pendingLabel="Sending to PayPal…">
               Send to PayPal
             </ActionButton>
           )}
@@ -224,12 +225,12 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
       {(canOffer || actions.acceptClaim) && !resolved && (
         <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4">
           {canOffer && (
-            <ActionButton action={makeOfferAction.bind(null, rental.id, rec.offerCents!)} variant="outline" confirmLabel={`Offer ${formatUsd(rec.offerCents!)} through PayPal`} pendingLabel="Sending the offer…">
+            <ActionButton action={makeOfferAction.bind(null, rental.id, d.id, rec.offerCents!)} variant="outline" confirmLabel={`Offer ${formatUsd(rec.offerCents!)} through PayPal`} pendingLabel="Sending the offer…">
               Offer {formatUsd(rec.offerCents!)}
             </ActionButton>
           )}
           {actions.acceptClaim && (
-            <ActionButton action={acceptClaimAction.bind(null, rental.id)} variant="outline" confirmLabel={`Refund ${formatUsd(amount)} and close the case`} pendingLabel="Telling PayPal…">
+            <ActionButton action={acceptClaimAction.bind(null, rental.id, d.id)} variant="outline" confirmLabel={`Refund ${formatUsd(amount)} and close the case`} pendingLabel="Telling PayPal…">
               Accept the claim
             </ActionButton>
           )}
@@ -248,16 +249,16 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
           {actions.requireEvidence || actions.adjudicate ? (
             <div className="mt-3 flex flex-wrap items-start gap-3">
               {actions.requireEvidence && (
-                <ActionButton action={sandboxRequireEvidenceAction.bind(null, rental.id)} variant="outline" size="sm" pendingLabel="Asking…">
+                <ActionButton action={sandboxRequireEvidenceAction.bind(null, rental.id, d.id)} variant="outline" size="sm" pendingLabel="Asking…">
                   PayPal asks the shop for evidence
                 </ActionButton>
               )}
               {actions.adjudicate && (
                 <>
-                  <ActionButton action={sandboxDecideAction.bind(null, rental.id, "SELLER_FAVOR")} variant="outline" size="sm" pendingLabel="Deciding…">
+                  <ActionButton action={sandboxDecideAction.bind(null, rental.id, d.id, "SELLER_FAVOR")} variant="outline" size="sm" pendingLabel="Deciding…">
                     PayPal decides for the shop
                   </ActionButton>
-                  <ActionButton action={sandboxDecideAction.bind(null, rental.id, "BUYER_FAVOR")} variant="outline" size="sm" pendingLabel="Deciding…">
+                  <ActionButton action={sandboxDecideAction.bind(null, rental.id, d.id, "BUYER_FAVOR")} variant="outline" size="sm" pendingLabel="Deciding…">
                     PayPal decides for the customer
                   </ActionButton>
                 </>
@@ -275,12 +276,44 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
         </section>
       )}
 
+      {desk.others.length > 0 && (
+        <section className="space-y-2 border-t border-line pt-4" aria-labelledby="other-disputes-heading">
+          <h3 id="other-disputes-heading" className="font-semibold">
+            Other PayPal disputes on this rental
+          </h3>
+          <ul className="space-y-1.5 text-sm">
+            {desk.others.map((o) => {
+              const label = disputeStatusLabel(o.status, o.outcome);
+              return (
+                <li key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-mono text-xs">{o.id}</span>
+                  <span className="text-ink-soft">
+                    {formatUsd(o.amountCents ?? 0)} of {captureName(rental, o.transactionId)}, {reasonLabel(o.reason)}
+                  </span>
+                  <Badge tone={label.tone}>{label.label}</Badge>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-muted">
+            The desk works on one dispute at a time, open ones first.
+            {!resolved && desk.others.some((o) => o.status !== "RESOLVED") ? " When this one closes, the next open one shows here." : ""}
+          </p>
+        </section>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4 text-xs text-muted">
         <span>Last read from PayPal {utc(d.syncedAt)}.</span>
         {desk.mode !== "demo" && (
-          <ActionButton action={refreshDisputeAction.bind(null, rental.id)} variant="ghost" size="sm" pendingLabel="Reading PayPal…">
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Refresh from PayPal
-          </ActionButton>
+          <>
+            <ActionButton action={refreshDisputeAction.bind(null, rental.id, d.id)} variant="ghost" size="sm" pendingLabel="Reading PayPal…">
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Refresh from PayPal
+            </ActionButton>
+            {/* A rental can be disputed more than once: the fee, the damage charge and any charge above the deposit are separate payments. */}
+            <ActionButton action={findDisputesAction.bind(null, rental.id)} variant="ghost" size="sm" pendingLabel="Asking PayPal…">
+              Check PayPal for other disputes
+            </ActionButton>
+          </>
         )}
       </div>
     </Card>

@@ -29,7 +29,7 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     events,
     plan,
     chainIntact: firstBrokenLink(events) === null,
-    /** The newest PayPal dispute on the rental, if any. */
+    /** The PayPal dispute the desk works on: the newest open one, else the newest. */
     dispute: disputes[0] ?? null,
   };
 }
