@@ -156,7 +156,7 @@ try {
 
   if (flag("--cancel-first")) {
     step("opening PayPal, then its cancel link");
-    await page.goto(booking.approveUrl, { waitUntil: "domcontentloaded" });
+    await page.goto(booking.approveUrl, { waitUntil: "commit" });
     await logIn();
     const cancel = page.getByText(/Cancel and return to/i).first();
     await cancel.waitFor({ timeout: 60_000 });
@@ -168,7 +168,7 @@ try {
   }
 
   step("opening PayPal as the sandbox buyer");
-  await page.goto(booking.approveUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(booking.approveUrl, { waitUntil: "commit" });
   await logIn();
   for (let i = 0; i < 20 && !page.url().startsWith(BASE); i++) {
     const button = page.getByRole("button", { name: /agree|continue|pay|complete|save/i }).first();

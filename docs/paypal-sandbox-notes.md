@@ -55,7 +55,7 @@ Setup gotcha: sandbox buyer passwords often contain `#`. Node's `--env-file` and
 
 ## 2026-10-02: an assistant's booking, approved by redirect
 
-An assistant books over the MCP endpoint (`docs/agents.md`) and hands the person PayPal's `payer-action` link, so there is no JS SDK button: the buyer approves on PayPal's site and PayPal redirects back. The booking order is the same Orders v2 `intent: CAPTURE` order with vault attributes as above, with `experience_context.return_url` set to the renter's page and `cancel_url` to the same page plus `?paypal=cancelled`. `scripts/sandbox-agent-booking.ts` books over MCP (no model involved) and drives the link as the sandbox buyer in a browser.
+An assistant books over the MCP endpoint (`docs/agents.md`) and hands the person PayPal's `payer-action` link, so there is no JS SDK button: the buyer approves on PayPal's site and PayPal redirects back. The booking order is the same Orders v2 `intent: CAPTURE` order with vault attributes as above, with `experience_context.return_url` set to the renter's page and `cancel_url` to the same page plus `?paypal=cancelled` (changed later the same day; see below). `scripts/sandbox-agent-booking.ts` books over MCP (no model involved) and drives the link as the sandbox buyer in a browser.
 
 | # | What we tried | Result |
 |---|---|---|
@@ -76,4 +76,18 @@ Design consequences:
 
 A later run of all three options in one go, against the production build (`next start`), matched: order `5EN77778JK710894B`, early-return refusal debug_id `ca44245ae4b34`, fee capture `1NM41915M7482094K`, deposit authorization `06944361YF840141F`, final capture `68V25968GR105344W` ($89.00 kept, $211.00 released).
 
-Run: start the app in sandbox mode with `APP_URL` set to its address, then `npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts --early-return --cancel-first`, or `--rental <rentalPageUrl>` to approve a booking an assistant made, or `--settle` to run it to the end.
+Run: start the app in sandbox mode with `APP_URL` set to its address, then `npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts --early-return --cancel-first`, or `--rental <statusToken>` to approve a booking an assistant made, or `--settle` to run it to the end.
+
+### Later the same day: a cancel URL without the renter's token
+
+A review pointed out that the assistant was handed the renter's page, which can answer charges. The assistant now gets a read-only status token instead, but PayPal's cancel URL was still the renter's page, so we checked whether the approval link alone leads there.
+
+| # | What we tried | Result |
+|---|---|---|
+| 8 | Open a fresh approval link and follow PayPal's "Cancel and return to Kestrel Camera Rentals" link without logging in (PayPal showed its login page in Vietnamese for our IP) | The link is on the login page, before any login. Order `4PU12187XF233152H`; PayPal sent the browser to the cancel URL, now `/paypal/cancelled?token=4PU12187XF233152H`. With the old cancel URL this would have been the renter's page |
+| 9 | The whole check with `--early-return --cancel-first`, with `cancel_url` now `/paypal/cancelled` | Order `2J749778E6617882E`; forged return refused with `ORDER_NOT_APPROVED` (debug_id `f316136059281`); cancel landed on `/paypal/cancelled?token=2J749778E6617882E`, which links nowhere under `/r/`; approval landed on `/r/<token>?token=2J749778E6617882E&PayerID=QJUL8ARAJ5X86&ba_token=…`; fee capture `0RE56553LL1689021` |
+
+Design consequences:
+
+- Anyone holding the approval link can reach the cancel URL, so it carries no rental token. Only an approval, which takes the payer's PayPal login, reaches the return URL and the renter's page.
+- In headless Chromium, PayPal's checkout page sometimes did not reach `DOMContentLoaded` within 30 seconds after the forged return. The script now waits only for the navigation to start, then for the login form or the review button.
