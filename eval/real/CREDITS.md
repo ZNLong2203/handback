@@ -5,7 +5,7 @@ Every check-out photo in `images/*/before.jpg` is a photograph from Wikimedia Co
 Every check-in photo (`images/*/after__*.jpg`) is an adaptation of the check-out photo in the same folder:
 
 - `after__same-light.jpg`, `after__same-pose.jpg` and `after__same-dust-glare.jpg` were changed in code only: warmer and darker light; a 3° turn with a crop; or dust specks and a glare spot.
-- Every other `after__*.jpg` shows damage or a missing accessory. A Gemini image model (`gemini-3-pro-image`) edited the photo, only a box around the requested change was pasted back onto the original photo, and then the light or the framing was shifted in code.
+- Every other `after__*.jpg` shows damage or a missing accessory. A Gemini image model (`gemini-3-pro-image`) edited the photo; the edit was lined up with the original, only a box around the requested change was pasted back onto the original photo, and then the light or the framing was shifted in code.
 
 Each adaptation is released under the same license as the photo it was made from: adaptations of CC BY-SA photos are CC BY-SA in the same version, adaptations of CC BY photos are CC BY in the same version with the credit below, and adaptations of the CC0 photo are CC0. The MIT license of this repository does not cover these images. Product names and logos visible in the photos are trademarks of their owners, who have no connection with this project.
 
