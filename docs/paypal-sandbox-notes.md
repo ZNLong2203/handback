@@ -41,3 +41,14 @@ Design consequences:
 - The vault token belongs to this merchant only. That fits Handback, where the shop is always the merchant of record.
 
 Setup gotcha: sandbox buyer passwords often contain `#`. Node's `--env-file` and Next.js both treat an unquoted `#` as the start of a comment, which silently truncates the password and makes the sandbox login fail with "Some of your info isn't correct". Wrap such values in single quotes.
+
+## 2026-10-02: the whole app against the sandbox
+
+`scripts/sandbox-walkthrough.ts` drives the running app in a browser: it clicks the JS SDK v6 PayPal button, approves the payment as the sandbox buyer in PayPal's popup, then runs the counter flow with live Gemini. One run, start to finish in about 33 seconds:
+
+| Step | PayPal result |
+|---|---|
+| Booking: v6 button (`savePayment`), buyer approves "Agree & Pay Now" | order `0HL96236BY116954N`, fee capture `88W11018NV496100U`, wallet vaulted |
+| Pickup: deposit held on the saved wallet, buyer not present | authorization `00T82573RL225500P`, $300.00, expires in 29 days |
+| Return: two live `gemini-3.8-flash` looks, 5.6 s, both report the missing lens hood | proposal: $35.00 from the price list |
+| Customer accepts on their page; counter settles | capture `27E47755F4775162P`: $35.00 kept, $265.00 released |
