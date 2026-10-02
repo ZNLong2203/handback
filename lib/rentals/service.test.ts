@@ -107,6 +107,39 @@ describe("rental flow (demo mode)", () => {
     expect(await rental(rentalId)).toMatchObject({ status: "settled", capturedCents: 0, releasedCents: 20000 });
   });
 
+  it("city bike: the renter accepts the missing phone holder, questions the rear light, and PayPal keeps only $12", async () => {
+    const { rentalId, token } = await outRental("city-bike", "city-bike/before");
+    expect(await rental(rentalId)).toMatchObject({ status: "out", depositCents: 15000, authorizedCents: 15000, unitId: expect.stringMatching(/^city-bike-[abc]$/) });
+
+    // Back without the phone holder and the rear light: both looks see both.
+    await svc.addPhoto(rentalId, "checkin", { sample: "city-bike/after__missing-holder-rear-light" });
+    await svc.inspect(rentalId);
+    const a = await assessment(rentalId);
+    expect(a.source).toBe("replay");
+    const charges = a.findings.filter((f) => f.staff === "keep");
+    expect(charges.map((f) => [f.kind, f.price?.label, f.price?.cents])).toEqual([
+      ["missing", "Replace phone holder", 1200],
+      ["missing", "Replace rear light", 1500],
+    ]);
+    const [holder, rearLight] = charges;
+
+    await svc.sendToCustomer(rentalId);
+    await svc.respondAsCustomer(token, [
+      { findingId: holder.id, answer: "accept" },
+      { findingId: rearLight.id, answer: "contest", note: "It's in my backpack" },
+    ]);
+    const answered = (await assessment(rentalId)).findings.find((f) => f.id === rearLight.id)!;
+    expect(answered).toMatchObject({ customer: "contest", customerNote: "It's in my backpack", resolution: null });
+
+    await expect(svc.settle(rentalId)).rejects.toThrow(/Decide/);
+    await svc.resolveContest(rentalId, rearLight.id, "waive");
+    await svc.settle(rentalId);
+    expect(await rental(rentalId)).toMatchObject({ status: "settled", capturedCents: 1200, releasedCents: 13800, extraCents: 0 });
+    const types = (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
+    expect(types).toEqual(expect.arrayContaining(["customer.responded", "contest.waived"]));
+    expect(firstBrokenLink(await repo.eventsFor(await getDb(), rentalId))).toBeNull();
+  });
+
   it("keeps an intact, hash-chained audit log of every step", async () => {
     const { rentalId } = await outRental();
     const events = await repo.eventsFor(await getDb(), rentalId);

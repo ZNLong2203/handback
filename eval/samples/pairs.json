@@ -1,0 +1,117 @@
+{
+  "imageModel": "gemini-3-pro-image",
+  "pairs": [
+    {
+      "id": "city-bike__frame-scratch",
+      "scene": "city-bike",
+      "item": "city-bike",
+      "incidental": [],
+      "before": "images/city-bike/before.jpg",
+      "after": "images/city-bike/after__frame-scratch.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "frame",
+            "detail": "scratches to bare metal on the frame",
+            "match": [
+              "frame",
+              "tube",
+              "paint",
+              "scratch"
+            ],
+            "price": "frame-scratch"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image image + gemini-3-pro-image edit, region only + code: pose"
+    },
+    {
+      "id": "city-bike__missing-holder",
+      "scene": "city-bike",
+      "item": "city-bike",
+      "incidental": [],
+      "before": "images/city-bike/before.jpg",
+      "after": "images/city-bike/after__missing-holder.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "phone holder",
+            "detail": "phone holder removed",
+            "match": [
+              "phone",
+              "holder",
+              "mount"
+            ],
+            "price": "missing-phone-holder"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image image + gemini-3-pro-image edit, region only + code: pose"
+    },
+    {
+      "id": "city-bike__missing-holder-rear-light",
+      "scene": "city-bike",
+      "item": "city-bike",
+      "incidental": [],
+      "before": "images/city-bike/before.jpg",
+      "after": "images/city-bike/after__missing-holder-rear-light.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "phone holder",
+            "detail": "phone holder removed",
+            "match": [
+              "phone",
+              "holder",
+              "mount"
+            ],
+            "price": "missing-phone-holder"
+          },
+          {
+            "kind": "missing",
+            "item": "rear light",
+            "detail": "rear light removed",
+            "match": [
+              "rear",
+              "tail"
+            ],
+            "price": "missing-rear-light"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image image + gemini-3-pro-image edit, region only + code: light"
+    },
+    {
+      "id": "city-bike__same-light",
+      "scene": "city-bike",
+      "item": "city-bike",
+      "incidental": [],
+      "before": "images/city-bike/before.jpg",
+      "after": "images/city-bike/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "gemini-3-pro-image image + code: light"
+    },
+    {
+      "id": "city-bike__same-pose",
+      "scene": "city-bike",
+      "item": "city-bike",
+      "incidental": [],
+      "before": "images/city-bike/before.jpg",
+      "after": "images/city-bike/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "gemini-3-pro-image image + code: pose"
+    }
+  ]
+}

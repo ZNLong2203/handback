@@ -18,7 +18,7 @@ export default function Storefront() {
         <p className="mt-2 max-w-2xl text-ink-soft">
           Pay the rental fee now. The deposit is only held at pickup, and you see every proposed charge before anything is taken from it.
         </p>
-        <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {CATALOG.map((item) => (
             <li key={item.id}>
               <Link href={`/rent/${item.id}`} className="group block overflow-hidden rounded-[var(--radius-card)] border border-line bg-card shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)]">

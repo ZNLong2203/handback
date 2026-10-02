@@ -73,7 +73,7 @@ describe("MCP tools", () => {
   it("lists the catalog with the shop's date", async () => {
     const out = await call(client, "list_items");
     expect(out.shop.today).toBe(todayIso());
-    expect(out.items).toHaveLength(8);
+    expect(out.items).toHaveLength(9);
     expect(out.items.find((i) => i.id === "drone-kit")).toMatchObject({ dailyRate: { cents: 4500, usd: "$45.00" }, depositHold: { usd: "$300.00" } });
   });
 

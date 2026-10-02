@@ -7,9 +7,11 @@
  *
  * Raw model replies are saved under eval/runs/ so the app's demo mode and the
  * tests can replay them without an API key. --set real runs the pairs built
- * on real photographs (eval/real) and saves under eval/real/runs/ instead.
+ * on real photographs (eval/real) and saves under eval/real/runs/ instead;
+ * --set samples runs the demo-only sample photos (eval/samples), whose
+ * recorded replies demo mode also replays.
  *
- *   npm run eval -- [--set synthetic|real] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
+ *   npm run eval -- [--set synthetic|real|samples] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
  */
 import { ApiError } from "@google/genai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -37,8 +39,12 @@ const arg = (name: string) => {
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
 /** Each dataset keeps its pairs, images, runs and reports under its own folder. */
-const SETS = { synthetic: "eval", real: "eval/real" } as const;
-const SET_DESCRIPTION = { synthetic: "AI-generated photo pairs", real: "photo pairs built on real photographs" } as const;
+const SETS = { synthetic: "eval", real: "eval/real", samples: "eval/samples" } as const;
+const SET_DESCRIPTION = {
+  synthetic: "AI-generated photo pairs",
+  real: "photo pairs built on real photographs",
+  samples: "AI-generated demo sample pairs (not part of the published eval)",
+} as const;
 const set = (arg("set") ?? "synthetic") as keyof typeof SETS;
 if (!(set in SETS)) throw new Error(`--set must be one of: ${Object.keys(SETS).join(", ")}`);
 const ROOT = SETS[set];

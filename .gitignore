@@ -33,6 +33,8 @@ next-env.d.ts
 /.data/
 # Full image-model edits behind the real-photo eval set (only a region of each is used)
 /eval/real/.raw/
+# ...and behind the demo-only sample photos
+/eval/samples/.raw/
 
 # ─── Tooling caches ──────────────────────────────────────────
 .eslintcache

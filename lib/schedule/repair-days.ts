@@ -43,6 +43,12 @@ export const REPAIR_DAYS: Record<string, number> = {
   "lens-crack": 6,
   "missing-remote": 2,
   housing: 4,
+  // The bike shop keeps spare lights, locks and phone holders in stock.
+  "missing-front-light": 1,
+  "missing-rear-light": 1,
+  "missing-lock": 1,
+  "missing-phone-holder": 1,
+  "frame-scratch": 2,
 };
 
 /** When a price-list entry has no row above: a part to order, or a repair to book. */
