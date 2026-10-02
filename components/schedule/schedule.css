@@ -1,0 +1,307 @@
+/*
+ * Bryntum Scheduler in Handback's clothes. The Svalbard theme supplies the
+ * structure; these variables map it onto the app's tokens (app/globals.css),
+ * so the timeline reads like the rest of the counter. Money keeps its three
+ * colours: amber while PayPal holds a deposit, green once it is settled,
+ * coral where something is disputed or blocked.
+ *
+ * Rows are painted with see-through colours on purpose: the trial build draws
+ * its "Bryntum Trial Version" watermark behind them, and it has to stay
+ * visible.
+ */
+
+.hb-scheduler {
+  --b-primary: var(--color-brand);
+  --b-panel-background: var(--color-card);
+  --b-grid-cell-background: transparent;
+  --b-grid-cell-color: var(--color-ink);
+  --b-grid-cell-border-color: var(--color-line);
+  --b-grid-row-border-color: var(--color-line);
+  --b-grid-cell-hover-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
+  --b-grid-cell-selected-background: var(--color-brand-soft);
+  --b-grid-cell-hover-selected-background: var(--color-brand-soft);
+  --b-grid-header-background: var(--color-paper);
+  --b-grid-header-color: var(--color-ink-soft);
+  --b-grid-header-border-color: var(--color-line);
+  --b-grid-header-font-weight: 600;
+  --b-group-header-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
+  --b-group-header-stripe-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
+  --b-stripe-odd-color: color-mix(in oklab, var(--color-paper) 30%, transparent);
+  --b-stripe-even-color: transparent;
+  --b-sch-event-font-weight: 600;
+  --b-sch-event-border-radius: 0.65rem;
+  --b-sch-event-font-size: 0.82rem;
+  --b-dependency-color: var(--color-brand);
+  --b-dependency-stroke-width: 1.5px;
+  --b-time-range-header-background: var(--color-brand);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-line);
+  overflow: hidden;
+}
+
+/* ─── Unit column ───────────────────────────────────────── */
+
+.hb-scheduler .hb-unit {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+.hb-scheduler .hb-unit-name {
+  font-weight: 600;
+}
+.hb-scheduler .hb-unit-note {
+  margin-top: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+.hb-scheduler .hb-unit-note::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-released);
+}
+.hb-scheduler .hb-unit-out .hb-unit-note::before {
+  background: var(--color-held);
+}
+.hb-scheduler .hb-unit-repair .hb-unit-note::before,
+.hb-scheduler .hb-unit-blocked .hb-unit-note::before {
+  background: var(--color-charged);
+}
+
+.hb-scheduler .hb-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.hb-scheduler .hb-group-name {
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hb-scheduler .hb-group-meta {
+  font-size: 0.68rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+/* ─── Today ─────────────────────────────────────────────── */
+
+.hb-scheduler .b-sch-time-range.hb-today {
+  background: color-mix(in oklab, var(--color-brand) 7%, transparent);
+  border-inline: 1px solid color-mix(in oklab, var(--color-brand) 22%, transparent);
+  opacity: 1;
+}
+.hb-scheduler .b-sch-header-time-axis-cell.hb-today-cell {
+  color: var(--color-brand);
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--color-brand);
+}
+
+/* ─── Bookings, by money state ──────────────────────────── */
+
+.hb-scheduler .b-sch-event.hb-ev {
+  --hb-ev: var(--color-brand);
+  --hb-ev-soft: var(--color-brand-soft);
+  --b-sch-event-background: var(--hb-ev-soft);
+  --b-sch-event-color: color-mix(in oklab, var(--hb-ev) 85%, var(--color-ink));
+  border-inline-start: 4px solid var(--hb-ev);
+  box-shadow: 0 1px 0 rgb(29 27 47 / 0.04);
+  padding-inline: 0.55rem;
+}
+.hb-scheduler .b-sch-event-wrap:hover .b-sch-event.hb-ev,
+.hb-scheduler .b-sch-event-wrap.b-hover .b-sch-event.hb-ev {
+  --b-sch-event-background: color-mix(in oklab, var(--hb-ev) 18%, var(--color-card));
+}
+.hb-scheduler .b-sch-event-wrap.b-selected .b-sch-event.hb-ev {
+  --b-sch-event-background: color-mix(in oklab, var(--hb-ev) 26%, var(--color-card));
+}
+.hb-scheduler .b-sch-event.hb-ev-held {
+  --hb-ev: var(--color-held);
+  --hb-ev-soft: var(--color-held-soft);
+}
+.hb-scheduler .b-sch-event.hb-ev-review {
+  --hb-ev: var(--color-charged);
+  --hb-ev-soft: color-mix(in oklab, var(--color-held-soft) 55%, var(--color-charged-soft));
+  background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--color-charged) 9%, transparent) 7px 14px);
+}
+.hb-scheduler .b-sch-event.hb-ev-settled {
+  --hb-ev: var(--color-released);
+  --hb-ev-soft: var(--color-released-soft);
+}
+.hb-scheduler .b-sch-event.hb-ev-disputed {
+  --hb-ev: var(--color-charged);
+  --hb-ev-soft: var(--color-charged-soft);
+}
+.hb-scheduler .b-sch-event.hb-ev-conflict {
+  outline: 2px solid var(--color-charged);
+  outline-offset: 1px;
+}
+
+.hb-scheduler .b-sch-event.hb-ev .b-sch-event-content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.hb-scheduler .hb-ev-name {
+  flex-shrink: 0;
+}
+.hb-scheduler .hb-ev-meta {
+  min-width: 0;
+  margin-inline-start: 0.45rem;
+  font-weight: 500;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hb-scheduler .hb-ev-flag {
+  margin-inline-start: 0.4rem;
+  color: var(--color-charged);
+}
+
+/* The agent's suggestion: where the booking would go, drawn as an outline. */
+.hb-scheduler .b-sch-event.hb-ev-ghost {
+  --hb-ev: var(--color-brand);
+  --b-sch-event-background: color-mix(in oklab, var(--color-brand-soft) 45%, transparent);
+  --b-sch-event-color: var(--color-brand-ink);
+  border: 1.5px dashed var(--color-brand);
+  border-inline-start-width: 1.5px;
+  box-shadow: none;
+}
+.hb-scheduler .b-sch-event.hb-ev-ghost.hb-ev-call {
+  --hb-ev: var(--color-held);
+  border-color: var(--color-held);
+  --b-sch-event-color: color-mix(in oklab, var(--color-held) 80%, var(--color-ink));
+  --b-sch-event-background: color-mix(in oklab, var(--color-held-soft) 60%, transparent);
+}
+.hb-scheduler .b-sch-event-wrap.hb-focus .b-sch-event {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-brand) 35%, transparent);
+}
+
+.hb-scheduler .b-sch-dependency.hb-dep {
+  stroke-dasharray: 5 4;
+}
+
+/* ─── Repairs and blocks ────────────────────────────────── */
+
+.hb-scheduler .b-sch-resource-time-range.hb-block {
+  --b-resource-time-range-color: var(--color-charged);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-charged) 13%, var(--color-card)) 0 8px,
+    color-mix(in oklab, var(--color-charged) 5%, var(--color-card)) 8px 16px
+  );
+  border-block: 1px solid color-mix(in oklab, var(--color-charged) 25%, transparent);
+  color: var(--color-charged);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.hb-scheduler .b-sch-resource-time-range.hb-block-maintenance {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-note) 12%, var(--color-card)) 0 8px,
+    color-mix(in oklab, var(--color-note) 4%, var(--color-card)) 8px 16px
+  );
+  border-block-color: color-mix(in oklab, var(--color-note) 22%, transparent);
+  color: var(--color-note);
+}
+.hb-scheduler .b-sch-resource-time-range.hb-block-ghost {
+  background: color-mix(in oklab, var(--color-note-soft) 70%, transparent);
+  outline: 1.5px dashed var(--color-note);
+  outline-offset: -2px;
+  color: var(--color-note);
+}
+
+/* ─── Tooltips ──────────────────────────────────────────── */
+
+.hb-tip {
+  --b-panel-background: var(--color-card);
+  font-family: var(--font-sans);
+}
+.hb-tip .hb-tip-body {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 15rem;
+  max-width: 21rem;
+  color: var(--color-ink);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.hb-tip .hb-tip-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+}
+.hb-tip .hb-tip-sub {
+  color: var(--color-muted);
+}
+.hb-tip .hb-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.hb-tip .hb-tip-row span:first-child {
+  color: var(--color-muted);
+}
+.hb-tip .hb-tip-held {
+  color: var(--color-held);
+  font-weight: 600;
+}
+.hb-tip .hb-tip-kept {
+  color: var(--color-charged);
+  font-weight: 600;
+}
+.hb-tip .hb-tip-released {
+  color: var(--color-released);
+  font-weight: 600;
+}
+.hb-tip .hb-tip-warn {
+  border-radius: 0.6rem;
+  background: var(--color-charged-soft);
+  color: var(--color-charged);
+  padding: 0.35rem 0.55rem;
+  font-weight: 600;
+}
+.hb-tip .hb-tip-hint {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.hb-drag-tip {
+  display: grid;
+  gap: 0.2rem;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.hb-drag-tip .hb-drag-tip-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+.hb-drag-tip .hb-drag-tip-title span {
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hb-drag-tip .hb-drag-tip-msg {
+  font-weight: 600;
+  color: var(--color-released);
+}
+.hb-drag-tip.hb-drag-tip-bad .hb-drag-tip-msg {
+  color: var(--color-charged);
+}

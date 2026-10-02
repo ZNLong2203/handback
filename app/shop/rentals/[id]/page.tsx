@@ -10,6 +10,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { MoneyBar } from "@/components/money-bar";
 import { PhotoCapture } from "@/components/photo-capture";
 import { Qr } from "@/components/qr";
+import { UnitHandover } from "@/components/schedule/unit-handover";
 import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice, cx } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
@@ -98,6 +99,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                 <h2 className="font-display text-2xl font-bold">Pickup</h2>
                 <p className="mt-1 text-sm text-muted">Photograph the item with the customer at the counter, then hold the deposit.</p>
               </div>
+              <UnitHandover rental={rental} />
               {checkout ? (
                 <div className="space-y-4">
                   <Photo sha={checkout.photoSha} label="Pickup photo" />

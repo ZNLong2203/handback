@@ -12,6 +12,8 @@ import { publish } from "@/lib/live";
 import { formatUsd, type Cents } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
 import { loadPhoto, storePhoto } from "@/lib/photos";
+import { afterSettlement } from "@/lib/schedule/agent";
+import { assignUnitForBooking, confirmUnitBeforePayment } from "@/lib/schedule/assign";
 import { appUrl, SHOP } from "@/lib/shop";
 import { appendEvent, firstBrokenLink } from "./audit";
 import { buildMandate, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
@@ -201,6 +203,7 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
       expiresAt: mandate.expiresAt,
     });
   });
+  await assignUnitForBooking(id);
   const order = await paypalStep(id, "create the booking order", () =>
     depositGateway().createBookingOrder(
       {
@@ -243,6 +246,7 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
   if (rental.status !== "draft") return { token: rental.token, pending: false };
   if (rental.feeCaptureId) return { token: rental.token, pending: true };
 
+  await confirmUnitBeforePayment(rental.id);
   const paid = await paypalStep(rental.id, "capture the rental fee", () =>
     depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`),
   );
@@ -646,4 +650,5 @@ export async function settle(rentalId: string): Promise<void> {
     });
   });
   publish(rentalId, "deposit.settled");
+  await afterSettlement(rentalId);
 }

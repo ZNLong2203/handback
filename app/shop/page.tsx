@@ -1,4 +1,4 @@
-import { ArrowUpRight, Plus } from "lucide-react";
+import { ArrowUpRight, CalendarRange, Plus } from "lucide-react";
 import Link from "next/link";
 import { ShopHeader } from "@/components/headers";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -10,6 +10,7 @@ import { formatUsd } from "@/lib/money";
 import { listRentals } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
+import { handovers, type Handover } from "@/lib/schedule/handover";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Counter" };
@@ -22,7 +23,7 @@ const GROUPS: { title: string; hint: string; statuses: RentalStatus[] }[] = [
   { title: "Settled", hint: "Deposit charged or released", statuses: ["settled", "cancelled"] },
 ];
 
-function RentalRow({ r }: { r: Rental }) {
+function RentalRow({ r, unit }: { r: Rental; unit?: Handover }) {
   const item = catalogItem(r.itemId);
   const status = STATUS[r.status];
   const money =
@@ -41,8 +42,10 @@ function RentalRow({ r }: { r: Rental }) {
         <span className="min-w-0">
           <span className="block truncate font-semibold">{r.customerName}</span>
           <span className="block truncate text-sm text-muted">
-            {item.name} · {shortDate(r.startDate)}–{shortDate(r.endDate)}
+            {item.name} · {unit ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
+            {shortDate(r.startDate)}–{shortDate(r.endDate)}
           </span>
+          {unit?.warning && <span className="block truncate text-xs font-medium text-charged">{unit.warning}</span>}
         </span>
         <span className="tabular hidden text-sm text-ink-soft sm:block">{money}</span>
         <span className="flex items-center gap-2">
@@ -56,6 +59,7 @@ function RentalRow({ r }: { r: Rental }) {
 
 export default async function Counter() {
   const rentals = await listRentals(await getDb());
+  const units = await handovers(rentals);
   const held = rentals.filter((r) => ["out", "inspecting", "customer_review", "responded"].includes(r.status)).reduce((s, r) => s + (r.authorizedCents ?? 0), 0);
   const settled = rentals.filter((r) => r.status === "settled");
   const released = settled.reduce((s, r) => s + (r.releasedCents ?? 0), 0);
@@ -71,9 +75,14 @@ export default async function Counter() {
             <Eyebrow>Counter</Eyebrow>
             <h1 className="mt-1 font-display text-4xl font-bold tracking-tight">Today at the counter</h1>
           </div>
-          <ButtonLink href="/rent" variant="outline" target="_blank">
-            <Plus className="h-4 w-4" aria-hidden /> New booking (customer view)
-          </ButtonLink>
+          <div className="flex flex-wrap gap-2">
+            <ButtonLink href="/shop/schedule" variant="primary">
+              <CalendarRange className="h-4 w-4" aria-hidden /> Schedule
+            </ButtonLink>
+            <ButtonLink href="/rent" variant="outline" target="_blank">
+              <Plus className="h-4 w-4" aria-hidden /> New booking (customer view)
+            </ButtonLink>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -110,7 +119,7 @@ export default async function Counter() {
                 </div>
                 <ul className="space-y-2">
                   {list.map((r) => (
-                    <RentalRow key={r.id} r={r} />
+                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} />
                   ))}
                 </ul>
               </section>

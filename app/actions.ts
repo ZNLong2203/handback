@@ -2,7 +2,9 @@
 
 import { refresh } from "next/cache";
 import * as desk from "@/lib/disputes/service";
+import { after } from "next/server";
 import * as svc from "@/lib/rentals/service";
+import { polishMessages } from "@/lib/schedule/agent";
 import { UserError, type Phase } from "@/lib/rentals/types";
 import { runInspection } from "@/lib/workflows/dispatch";
 
@@ -94,7 +96,11 @@ export async function resolveContestAction(rentalId: string, findingId: string, 
 }
 
 export async function settleAction(rentalId: string) {
-  return run(() => svc.settle(rentalId));
+  return run(async () => {
+    await svc.settle(rentalId);
+    // The schedule agent has already planned around any repair; Gemini words its customer messages after the response.
+    after(() => polishMessages().catch((err) => console.error("message polish failed", err)));
+  });
 }
 
 // ─── Dispute desk ───────────────────────────────────────────

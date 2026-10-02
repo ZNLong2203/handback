@@ -19,13 +19,18 @@ const repo = await import("./repo");
 const svc = await import("./service");
 const { applyPayPalWebhook } = await import("./webhooks");
 
+// The shop has two or three units of each item, so every booking here gets
+// its own dates instead of all asking for the same camera kit at once.
+let nextWeek = 0;
+
 async function bookedRental(itemId = "camera-kit") {
+  const startDate = addDaysIso(todayIso(), 4 * nextWeek++);
   const { rentalId, orderId } = await svc.startBooking({
     itemId,
     name: "Maya Chen",
     email: "maya@example.com",
-    startDate: todayIso(),
-    endDate: addDaysIso(todayIso(), 3),
+    startDate,
+    endDate: addDaysIso(startDate, 3),
   });
   const { token } = await svc.confirmBooking(orderId);
   return { rentalId, orderId, token };

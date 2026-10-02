@@ -176,4 +176,99 @@ create table if not exists dispute_actions (
 create table if not exists demo_paypal (
   k text primary key,
   state jsonb not null
+);
+
+-- ─── Schedule ────────────────────────────────────────────────
+
+-- The shop stocks each catalog item as two or three physical units. Every
+-- booking is assigned to one unit, so two customers can never be promised
+-- the same camera for the same days.
+create table if not exists units (
+  id text primary key,
+  item_id text not null,
+  label text not null,
+  position integer not null
+);
+
+insert into units (id, item_id, label, position) values
+  ('camera-kit-a', 'camera-kit', 'Camera kit A', 1),
+  ('camera-kit-b', 'camera-kit', 'Camera kit B', 2),
+  ('camera-kit-c', 'camera-kit', 'Camera kit C', 3),
+  ('camera-body-a', 'camera-body', 'Camera body A', 1),
+  ('camera-body-b', 'camera-body', 'Camera body B', 2),
+  ('tele-lens-a', 'tele-lens', 'Telephoto A', 1),
+  ('tele-lens-b', 'tele-lens', 'Telephoto B', 2),
+  ('drone-kit-a', 'drone-kit', 'Drone kit A', 1),
+  ('drone-kit-b', 'drone-kit', 'Drone kit B', 2),
+  ('action-cam-kit-a', 'action-cam-kit', 'Action cam A', 1),
+  ('action-cam-kit-b', 'action-cam-kit', 'Action cam B', 2),
+  ('action-cam-kit-c', 'action-cam-kit', 'Action cam C', 3),
+  ('pa-speaker-a', 'pa-speaker', 'PA speaker A', 1),
+  ('pa-speaker-b', 'pa-speaker', 'PA speaker B', 2),
+  ('ebike-a', 'ebike', 'E-bike A', 1),
+  ('ebike-b', 'ebike', 'E-bike B', 2),
+  ('ebike-c', 'ebike', 'E-bike C', 3),
+  ('projector-a', 'projector', 'Projector A', 1),
+  ('projector-b', 'projector', 'Projector B', 2)
+on conflict (id) do nothing;
+
+alter table rentals add column if not exists unit_id text references units (id);
+
+create index if not exists rentals_unit on rentals (unit_id, start_date);
+
+-- Days a unit cannot be rented: a repair after a damaged return, or
+-- maintenance staff planned. Both dates are inclusive.
+create table if not exists blocks (
+  id text primary key,
+  unit_id text not null references units (id),
+  start_date date not null,
+  end_date date not null,
+  kind text not null,
+  reason text not null,
+  -- The return that caused a repair block.
+  rental_id text references rentals (id),
+  created_by text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists blocks_one_repair_per_return on blocks (rental_id) where kind = 'repair';
+
+create index if not exists blocks_unit on blocks (unit_id, start_date);
+
+-- Changes the schedule agent or a typed command suggests. Nothing on the
+-- schedule changes until a person approves one.
+create table if not exists schedule_proposals (
+  id text primary key,
+  kind text not null,
+  status text not null,
+  origin text not null,
+  rental_id text references rentals (id),
+  -- What made the agent look: "block:<id>" or "rental:<id>".
+  cause text,
+  block_id text references blocks (id),
+  from_unit_id text references units (id),
+  to_unit_id text references units (id),
+  start_date date,
+  end_date date,
+  -- For a block: repair or maintenance, and why.
+  block_kind text,
+  reason text,
+  needs_call boolean not null default false,
+  summary text not null,
+  message text,
+  message_source text,
+  command text,
+  created_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decision_note text
+);
+
+create unique index if not exists proposals_one_pending_per_conflict on schedule_proposals (rental_id, cause) where status = 'pending';
+
+create index if not exists proposals_status on schedule_proposals (status, created_at);
+
+-- Demo data that has been loaded once, so it is never loaded twice.
+create table if not exists demo_seeds (
+  name text primary key,
+  seeded_at timestamptz not null default now()
 )

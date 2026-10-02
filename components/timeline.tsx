@@ -12,6 +12,8 @@ const ACTOR = {
   ai: { icon: Bot, label: "AI", tone: "bg-note-soft text-note" },
 } as const;
 
+const MOVED_VIA: Record<string, string> = { drag: "dragged on the schedule", agent: "agent's suggestion, approved", command: "typed request, confirmed" };
+
 function detail(e: AuditEvent): string | null {
   const d = e.data as Record<string, unknown>;
   const ids = ["orderId", "captureId", "authorizationId", "disputeId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
@@ -24,6 +26,8 @@ function detail(e: AuditEvent): string | null {
   if (d.worker === "render-workflows") ids.push(typeof d.taskRunId === "string" ? `Render Workflows run ${d.taskRunId}` : "Render Workflows");
   if (e.type === "mandate.issued") ids.push(d.issuedTo === "assistant" ? "issued to an assistant acting for the renter" : "issued to the renter");
   if (Array.isArray(d.problems)) ids.push(...d.problems.map(String));
+  if (e.type === "schedule.moved") ids.push(`${d.from} → ${d.to} · ${MOVED_VIA[String(d.via)] ?? String(d.via)}`);
+  if (e.type === "repair.blocked") ids.push(`${d.unitId} · ${d.startDate} to ${d.endDate}`);
   return ids.length ? ids.join(" · ") : null;
 }
 

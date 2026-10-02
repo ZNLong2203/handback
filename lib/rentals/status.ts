@@ -65,6 +65,11 @@ const EVENT_LABEL: Record<string, string> = {
   "dispute.claim_accepted": "Shop accepted the claim; PayPal refunds the customer",
   "dispute.sandbox_evidence_requested": "Sandbox: PayPal's test system asked for evidence",
   "dispute.sandbox_decided": "Sandbox: PayPal's test system decided the case",
+  "repair.blocked": "Unit taken off the schedule for the repair",
+  "schedule.proposed": "Schedule agent suggested a change",
+  "schedule.moved": "Moved to another unit of the same item",
+  "schedule.rescheduled": "Moved to new dates",
+  "schedule.rejected": "Counter turned down a schedule change",
 };
 
 export function eventLabel(type: string): string {

@@ -7,3 +7,4 @@ Technical documentation for this project. The [project README](../README.md) at 
 - `images/`: the screenshots in the project README, taken by the end-to-end test in demo mode.
 - [Deploying on Render](deploy.md): the Blueprint, Render Workflows for inspections and hold renewals, costs, and keeping the demo up through judging.
 - [Booking through an assistant](agents.md): the MCP server at `/api/mcp`, its tools, the deposit mandate, and why money only moves after the renter approves in PayPal and the counter settles.
+- [The schedule](bryntum.md): the counter's Bryntum Scheduler timeline, the agent that plans around repairs, how every change is checked, and the trial licence.

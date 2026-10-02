@@ -22,12 +22,14 @@ type Props = {
   depositCents: number;
   maxDays: number;
   today: string;
+  /** The dates the form starts on; today to three days later when not given. */
+  initial?: { start: string; end: string };
   paypal: { clientId: string; environment: "sandbox" | "production" } | null;
 };
 
-function useBooking({ itemId, dailyCents, maxDays, today }: Props) {
-  const [start, setStart] = useState(today);
-  const [end, setEnd] = useState(addDaysIso(today, 3));
+function useBooking({ itemId, dailyCents, maxDays, today, initial }: Props) {
+  const [start, setStart] = useState(initial?.start ?? today);
+  const [end, setEnd] = useState(initial?.end ?? addDaysIso(today, 3));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const days = useMemo(() => {
