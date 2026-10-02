@@ -9,6 +9,8 @@ delete process.env.PAYPAL_CLIENT_ID;
 const { getDb } = await import("@/lib/db/client");
 const { addDaysIso, todayIso } = await import("@/lib/dates");
 const { firstBrokenLink } = await import("./audit");
+const { openMandate, sealMandate } = await import("./mandate");
+type DepositMandate = import("./mandate").DepositMandate;
 const repo = await import("./repo");
 const svc = await import("./service");
 const { applyPayPalWebhook } = await import("./webhooks");
@@ -103,7 +105,14 @@ describe("rental flow (demo mode)", () => {
   it("keeps an intact, hash-chained audit log of every step", async () => {
     const { rentalId } = await outRental();
     const events = await repo.eventsFor(await getDb(), rentalId);
-    expect(events.map((e) => e.type)).toEqual(["booking.started", "booking.paid", "photo.added", "deposit.held", "checkout.acknowledged"]);
+    expect(events.map((e) => e.type)).toEqual([
+      "mandate.issued",
+      "booking.started",
+      "booking.paid",
+      "photo.added",
+      "deposit.held",
+      "checkout.acknowledged",
+    ]);
     expect(firstBrokenLink(events)).toBeNull();
     const tampered = events.map((e, i) => (i === 1 ? { ...e, data: { ...e.data, feeCents: 1 } } : e));
     expect(firstBrokenLink(tampered)).toBe(events[1].seq);
@@ -133,5 +142,122 @@ describe("rental flow (demo mode)", () => {
     expect(await rental(rentalId)).toMatchObject({ status: "disputed", disputeId: "PP-D-1" });
     const types = (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
     expect(types.slice(-2)).toEqual(["webhook.received", "dispute.opened"]);
+  });
+});
+
+describe("deposit mandate", () => {
+  /** Replaces the stored mandate, re-sealed so its hash still matches: a mandate approved on other terms. */
+  async function restoreMandate(rentalId: string, change: (m: DepositMandate) => DepositMandate) {
+    const r = await rental(rentalId);
+    const { json, sha256 } = sealMandate(change(openMandate(r.mandateJson!, r.mandateSha256!)!.mandate));
+    await (await getDb()).query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [rentalId, json, sha256]);
+  }
+
+  it("is issued with every web booking, stored as hashed canonical JSON and recorded in the audit chain", async () => {
+    const { rentalId } = await bookedRental();
+    const r = await rental(rentalId);
+    const opened = openMandate(r.mandateJson!, r.mandateSha256!);
+    expect(opened?.intact).toBe(true);
+    expect(opened?.mandate).toMatchObject({
+      rentalId,
+      issuedTo: { party: "renter" },
+      renter: { name: "Maya Chen", email: "maya@example.com" },
+      feeCents: 8700,
+      hold: { maxCents: 30000, starts: "at_pickup" },
+    });
+    const [issued, started] = await repo.eventsFor(await getDb(), rentalId);
+    expect(issued).toMatchObject({ type: "mandate.issued", actor: "system", data: { sha256: r.mandateSha256, issuedTo: "renter" } });
+    expect(started).toMatchObject({ type: "booking.started", actor: "customer" });
+  });
+
+  it("names the assistant when one books for the renter, and keeps the approval link", async () => {
+    const booking = await svc.startBooking(
+      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) },
+      { party: "assistant", assistant: "Claude" },
+    );
+    expect(booking.mandate.issuedTo).toEqual({ party: "assistant", assistant: "Claude", actingFor: "Sam Rivera <sam@example.com>" });
+    expect(booking.approveUrl).toMatch(new RegExp(`/demo/paypal\\?token=${booking.orderId}$`));
+    const r = await rental(booking.rentalId);
+    expect(r).toMatchObject({ status: "draft", approveUrl: booking.approveUrl, mandateSha256: booking.mandateSha256 });
+    const types = (await repo.eventsFor(await getDb(), booking.rentalId)).map((e) => [e.actor, e.type]);
+    expect(types).toEqual([
+      ["system", "mandate.issued"],
+      ["assistant", "booking.started"],
+    ]);
+  });
+
+  it("blocks a charge priced differently from the mandate, and any charge under a tampered mandate", async () => {
+    const { rentalId, token } = await outRental();
+    await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__missing-hood" });
+    await svc.inspect(rentalId);
+    const charges = (await assessment(rentalId)).findings.filter((f) => f.staff === "keep");
+    await svc.sendToCustomer(rentalId);
+    await svc.respondAsCustomer(token, charges.map((f) => ({ findingId: f.id, answer: "accept" as const })));
+
+    // The renter approved a $20 hood; the price list now says $35.
+    await restoreMandate(rentalId, (m) => ({ ...m, priceList: m.priceList.map((p) => (p.id === "missing-hood" ? { ...p, cents: 2000 } : p)) }));
+    await expect(svc.settle(rentalId)).rejects.toThrow(/Replace lens hood at \$35\.00 is not on the price list the renter agreed to/);
+
+    // Someone edits the stored text without re-hashing it.
+    const r = await rental(rentalId);
+    await (await getDb()).query("update rentals set mandate_json = $2 where id = $1", [rentalId, r.mandateJson!.replace('"cents":2000', '"cents":3500')]);
+    await expect(svc.settle(rentalId)).rejects.toThrow(/does not match its hash/);
+
+    expect(await rental(rentalId)).toMatchObject({ status: "responded", settlementCaptureId: null });
+    const types = (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["mandate.refused", "mandate.refused"]);
+  });
+
+  it("never needs the mandate to give a deposit back", async () => {
+    const { rentalId } = await outRental();
+    await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__same-light" });
+    await svc.inspect(rentalId);
+    await (await getDb()).query("update rentals set mandate_sha256 = $2 where id = $1", [rentalId, "0".repeat(64)]);
+    await svc.settle(rentalId);
+    expect(await rental(rentalId)).toMatchObject({ status: "settled", capturedCents: 0, releasedCents: 30000 });
+  });
+
+  it("will not hold a deposit once the mandate has ended", async () => {
+    const { rentalId } = await bookedRental();
+    await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
+    await restoreMandate(rentalId, (m) => ({ ...m, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+    await expect(svc.holdDeposit(rentalId)).rejects.toThrow(/mandate ended/);
+    expect((await rental(rentalId)).status).toBe("booked");
+  });
+});
+
+describe("approving by redirect", () => {
+  async function draft() {
+    return svc.startBooking(
+      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) },
+      { party: "assistant", assistant: null },
+    );
+  }
+
+  it("captures the booking when PayPal sends the renter back, once, however often the page loads", async () => {
+    const b = await draft();
+    expect(await svc.returnFromPayPal(b.token, {})).toBe("none");
+    expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
+    expect(await rental(b.rentalId)).toMatchObject({ status: "booked", feeCents: 9000 });
+    expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
+    const paid = (await repo.eventsFor(await getDb(), b.rentalId)).filter((e) => e.type === "booking.paid");
+    expect(paid).toHaveLength(1);
+  });
+
+  it("books once when two returns arrive at the same time", async () => {
+    const b = await draft();
+    const query = { token: b.orderId, PayerID: "DEMOPAYER" };
+    expect(await Promise.all([svc.returnFromPayPal(b.token, query), svc.returnFromPayPal(b.token, query)])).toEqual(["approved", "approved"]);
+    const paid = (await repo.eventsFor(await getDb(), b.rentalId)).filter((e) => e.type === "booking.paid");
+    expect(paid).toHaveLength(1);
+  });
+
+  it("reports a cancel, and ignores a return for some other order or without a payer", async () => {
+    const b = await draft();
+    expect(await svc.returnFromPayPal(b.token, { paypal: "cancelled", token: b.orderId })).toBe("cancelled");
+    expect(await svc.returnFromPayPal(b.token, { token: "SOME-OTHER-ORDER", PayerID: "X" })).toBe("none");
+    expect(await svc.returnFromPayPal(b.token, { token: b.orderId })).toBe("none");
+    expect(await svc.returnFromPayPal("no-such-token", { token: b.orderId, PayerID: "X" })).toBe("none");
+    expect((await rental(b.rentalId)).status).toBe("draft");
   });
 });

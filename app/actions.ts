@@ -32,7 +32,10 @@ export async function startBookingAction(input: {
   startDate: string;
   endDate: string;
 }) {
-  return run(() => svc.startBooking(input), false);
+  return run(async () => {
+    const { rentalId, orderId } = await svc.startBooking(input);
+    return { rentalId, orderId };
+  }, false);
 }
 
 export async function confirmBookingAction(orderId: string) {

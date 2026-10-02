@@ -1,6 +1,6 @@
 import "server-only";
 import type { Db } from "@/lib/db/client";
-import type { Assessment, AuditEvent, Inspection, Rental } from "./types";
+import type { Assessment, AuditEvent, Inspection, Rental, RentalStatus } from "./types";
 
 type Query = Pick<Db, "query">;
 type Row = Record<string, unknown>;
@@ -53,6 +53,22 @@ export async function updateRental(db: Query, id: string, fields: Record<string,
   const keys = Object.keys(fields);
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
   await db.query(`update rentals set ${sets}${keys.length ? ", " : ""}updated_at = now() where id = $1`, [id, ...keys.map((k) => fields[k])]);
+}
+
+/**
+ * Like updateRental, but only while the rental still has status `from`.
+ * Returns false when another request moved it first, so two requests racing
+ * through the same step record it once.
+ */
+export async function updateRentalFrom(db: Query, id: string, from: RentalStatus, fields: Record<string, unknown>): Promise<boolean> {
+  const keys = Object.keys(fields);
+  const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(", ");
+  const rows = await db.query(`update rentals set ${sets}${keys.length ? ", " : ""}updated_at = now() where id = $1 and status = $2 returning id`, [
+    id,
+    from,
+    ...keys.map((k) => fields[k]),
+  ]);
+  return rows.length > 0;
 }
 
 export async function inspectionsFor(db: Query, rentalId: string): Promise<Inspection[]> {

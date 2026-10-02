@@ -29,6 +29,8 @@ export function stepIndex(status: RentalStatus): number {
 }
 
 const EVENT_LABEL: Record<string, string> = {
+  "mandate.issued": "Deposit mandate issued",
+  "mandate.refused": "Refused: outside the renter's deposit mandate",
   "booking.started": "Booking started; PayPal order created",
   "booking.paid": "Rental fee paid; PayPal saved for the deposit",
   "photo.added": "Photo recorded",

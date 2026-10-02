@@ -129,11 +129,17 @@ export class DemoDepositGateway implements DepositGateway {
     if (!this.state.vaults[vaultId]) throw fail(422, "UNPROCESSABLE_ENTITY", "INVALID_PAYMENT_TOKEN", "Payment token not found.");
   }
 
+  /**
+   * Like PayPal, answers with a payer-action link. It opens the app's own
+   * demo approval page (app/demo/paypal), which sends the buyer back to the
+   * return URL the way PayPal does.
+   */
   async createBookingOrder(req: BookingOrderRequest, requestId: string): Promise<Hold> {
     return this.once(requestId, () => {
       const order: DemoOrder = { id: this.id("DEMO-ORDER"), intent: "CAPTURE", totalCents: req.feeCents, savePayPal: true };
       this.state.orders[order.id] = order;
-      return { orderId: order.id, status: "PAYER_ACTION_REQUIRED" };
+      const approveUrl = new URL(`/demo/paypal?token=${order.id}`, req.returnUrl).toString();
+      return { orderId: order.id, status: "PAYER_ACTION_REQUIRED", approveUrl };
     });
   }
 
