@@ -86,7 +86,9 @@ services:
           name: handback-db
           property: connectionString
       # The same PayPal and Gemini values as the web service: the tasks renew
-      # holds on PayPal and ask Gemini, and must run in the same mode.
+      # holds on PayPal and ask Gemini. Each run carries the web service's
+      # modes; a task whose own mode differs does nothing, and the web service
+      # does the work itself and reports it (docs/deploy.md).
       - key: PAYPAL_ENVIRONMENT
         value: sandbox
       - key: PAYPAL_CLIENT_ID
