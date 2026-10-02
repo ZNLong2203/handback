@@ -1,8 +1,6 @@
 import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import { CATALOG, catalogItem, type RentalItem } from "@/lib/catalog";
 import { isIsoDay, rentalDays, todayIso } from "@/lib/dates";
@@ -12,6 +10,7 @@ import { publish } from "@/lib/live";
 import { formatUsd, type Cents } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
 import { loadPhoto, storePhoto } from "@/lib/photos";
+import { sampleFile } from "@/lib/samples";
 import { afterSettlement } from "@/lib/schedule/agent";
 import { assignUnitForBooking, confirmUnitBeforePayment } from "@/lib/schedule/assign";
 import { appUrl, SHOP } from "@/lib/shop";
@@ -332,11 +331,9 @@ export function captureRefusal(events: AuditEvent[]): string | null {
 
 // ─── Photos ─────────────────────────────────────────────────
 
-const SAMPLE_KEY = /^[a-z0-9-]+\/[a-z0-9_-]+$/;
-
 export async function samplePhotoBytes(sample: string): Promise<Buffer> {
-  const file = path.join(process.cwd(), "eval", "images", `${sample}.jpg`);
-  if (!SAMPLE_KEY.test(sample) || !existsSync(file)) throw new UserError("That sample photo does not exist.");
+  const file = sampleFile(sample);
+  if (!file) throw new UserError("That sample photo does not exist.");
   return readFile(file);
 }
 

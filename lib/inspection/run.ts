@@ -2,6 +2,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { RentalItem } from "@/lib/catalog";
+import { samplePair, type SampleSet } from "@/lib/samples";
 import { compareCondition, DEFAULT_VISION_MODEL } from "./compare";
 import { mergeLooks } from "./consensus";
 import { assess, type Assessment } from "./policy";
@@ -15,8 +16,15 @@ export type InspectionRun = {
   ms: number;
 };
 
-/** The recorded run whose replies demo mode replays for the bundled sample photos. */
-const REPLAY_RUN = "eval/runs/gemini-3.8-flash-low-x2-r1.json";
+/**
+ * The recorded runs whose replies demo mode replays for the bundled sample
+ * photos, one per sample set (lib/samples.ts): a prompt v1 run of the
+ * synthetic eval set, and a prompt v2 run of the demo-only samples.
+ */
+const REPLAY_RUNS: Record<SampleSet, string> = {
+  eval: "eval/runs/gemini-3.8-flash-low-x2-r1.json",
+  "eval/samples": "eval/samples/runs/gemini-3.8-flash-low-x2-r1.json",
+};
 
 type Photo = { bytes: Buffer; sample: string | null };
 
@@ -73,7 +81,6 @@ export async function inspectReturn(checkout: Photo, checkin: Photo, item: Renta
 }
 
 type RecordedRun = { results: { id: string; outputs?: ModelOutput[] }[] };
-type PairsFile = { pairs: { id: string; before: string; after: string }[] };
 
 async function replay(checkoutSample: string | null, checkinSample: string | null): Promise<ModelOutput[] | null> {
   if (!checkoutSample || !checkinSample) return null;
@@ -81,12 +88,9 @@ async function replay(checkoutSample: string | null, checkinSample: string | nul
     const clean: ModelOutput = { photos_usable: true, photo_issue: null, same_item: true, findings: [], summary: "No changes between check-out and check-in." };
     return [clean, clean];
   }
-  const root = process.cwd();
-  const [pairs, run] = await Promise.all([
-    readFile(path.join(root, "eval/pairs.json"), "utf8").then((t) => JSON.parse(t) as PairsFile),
-    readFile(path.join(root, REPLAY_RUN), "utf8").then((t) => JSON.parse(t) as RecordedRun),
-  ]);
-  const pair = pairs.pairs.find((p) => p.before === `images/${checkoutSample}.jpg` && p.after === `images/${checkinSample}.jpg`);
-  const outputs = pair && run.results.find((r) => r.id === pair.id)?.outputs;
+  const pair = samplePair(checkoutSample, checkinSample);
+  if (!pair) return null;
+  const run = JSON.parse(await readFile(path.join(process.cwd(), REPLAY_RUNS[pair.set]), "utf8")) as RecordedRun;
+  const outputs = run.results.find((r) => r.id === pair.id)?.outputs;
   return outputs && outputs.length === 2 ? outputs : null;
 }
