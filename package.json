@@ -15,6 +15,7 @@
     "smoke:sandbox": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/sandbox-smoke.ts",
     "seed:aged-holds": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-aged-holds.ts",
     "workflows": "tsx --conditions=react-server --env-file-if-exists=.env.local workflows/main.ts",
+    "seed:demo": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-demo.ts",
     "eval:pairs": "tsx --env-file-if-exists=.env.local scripts/eval/make-pairs.ts",
     "eval": "tsx --env-file-if-exists=.env.local scripts/eval/run-eval.ts",
     "eval:summary": "tsx scripts/eval/summarize.ts",
