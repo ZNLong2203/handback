@@ -52,3 +52,26 @@ Setup gotcha: sandbox buyer passwords often contain `#`. Node's `--env-file` and
 | Pickup: deposit held on the saved wallet, buyer not present | authorization `00T82573RL225500P`, $300.00, expires in 29 days |
 | Return: two live `gemini-3.8-flash` looks, 5.6 s, both report the missing lens hood | proposal: $35.00 from the price list |
 | Customer accepts on their page; counter settles | capture `27E47755F4775162P`: $35.00 kept, $265.00 released |
+
+## 2026-10-02: an assistant's booking, approved by redirect
+
+An assistant books over the MCP endpoint (`docs/agents.md`) and hands the person PayPal's `payer-action` link, so there is no JS SDK button: the buyer approves on PayPal's site and PayPal redirects back. The booking order is the same Orders v2 `intent: CAPTURE` order with vault attributes as above, with `experience_context.return_url` set to the renter's page and `cancel_url` to the same page plus `?paypal=cancelled`. `scripts/sandbox-agent-booking.ts` books over MCP (no model involved) and drives the link as the sandbox buyer in a browser.
+
+| # | What we tried | Result |
+|---|---|---|
+| 1 | `create_booking` over MCP | Order `80U65911EF3853831`, `PAYER_ACTION_REQUIRED`, `payer-action` link `https://www.sandbox.paypal.com/checkoutnow?token=80U65911EF3853831` |
+| 2 | Open the return URL with a made-up `PayerID` before approving | Capture refused with `422 ORDER_NOT_APPROVED` (debug_id `f2313288a59f2`); the page shows it and the rental stays unpaid |
+| 3 | Log in, then follow PayPal's "Cancel and return" link | PayPal sends the buyer to `cancel_url` with `&token=80U65911EF3853831` added to our own query |
+| 4 | Open the link again and click "Agree & Pay Now" | PayPal sends the buyer to `return_url?token=80U65911EF3853831&PayerID=QJUL8ARAJ5X86&ba_token=BA-6M203637MU6336721` |
+| 5 | The page captures, with the same `PayPal-Request-Id` as the refused attempt in row 2 | `COMPLETED`, capture `4LX3105906853610N`; `get_rental_status` reports `booked` |
+| 6 | Gemini books from "rent a drone this weekend for Sam, sam@example.com" (`npm run agent:book`), then the buyer approves its link | Order `7PN16640LG248603E`, capture `2XN89951BX6742945` |
+| 7 | A booking made over MCP, run to the end at the counter (`--settle`) | Order `21D35655UX748484E`, fee capture `6A406398398499346`; deposit authorization `6YT7084949567703S` for $300.00 on the saved wallet; live Gemini proposes "Replace flight battery" at $89.00; the renter accepts on their page; final capture `0T4182587S945703Y`: $89.00 kept, $211.00 released |
+
+Design consequences:
+
+- The return handler acts only when `token` matches the rental's order id and a `PayerID` is present. It ignores `ba_token`, which PayPal adds because the order saves the wallet.
+- PayPal did not replay the refusal for the reused `PayPal-Request-Id`: once the buyer had approved, the capture with that id went through (seen twice). So a return URL opened too early, by the renter or anyone holding the link, does not block the real approval.
+- A forged return cannot move money: PayPal will not capture an order the buyer has not approved.
+- The first run of row 2 found a bug: the page answered 500 instead of showing PayPal's refusal. The MCP route had created the shared gateway, and Next.js gives route handlers and pages separate copies of `lib/paypal/errors.ts`, so the page's `instanceof PayPalError` check failed. Errors now carry a `Symbol.for` brand checked by `PayPalError.is()`.
+
+Run: start the app in sandbox mode with `APP_URL` set to its address, then `npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts --early-return --cancel-first`, or `--rental <rentalPageUrl>` to approve a booking an assistant made, or `--settle` to run it to the end.
