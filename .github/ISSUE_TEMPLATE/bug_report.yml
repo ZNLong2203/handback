@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for reporting this. Please leave out API keys, client secrets, webhook ids, sandbox passwords and real personal data.
-        For a security problem, follow [SECURITY.md](https://github.com/OWNER/REPO/blob/main/SECURITY.md) instead of opening an issue.
+        For a security problem, follow [SECURITY.md](https://github.com/ZNLong2203/handback/blob/main/SECURITY.md) instead of opening an issue.
   - type: dropdown
     id: mode
     attributes:

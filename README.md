@@ -1,8 +1,8 @@
 # Handback
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/ZNLong2203/handback/actions/workflows/ci.yml/badge.svg)](https://github.com/ZNLong2203/handback/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/OWNER/REPO)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ZNLong2203/handback)
 
 Handback lets a small rental shop hold a deposit with PayPal and settle it from photos: AI compares the pickup and return photos, the renter accepts or questions each proposed charge on their own phone, and PayPal captures only the charges that survive that review and releases the rest of the hold.
 
@@ -36,7 +36,7 @@ A deposit deduction is hard to accept when you cannot see how it was decided. Ha
 You need Node.js 22.12 or later and npm.
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
+git clone https://github.com/ZNLong2203/handback.git
 cd REPO
 npm ci
 npm run dev

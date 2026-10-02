@@ -3,5 +3,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security problem
-    url: https://github.com/OWNER/REPO/security/advisories/new
+    url: https://github.com/ZNLong2203/handback/security/advisories/new
     about: Report a vulnerability privately. Please do not open a public issue for it.

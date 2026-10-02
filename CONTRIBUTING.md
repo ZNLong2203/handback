@@ -7,7 +7,7 @@ Thanks for taking a look. Bug reports, fixes, tests and docs are all welcome. Pl
 You need Node.js 22.12 or later (`.nvmrc` pins the major version) and npm.
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
+git clone https://github.com/ZNLong2203/handback.git
 cd REPO
 nvm use        # optional: picks Node 22 from .nvmrc
 npm ci

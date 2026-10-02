@@ -10,7 +10,7 @@ Only the latest commit on the default branch is maintained.
 
 Please do not report a security problem in a public issue.
 
-1. Report it privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go to https://github.com/OWNER/REPO/security/advisories/new.
+1. Report it privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go to https://github.com/ZNLong2203/handback/security/advisories/new.
 2. If private reporting is not available, open an issue that only says you have a security report, with no details, and ask for a private channel.
 
 A useful report says which file, route or page is affected, how to reproduce it in demo mode or against your own sandbox accounts, and what an attacker could do with it.
