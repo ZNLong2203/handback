@@ -150,7 +150,7 @@ Before building on PayPal, we checked each behaviour in the sandbox: partial cap
 
 From [eval/README.md](eval/README.md): two labeled sets of pickup and return photo pairs, scored the same way, three runs per setup, all with `gemini-3.8-flash` at thinking level low.
 
-- **Synthetic set**: 36 pairs of the eight demo items, all AI-generated. 12 pairs contain 14 real changes (a removed accessory, new damage or dirt); 24 pairs differ only in light, framing, dust or glare.
+- **Synthetic set**: 36 pairs of eight of the nine demo items (not the city bike), all AI-generated. 12 pairs contain 14 real changes (a removed accessory, new damage or dirt); 24 pairs differ only in light, framing, dust or glare.
 - **Real-photo set**: 55 pairs built on 11 real photographs from Wikimedia Commons ([credits and licenses](eval/real/CREDITS.md)). 22 pairs contain 22 changes, which an image model drew into the photograph; outside the edited box the photo is the original, apart from a light or framing shift made in code. 33 pairs differ only in light, a 3° turn, or dust and glare.
 
 | Set | Setup | Real changes proposed as a charge | Right price-list entry | Unchanged pairs charged | Unchanged pairs with any finding (charged or noted) | Worst p95 latency |
@@ -275,6 +275,7 @@ Known limits of this build:
   - [`e2e/rental-flow.spec.ts`](e2e/rental-flow.spec.ts): one rental from booking to settlement. The renter's page must update without a reload at each step, and the test ends on $35.00 kept, $265.00 released and an intact audit chain.
   - [`e2e/dispute-desk.spec.ts`](e2e/dispute-desk.spec.ts): the renter disputes the settled charge; the counter prepares the PDF, sends it with both photos, is asked for evidence again, sends again, and the case is decided for the shop.
   - [`e2e/agent-booking.spec.ts`](e2e/agent-booking.spec.ts): an assistant books over MCP and no reply leads to the renter's page. The phone leaves the PayPal stand-in once, reads the mandate on the cancel page, approves, and lands booked on its own page, whose token the status tool refuses.
+  - [`e2e/city-bike.spec.ts`](e2e/city-bike.spec.ts): the story from the bike shop interview. A city bike comes back without its phone holder and rear light; the renter accepts the $12.00 phone holder and questions the rear light, the counter waives it and settles: $12.00 kept, $138.00 released.
   - [`e2e/schedule.spec.ts`](e2e/schedule.spec.ts): a damaged return puts a projector in repair, the agent suggests two fixes and one click moves a booking; a typed command is applied only after Confirm; a drag onto a busy unit is refused; a busy item's booking form starts on its first free dates.
 - **CI** runs route type generation, lint, typecheck and the unit tests, and the end-to-end tests in a second job, on every push and pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Both run in demo mode with no secrets.
 - **PayPal sandbox.** `npm run smoke:sandbox` runs the real gateway against the sandbox: partial capture, a repeated request id returning the first capture, refund, void, and the reauthorization error. `scripts/sandbox-walkthrough.ts` drives the running app in a browser with the JS SDK v6 button and a sandbox buyer approving in PayPal's popup. One full run, from [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md), took about 33 seconds:
@@ -330,7 +331,7 @@ lib/
   workflows/               whether a job runs on Render Workflows or in the web process
   seed/                    the demo counter seed (npm run seed:demo)
   db/                      PGlite or Postgres client and the schema
-  catalog.ts               the demo shop's eight items, kits, deposits and repair prices
+  catalog.ts               the demo shop's nine items, kits, deposits and repair prices
   money.ts                 integer cents and PayPal amount strings
   photos.ts                photo storage and quality checks
 workflows/                 Render Workflows entry point and the inspect-return and renew-holds tasks
