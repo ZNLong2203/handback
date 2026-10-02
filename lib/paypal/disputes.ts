@@ -89,13 +89,18 @@ export class PayPalDisputeApi implements DisputeApi {
     if (this.mode !== "sandbox") throw new Error(`${action} exists only in the PayPal sandbox`);
   }
 
-  /** The path of an action's HATEOAS link, refusing missing links and foreign hosts. */
+  /**
+   * The path of an action's HATEOAS link, refusing missing links and foreign
+   * hosts. Webhook payloads write links on the older api.sandbox.paypal.com
+   * host; that is the same API, so the path is sent to the configured base.
+   */
   private path(d: Dispute, action: string): string {
     const link = actionLink(d, action);
     if (!link) throw new DisputeActionUnavailable(action, d.status, d.dispute_life_cycle_stage);
     const base = new URL(paypalConfig().apiBase);
     const url = new URL(link.href, base);
-    if (url.origin !== base.origin) throw new Error(`refusing to follow the ${action} link to ${url.origin}`);
+    const sameApi = [base.host, base.host.replace(/^api-m\./, "api.")];
+    if (url.protocol !== "https:" || !sameApi.includes(url.host)) throw new Error(`refusing to follow the ${action} link to ${url.origin}`);
     return `${url.pathname}${url.search}`;
   }
 }

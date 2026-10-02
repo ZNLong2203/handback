@@ -146,7 +146,16 @@ describe("PayPalDisputeApi", () => {
     await expect(new PayPalDisputeApi("live").adjudicate(underReview, "SELLER_FAVOR", "x")).rejects.toThrow(/only in the PayPal sandbox/);
     const forged = { ...inquiry, links: [{ href: "https://evil.example/v1/customer/disputes/X/escalate", rel: "escalate", method: "POST" }] };
     await expect(new PayPalDisputeApi("sandbox").escalate(forged, "n", "x")).rejects.toThrow(/refusing/);
+    const live = { ...inquiry, links: [{ href: "https://api.paypal.com/v1/customer/disputes/X/escalate", rel: "escalate", method: "POST" }] };
+    await expect(new PayPalDisputeApi("sandbox").escalate(live, "n", "x")).rejects.toThrow(/refusing/);
     expect(calls).toHaveLength(0);
+  });
+
+  it("follows a link on the api.sandbox host that webhook payloads use, to the configured base", async () => {
+    const calls = mockPayPal();
+    const fromWebhook = { ...inquiry, links: [{ href: "https://api.sandbox.paypal.com/v1/customer/disputes/PP-R-AYP-10135034/escalate", rel: "escalate", method: "POST" }] };
+    await new PayPalDisputeApi("sandbox").escalate(fromWebhook, "n", "x");
+    expect(calls.map((c) => c.url)).toEqual([`${API}/escalate`]);
   });
 
   it("sends documented JSON bodies for accept-claim, make-offer, require-evidence and adjudicate", async () => {
