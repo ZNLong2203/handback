@@ -146,8 +146,9 @@ create index if not exists evidence_packs_rental on evidence_packs (rental_id, c
 create index if not exists evidence_packs_facts on evidence_packs (facts_sha);
 
 -- One row per dispute action and PayPal request round. The Disputes API
--- does not deduplicate on PayPal-Request-Id (a repeated id filed the same
--- evidence twice in the sandbox), so a double tap is stopped here instead.
+-- does not deduplicate on PayPal-Request-Id: in the sandbox a repeated id
+-- was run again against the new state and refused with a 422, not answered
+-- with the first reply. So a double tap is stopped here instead.
 create table if not exists dispute_actions (
   dispute_id text not null,
   action text not null,
