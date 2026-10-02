@@ -44,7 +44,7 @@ sequenceDiagram
 
 ## Connecting a client
 
-The endpoint is `https://<your deployment>/api/mcp`, or `http://localhost:3000/api/mcp` when running locally (`npm run dev`). It speaks Streamable HTTP in stateless mode: every POST is answered with plain JSON, there are no sessions, and `GET` and `DELETE` return 405. There is no authentication, the same as the public booking form, because all a caller can create is an unpaid draft.
+The endpoint is `https://<your deployment>/api/mcp`, or `http://localhost:3000/api/mcp` when running locally (`npm run dev`). It speaks Streamable HTTP in stateless mode: requests are answered with plain JSON rather than an event stream, there are no sessions, and `GET` and `DELETE` return 405. There is no authentication, the same as the public booking form, because all a caller can create is an unpaid draft.
 
 **Claude Code**
 
@@ -172,7 +172,7 @@ An assistant's booking is approved on PayPal's site rather than with the JS SDK 
 - on approval: `/r/<token>?token=<order id>&PayerID=<payer id>&ba_token=<billing agreement token>`;
 - on cancel: `/r/<token>?paypal=cancelled&token=<order id>`.
 
-When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor, so a prefetch can never trigger a capture. A cancel shows the renter that nothing was charged, with the PayPal button again. If PayPal refuses the capture, the renter sees the reason and the rental stays unpaid; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval.
+When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor rather than a Next.js `Link`, so the framework never prefetches it and triggers a capture. A cancel shows the renter that nothing was charged, with the PayPal button again. If PayPal refuses the capture, the renter sees the reason and the rental stays unpaid; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval. That page does not refresh itself, so the capture is tried again only when the renter reloads it.
 
 PayPal expects the payer to be sent to the approval link within 6 hours of creating the order (the default in the Orders v2 schema), so assistants should book when the person is ready to approve.
 
