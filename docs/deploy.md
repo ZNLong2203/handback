@@ -57,9 +57,11 @@ flowchart LR
    | `handback` | `RENDER_API_KEY` | Your Render API key, or empty to keep jobs in the web process |
    | `handback-workflows` | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `GEMINI_API_KEY` | **The same values** as the web service: the tasks call PayPal and Gemini and must run in the same mode |
 
+   If the form does not show the workflow's fields, add them under `handback-workflows`, **Environment**, after the Blueprint is created.
+
    Render fills in the rest: `DATABASE_URL` (internal connection string), a random `CRON_SECRET`, `RENDER_WORKFLOW_SLUG` (from the workflow service), the cron job's `HANDBACK_HOSTPORT` and `CRON_SECRET` (from the web service), `PAYPAL_ENVIRONMENT=sandbox` and `NODE_VERSION=22`.
 3. Apply. The web service builds with `npm ci && npm run build` and starts with `npm run start`; it goes live once `GET /api/health` answers 200, which needs the database. The workflow service builds with `npm ci`, then runs `npm run workflows` to register its tasks: its **Tasks** page should list `inspect-return` and `renew-holds`. After the web service's first successful deploy, Render runs `npm run seed:demo` once (`initialDeployHook`).
-4. If your workspace does not offer workflows in Blueprints, create the workflow by hand: **New**, **Workflow**, this repository, language Node, region Oregon, build command `npm ci`, start command `npm run workflows`, with `DATABASE_URL` (the database's internal URL) and the PayPal and Gemini values from step 2. Then set `RENDER_WORKFLOW_SLUG` on `handback` to the workflow's slug, shown on each task's page as `<slug>/<task>`.
+4. If your workspace cannot create a workflow from a Blueprint, delete the `handback-workflows` service and the `RENDER_WORKFLOW_SLUG` entry from `render.yaml` before applying it. Then create the workflow by hand: **New**, **Workflow**, this repository, language Node, region Oregon, build command `npm ci`, start command `npm run workflows`, with `DATABASE_URL` (the database's internal URL), `NODE_VERSION=22` and the PayPal and Gemini values from step 2. Finally set `RENDER_WORKFLOW_SLUG` on `handback` to the workflow's slug, shown on each task's page as `<slug>/<task>`.
 
 Before changing `render.yaml`, check it with `render blueprints validate` (Render CLI, after `render login`). The file in this repository passes Render's published schema (`https://render.com/schema/render.yaml.json`).
 
