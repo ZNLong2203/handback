@@ -20,7 +20,7 @@ const model = await import("@/lib/paypal/dispute-model");
 (globalThis as { disputeApi?: unknown }).disputeApi = new PayPalDisputeApi("sandbox");
 
 const { getDb } = await import("@/lib/db/client");
-const { addDaysIso, todayIso } = await import("@/lib/dates");
+const { spacedDates } = await import("@/test/dates");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
 const desk = await import("./service");
@@ -105,7 +105,7 @@ beforeAll(async () => {
 afterAll(() => vi.unstubAllGlobals());
 
 async function settledRental() {
-  const { rentalId, orderId } = await svc.startBooking({ itemId: "camera-kit", name: "Maya Chen", email: "maya@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 3) });
+  const { rentalId, orderId } = await svc.startBooking({ itemId: "camera-kit", name: "Maya Chen", email: "maya@example.com", ...spacedDates() });
   const { token } = await svc.confirmBooking(orderId);
   await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
   await svc.holdDeposit(rentalId);

@@ -15,7 +15,7 @@ const demoApi = new DemoDisputeApi();
 (globalThis as { disputeApi?: unknown }).disputeApi = demoApi;
 
 const { getDb } = await import("@/lib/db/client");
-const { addDaysIso, todayIso } = await import("@/lib/dates");
+const { spacedDates } = await import("@/test/dates");
 const { firstBrokenLink } = await import("@/lib/rentals/audit");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
@@ -30,8 +30,7 @@ async function settledRental(answer: "accept" | "contest" = "accept") {
     itemId: "camera-kit",
     name: "Maya Chen",
     email: "maya@example.com",
-    startDate: todayIso(),
-    endDate: addDaysIso(todayIso(), 3),
+    ...spacedDates(),
   });
   const { token } = await svc.confirmBooking(orderId);
   await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
@@ -221,7 +220,7 @@ describe("dispute webhooks", () => {
   });
 
   it("does not change where a running rental is when its fee is disputed", async () => {
-    const { rentalId, orderId } = await svc.startBooking({ itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) });
+    const { rentalId, orderId } = await svc.startBooking({ itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", ...spacedDates(2) });
     await svc.confirmBooking(orderId);
     const fee = (await rental(rentalId)).feeCaptureId!;
     expect(await applyPayPalWebhook({ id: `WH-${rentalId}-fee`, event_type: "CUSTOMER.DISPUTE.CREATED", resource: resource(`PP-R-FEE-${rentalId}`, fee, {}) })).toBe("applied");

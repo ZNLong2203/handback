@@ -66,7 +66,7 @@ describe("the unit to hand over", () => {
       event_type: "CUSTOMER.DISPUTE.CREATED",
       resource: { dispute_id: "PP-D-HANDOVER", disputed_transactions: [{ seller_transaction_id: (await rental(ann)).feeCaptureId! }] },
     });
-    expect((await rental(ann)).status).toBe("disputed");
+    expect(await rental(ann)).toMatchObject({ status: "out", disputeId: "PP-D-HANDOVER" });
     expect((await handover(cat))?.warning).toMatch(/^Projector A is still out with Ann Out/);
   });
 });

@@ -13,7 +13,8 @@ delete process.env.PAYPAL_CLIENT_ID;
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
 const { getDb } = await import("@/lib/db/client");
-const { addDaysIso, todayIso } = await import("@/lib/dates");
+const { todayIso } = await import("@/lib/dates");
+const { spacedDates } = await import("@/test/dates");
 const { canonicalJson } = await import("@/lib/rentals/audit");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
@@ -52,7 +53,7 @@ async function refusal(client: Client, name: string, args: Record<string, unknow
 }
 
 const sam = { name: "Sam Rivera", email: "sam@example.com" };
-const weekend = () => ({ startDate: addDaysIso(todayIso(), 1), endDate: addDaysIso(todayIso(), 3) });
+const weekend = () => spacedDates(2, 1);
 
 let client: Client;
 beforeAll(async () => {

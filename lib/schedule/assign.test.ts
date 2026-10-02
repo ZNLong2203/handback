@@ -105,7 +105,8 @@ describe("units at booking time", () => {
         resource: { dispute_id: "PP-D-ANN", reason: "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", disputed_transactions: [{ seller_transaction_id: feeCaptureId }] },
       }),
     ).toBe("applied");
-    expect(await rental(ann.rentalId)).toMatchObject({ status: "disputed", unitId: "projector-a" });
+    // The dispute desk records the case but leaves a rental that is still out as out.
+    expect(await rental(ann.rentalId)).toMatchObject({ status: "out", disputeId: "PP-D-ANN", unitId: "projector-a" });
 
     // The projector is still out, so the third booking is still refused, and the schedule says where it is.
     await expect(book("projector", "Cat Third", 20, 22)).rejects.toThrow(/Every Portable projector is booked/);
@@ -113,6 +114,6 @@ describe("units at booking time", () => {
     expect((await schedule.rentalsWithCustomer(await getDb(), ["projector-a"])).map((r) => r.id)).toEqual([ann.rentalId]);
     const view = await (await import("./view")).loadScheduleView();
     expect(view.resources.find((u) => u.id === "projector-a")).toMatchObject({ status: "out" });
-    expect(view.events.find((e) => e.id === ann.rentalId)).toMatchObject({ money: "disputed", conflict: null });
+    expect(view.events.find((e) => e.id === ann.rentalId)).toMatchObject({ money: "held", conflict: null });
   });
 });

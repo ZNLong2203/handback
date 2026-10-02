@@ -9,7 +9,7 @@ delete process.env.PAYPAL_CLIENT_ID;
 
 const { catalogItem } = await import("@/lib/catalog");
 const { getDb } = await import("@/lib/db/client");
-const { addDaysIso, todayIso } = await import("@/lib/dates");
+const { spacedDates } = await import("@/test/dates");
 const { canonicalJson, firstBrokenLink } = await import("./audit");
 const { openMandate, sealMandate } = await import("./mandate");
 type DepositMandate = import("./mandate").DepositMandate;
@@ -19,18 +19,14 @@ const repo = await import("./repo");
 const svc = await import("./service");
 const { applyPayPalWebhook } = await import("./webhooks");
 
-// The shop has two or three units of each item, so every booking here gets
-// its own dates instead of all asking for the same camera kit at once.
-let nextWeek = 0;
-
 async function bookedRental(itemId = "camera-kit") {
-  const startDate = addDaysIso(todayIso(), 4 * nextWeek++);
+  const { startDate, endDate } = spacedDates();
   const { rentalId, orderId } = await svc.startBooking({
     itemId,
     name: "Maya Chen",
     email: "maya@example.com",
     startDate,
-    endDate: addDaysIso(startDate, 3),
+    endDate,
   });
   const { token } = await svc.confirmBooking(orderId);
   return { rentalId, orderId, token };
@@ -205,7 +201,7 @@ describe("deposit mandate", () => {
 
   it("names the assistant when one books for the renter, and keeps the approval link", async () => {
     const booking = await svc.startBooking(
-      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) },
+      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", ...spacedDates(2) },
       { party: "assistant", assistant: "Claude" },
     );
     expect(booking.mandate.issuedTo).toEqual({ party: "assistant", assistant: "Claude", actingFor: "Sam Rivera <sam@example.com>" });
@@ -291,7 +287,7 @@ describe("deposit mandate", () => {
     await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
     // The renter turns up a month late: the mandate ended 29 days after the booked pickup.
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(Date.now() + 30 * 86_400_000);
+    vi.setSystemTime(Date.parse((await rental(rentalId)).startDate) + 30 * 86_400_000);
     try {
       await expect(svc.holdDeposit(rentalId)).rejects.toThrow(/mandate ended/);
     } finally {
@@ -304,7 +300,7 @@ describe("deposit mandate", () => {
 describe("approving by redirect", () => {
   async function draft() {
     return svc.startBooking(
-      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", startDate: todayIso(), endDate: addDaysIso(todayIso(), 2) },
+      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", ...spacedDates(2) },
       { party: "assistant", assistant: null },
     );
   }
