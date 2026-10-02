@@ -11,6 +11,7 @@ const { addDaysIso, todayIso } = await import("@/lib/dates");
 const { firstBrokenLink } = await import("./audit");
 const repo = await import("./repo");
 const svc = await import("./service");
+const { applyPayPalWebhook } = await import("./webhooks");
 
 async function bookedRental(itemId = "camera-kit") {
   const { rentalId, orderId } = await svc.startBooking({
@@ -106,5 +107,31 @@ describe("rental flow (demo mode)", () => {
     expect(firstBrokenLink(events)).toBeNull();
     const tampered = events.map((e, i) => (i === 1 ? { ...e, data: { ...e.data, feeCents: 1 } } : e));
     expect(firstBrokenLink(tampered)).toBe(events[1].seq);
+  });
+
+  it("applies verified webhooks once, and a dispute marks the rental", async () => {
+    const { rentalId, token } = await outRental();
+    await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__missing-hood" });
+    await svc.inspect(rentalId);
+    const [charge] = (await assessment(rentalId)).findings.filter((f) => f.staff === "keep");
+    await svc.sendToCustomer(rentalId);
+    await svc.respondAsCustomer(token, [{ findingId: charge.id, answer: "accept" }]);
+    await svc.settle(rentalId);
+    const captureId = (await rental(rentalId)).settlementCaptureId!;
+
+    const completed = { id: `WH-${rentalId}-1`, event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { id: captureId, status: "COMPLETED" } };
+    expect(await applyPayPalWebhook(completed)).toBe("applied");
+    expect(await applyPayPalWebhook(completed)).toBe("duplicate");
+    expect(await applyPayPalWebhook({ id: "WH-unknown", event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { id: "NOPE" } })).toBe("ignored");
+
+    const dispute = {
+      id: `WH-${rentalId}-2`,
+      event_type: "CUSTOMER.DISPUTE.CREATED",
+      resource: { dispute_id: "PP-D-1", reason: "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", disputed_transactions: [{ seller_transaction_id: captureId }] },
+    };
+    expect(await applyPayPalWebhook(dispute)).toBe("applied");
+    expect(await rental(rentalId)).toMatchObject({ status: "disputed", disputeId: "PP-D-1" });
+    const types = (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["webhook.received", "dispute.opened"]);
   });
 });
