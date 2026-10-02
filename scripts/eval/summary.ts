@@ -284,7 +284,7 @@ There are two labeled sets of check-out / check-in photo pairs. Both are scored 
 
 ### Synthetic set (\`pairs.json\`, \`images/\`)
 
-${synthetic.pairs} pairs of the demo shop's eight rental items (\`lib/catalog.ts\`): ${synthetic.changed} changed pairs with ${synthetic.changes} changes in total, and ${synthetic.unchanged} unchanged pairs.
+${synthetic.pairs} pairs of eight of the demo shop's nine rental items (\`lib/catalog.ts\`): ${synthetic.changed} changed pairs with ${synthetic.changes} changes in total, and ${synthetic.unchanged} unchanged pairs.
 
 - **Changed pairs.** A Gemini image model removed an accessory or added damage to the check-out photo (a missing lens hood, a torn grip, a snapped propeller, a cracked projector lens, a bent mudguard with mud, and so on). Code then shifted the light or the framing so the two photos look like two separate visits to the counter. Every edited pair was reviewed by eye and its labels corrected where the edit changed something else.
 - **Unchanged pairs (hard negatives).** The same check-out photo with only a lighting change (a warm tint that also drains colour, which matters little on these mostly grey scenes), a 4–5° rotation and crop, or dust specks and a glare spot added in code. Nothing about the item changed, so any proposed charge is a false charge.
@@ -301,6 +301,10 @@ ${real.pairs} pairs built on ${real.scenes} real photographs from Wikimedia Comm
 - **Unchanged pairs.** A warmer, dimmer light that keeps the photo's colours, a 3° turn with the smallest crop that hides the corners, or dust specks and a glare spot, all in code.
 
 What this set does not show: the damage itself is still drawn by an image model, sometimes over a large part of the frame and with a visible box edge, and the second photo is the first one shifted in code, not a second photo taken minutes later with a phone. Most base photos are well-lit product shots rather than counter photos taken by staff. A set of real before / after photos of real damage is still missing.
+
+### Demo samples (\`samples/\`), not scored here
+
+The city bike, the ninth rental item, has AI-generated sample photos for the demo in their own folder, so adding them changed none of the numbers below. Each return photo was built the way the real-photo set is: every change is its own image-model edit, lined up with the pickup photo and pasted back only inside its box (\`scripts/eval/sample-photos.ts\`). Demo mode replays one two-look run of them (\`samples/runs/\`, report in \`samples/\`).
 
 ## Scoring
 
