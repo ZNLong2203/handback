@@ -14,6 +14,7 @@ import { Badge, Card, Eyebrow, Notice, cx } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
 import { samplesFor } from "@/lib/samples";
+import { renewalDueAt } from "@/lib/rentals/jobs";
 import { awaitingResolution } from "@/lib/rentals/settlement";
 import { STATUS, STEPS, stepIndex } from "@/lib/rentals/status";
 import { loadRentalView, type RentalView } from "@/lib/rentals/view";
@@ -296,6 +297,17 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                     <dt className="text-muted">Hold expires</dt>
                     <dd>{shortDate(rental.authorizationExpiresAt)}</dd>
                   </div>
+                )}
+                {rental.parentAuthorizationId ? (
+                  <p className="pt-1 text-xs text-released">Hold renewed for a fresh 3-day honor period (was {rental.parentAuthorizationId}).</p>
+                ) : (
+                  rental.authorizedAt &&
+                  ["out", "inspecting", "customer_review", "responded"].includes(rental.status) && (
+                    <p className="pt-1 text-xs text-muted">
+                      Renews automatically on {shortDate(renewalDueAt(new Date(rental.authorizedAt), rental.endDate).toISOString())}, the day before it is
+                      due back, so PayPal&apos;s honor period covers the return.
+                    </p>
+                  )
                 )}
                 <div className="break-all font-mono text-[11px] text-muted">authorization {rental.authorizationId}</div>
               </dl>
