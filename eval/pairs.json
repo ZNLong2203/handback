@@ -1,0 +1,633 @@
+{
+  "imageModel": "gemini-3-pro-image",
+  "pairs": [
+    {
+      "id": "action-cam-kit__missing-housing",
+      "scene": "action-cam-kit",
+      "item": "action-cam-kit",
+      "incidental": [
+        "thumb screw",
+        "thumbscrew",
+        "screw"
+      ],
+      "before": "images/action-cam-kit/before.jpg",
+      "after": "images/action-cam-kit/after__missing-housing.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "waterproof housing",
+            "detail": "housing removed",
+            "match": [
+              "housing",
+              "case"
+            ],
+            "price": "missing-housing"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "action-cam-kit__same-dust-glare",
+      "scene": "action-cam-kit",
+      "item": "action-cam-kit",
+      "incidental": [],
+      "before": "images/action-cam-kit/before.jpg",
+      "after": "images/action-cam-kit/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "action-cam-kit__same-light",
+      "scene": "action-cam-kit",
+      "item": "action-cam-kit",
+      "incidental": [],
+      "before": "images/action-cam-kit/before.jpg",
+      "after": "images/action-cam-kit/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "action-cam-kit__same-pose",
+      "scene": "action-cam-kit",
+      "item": "action-cam-kit",
+      "incidental": [],
+      "before": "images/action-cam-kit/before.jpg",
+      "after": "images/action-cam-kit/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "camera-body__grip-scuff",
+      "scene": "camera-body",
+      "item": "camera-body",
+      "incidental": [],
+      "before": "images/camera-body/before.jpg",
+      "after": "images/camera-body/after__grip-scuff.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "handgrip rubber",
+            "detail": "torn, peeling rubber",
+            "match": [
+              "grip",
+              "rubber"
+            ],
+            "price": "grip-rubber"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: pose"
+    },
+    {
+      "id": "camera-body__same-dust-glare",
+      "scene": "camera-body",
+      "item": "camera-body",
+      "incidental": [],
+      "before": "images/camera-body/before.jpg",
+      "after": "images/camera-body/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "camera-body__same-light",
+      "scene": "camera-body",
+      "item": "camera-body",
+      "incidental": [],
+      "before": "images/camera-body/before.jpg",
+      "after": "images/camera-body/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "camera-body__same-pose",
+      "scene": "camera-body",
+      "item": "camera-body",
+      "incidental": [],
+      "before": "images/camera-body/before.jpg",
+      "after": "images/camera-body/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "camera-body__top-scratch",
+      "scene": "camera-body",
+      "item": "camera-body",
+      "incidental": [],
+      "before": "images/camera-body/before.jpg",
+      "after": "images/camera-body/after__top-scratch.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "camera top plate",
+            "detail": "long scratch to bare metal",
+            "match": [
+              "top",
+              "hot shoe",
+              "plate",
+              "viewfinder",
+              "prism"
+            ],
+            "price": "top-plate"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "camera-kit__missing-battery-charger",
+      "scene": "camera-kit",
+      "item": "camera-kit",
+      "incidental": [],
+      "before": "images/camera-kit/before.jpg",
+      "after": "images/camera-kit/after__missing-battery-charger.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "battery",
+            "detail": "battery removed",
+            "match": [
+              "battery"
+            ],
+            "price": "missing-battery"
+          },
+          {
+            "kind": "missing",
+            "item": "charger",
+            "detail": "charger and cable removed",
+            "match": [
+              "charger"
+            ],
+            "price": "missing-charger"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: pose"
+    },
+    {
+      "id": "camera-kit__missing-hood",
+      "scene": "camera-kit",
+      "item": "camera-kit",
+      "incidental": [],
+      "before": "images/camera-kit/before.jpg",
+      "after": "images/camera-kit/after__missing-hood.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "lens hood",
+            "detail": "hood removed",
+            "match": [
+              "hood"
+            ],
+            "price": "missing-hood"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "camera-kit__same-dust-glare",
+      "scene": "camera-kit",
+      "item": "camera-kit",
+      "incidental": [],
+      "before": "images/camera-kit/before.jpg",
+      "after": "images/camera-kit/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "camera-kit__same-light",
+      "scene": "camera-kit",
+      "item": "camera-kit",
+      "incidental": [],
+      "before": "images/camera-kit/before.jpg",
+      "after": "images/camera-kit/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "camera-kit__same-pose",
+      "scene": "camera-kit",
+      "item": "camera-kit",
+      "incidental": [],
+      "before": "images/camera-kit/before.jpg",
+      "after": "images/camera-kit/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "drone-kit__broken-propeller",
+      "scene": "drone-kit",
+      "item": "drone-kit",
+      "incidental": [],
+      "before": "images/drone-kit/before.jpg",
+      "after": "images/drone-kit/after__broken-propeller.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "drone propeller",
+            "detail": "propeller tip snapped off",
+            "match": [
+              "propeller",
+              "prop"
+            ],
+            "price": "propeller-damage"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "drone-kit__missing-battery",
+      "scene": "drone-kit",
+      "item": "drone-kit",
+      "incidental": [],
+      "before": "images/drone-kit/before.jpg",
+      "after": "images/drone-kit/after__missing-battery.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "flight battery",
+            "detail": "one of two batteries removed",
+            "match": [
+              "battery"
+            ],
+            "price": "missing-battery"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: pose"
+    },
+    {
+      "id": "drone-kit__same-dust-glare",
+      "scene": "drone-kit",
+      "item": "drone-kit",
+      "incidental": [],
+      "before": "images/drone-kit/before.jpg",
+      "after": "images/drone-kit/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "drone-kit__same-light",
+      "scene": "drone-kit",
+      "item": "drone-kit",
+      "incidental": [],
+      "before": "images/drone-kit/before.jpg",
+      "after": "images/drone-kit/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "drone-kit__same-pose",
+      "scene": "drone-kit",
+      "item": "drone-kit",
+      "incidental": [],
+      "before": "images/drone-kit/before.jpg",
+      "after": "images/drone-kit/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "ebike-rear__bent-fender-mud",
+      "scene": "ebike-rear",
+      "item": "ebike",
+      "incidental": [
+        "rear light",
+        "reflector",
+        "tail light"
+      ],
+      "before": "images/ebike-rear/before.jpg",
+      "after": "images/ebike-rear/after__bent-fender-mud.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "rear mudguard",
+            "detail": "bent and cracked",
+            "match": [
+              "mudguard",
+              "fender"
+            ],
+            "price": "mudguard"
+          },
+          {
+            "kind": "dirt",
+            "item": "rear rack",
+            "detail": "dried mud",
+            "match": [
+              "mud",
+              "dirt",
+              "rack"
+            ],
+            "price": "heavy-cleaning"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "ebike-rear__same-dust-glare",
+      "scene": "ebike-rear",
+      "item": "ebike",
+      "incidental": [],
+      "before": "images/ebike-rear/before.jpg",
+      "after": "images/ebike-rear/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "ebike-rear__same-light",
+      "scene": "ebike-rear",
+      "item": "ebike",
+      "incidental": [],
+      "before": "images/ebike-rear/before.jpg",
+      "after": "images/ebike-rear/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "ebike-rear__same-pose",
+      "scene": "ebike-rear",
+      "item": "ebike",
+      "incidental": [],
+      "before": "images/ebike-rear/before.jpg",
+      "after": "images/ebike-rear/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "pa-speaker__grille-dent",
+      "scene": "pa-speaker",
+      "item": "pa-speaker",
+      "incidental": [],
+      "before": "images/pa-speaker/before.jpg",
+      "after": "images/pa-speaker/after__grille-dent.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "speaker grille",
+            "detail": "dented mesh grille",
+            "match": [
+              "grille",
+              "mesh"
+            ],
+            "price": "grille"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: pose"
+    },
+    {
+      "id": "pa-speaker__same-dust-glare",
+      "scene": "pa-speaker",
+      "item": "pa-speaker",
+      "incidental": [],
+      "before": "images/pa-speaker/before.jpg",
+      "after": "images/pa-speaker/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "pa-speaker__same-light",
+      "scene": "pa-speaker",
+      "item": "pa-speaker",
+      "incidental": [],
+      "before": "images/pa-speaker/before.jpg",
+      "after": "images/pa-speaker/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "pa-speaker__same-pose",
+      "scene": "pa-speaker",
+      "item": "pa-speaker",
+      "incidental": [],
+      "before": "images/pa-speaker/before.jpg",
+      "after": "images/pa-speaker/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "projector__cracked-lens",
+      "scene": "projector",
+      "item": "projector",
+      "incidental": [],
+      "before": "images/projector/before.jpg",
+      "after": "images/projector/after__cracked-lens.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "projector lens",
+            "detail": "cracked lens glass",
+            "match": [
+              "lens"
+            ],
+            "price": "lens-crack"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: pose"
+    },
+    {
+      "id": "projector__missing-remote",
+      "scene": "projector",
+      "item": "projector",
+      "incidental": [],
+      "before": "images/projector/before.jpg",
+      "after": "images/projector/after__missing-remote.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "missing",
+            "item": "remote control",
+            "detail": "remote removed",
+            "match": [
+              "remote"
+            ],
+            "price": "missing-remote"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "projector__same-dust-glare",
+      "scene": "projector",
+      "item": "projector",
+      "incidental": [],
+      "before": "images/projector/before.jpg",
+      "after": "images/projector/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "projector__same-light",
+      "scene": "projector",
+      "item": "projector",
+      "incidental": [],
+      "before": "images/projector/before.jpg",
+      "after": "images/projector/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "projector__same-pose",
+      "scene": "projector",
+      "item": "projector",
+      "incidental": [],
+      "before": "images/projector/before.jpg",
+      "after": "images/projector/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    },
+    {
+      "id": "tele-lens__dent",
+      "scene": "tele-lens",
+      "item": "tele-lens",
+      "incidental": [],
+      "before": "images/tele-lens/before.jpg",
+      "after": "images/tele-lens/after__dent.jpg",
+      "truth": {
+        "changed": true,
+        "changes": [
+          {
+            "kind": "damage",
+            "item": "lens barrel",
+            "detail": "dent with chipped paint",
+            "match": [
+              "barrel",
+              "dent",
+              "chip",
+              "zoom ring"
+            ],
+            "price": "barrel-dent"
+          }
+        ]
+      },
+      "source": "gemini-3-pro-image edit + code: light"
+    },
+    {
+      "id": "tele-lens__same-dust-glare",
+      "scene": "tele-lens",
+      "item": "tele-lens",
+      "incidental": [],
+      "before": "images/tele-lens/before.jpg",
+      "after": "images/tele-lens/after__same-dust-glare.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: dust-glare"
+    },
+    {
+      "id": "tele-lens__same-light",
+      "scene": "tele-lens",
+      "item": "tele-lens",
+      "incidental": [],
+      "before": "images/tele-lens/before.jpg",
+      "after": "images/tele-lens/after__same-light.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: light"
+    },
+    {
+      "id": "tele-lens__same-pose",
+      "scene": "tele-lens",
+      "item": "tele-lens",
+      "incidental": [],
+      "before": "images/tele-lens/before.jpg",
+      "after": "images/tele-lens/after__same-pose.jpg",
+      "truth": {
+        "changed": false,
+        "changes": []
+      },
+      "source": "code: pose"
+    }
+  ]
+}
