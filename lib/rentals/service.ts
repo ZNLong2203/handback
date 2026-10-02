@@ -12,6 +12,8 @@ import { publish } from "@/lib/live";
 import { formatUsd } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
 import { loadPhoto, storePhoto } from "@/lib/photos";
+import { afterSettlement } from "@/lib/schedule/agent";
+import { assignUnitForBooking, confirmUnitBeforePayment } from "@/lib/schedule/assign";
 import { appUrl, SHOP } from "@/lib/shop";
 import { appendEvent } from "./audit";
 import { inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
@@ -103,6 +105,7 @@ export async function startBooking(raw: z.input<typeof BookingInput>): Promise<{
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')`,
     [id, token, item.id, input.name, input.email, input.startDate, input.endDate, days, feeCents, item.depositCents],
   );
+  await assignUnitForBooking(id);
   const order = await paypalStep(id, "create the booking order", () =>
     depositGateway().createBookingOrder(
       {
@@ -132,6 +135,7 @@ export async function confirmBooking(orderId: string): Promise<{ token: string }
   if (!rental) throw new UserError("We couldn't find this booking.");
   if (rental.status !== "draft") return { token: rental.token };
 
+  await confirmUnitBeforePayment(rental.id);
   const paid = await paypalStep(rental.id, "capture the rental fee", () =>
     depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`),
   );
@@ -448,4 +452,5 @@ export async function settle(rentalId: string): Promise<void> {
     });
   });
   publish(rentalId, "deposit.settled");
+  await afterSettlement(rentalId);
 }

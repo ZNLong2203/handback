@@ -15,7 +15,7 @@ function mapRow<T>(row: Row): T {
   return out as T;
 }
 
-function toRental(row: Row): Rental {
+export function toRental(row: Row): Rental {
   const r = mapRow<Rental>(row);
   return { ...r, startDate: day(row.start_date), endDate: day(row.end_date) };
 }

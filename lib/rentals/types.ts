@@ -44,6 +44,8 @@ export type Rental = {
   disputeId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** The physical unit promised to this customer (see lib/schedule). */
+  unitId?: string | null;
 };
 
 export type Phase = "checkout" | "checkin";
