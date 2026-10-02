@@ -14,6 +14,7 @@
     "test": "vitest run",
     "smoke:sandbox": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/sandbox-smoke.ts",
     "seed:aged-holds": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-aged-holds.ts",
+    "agent:book": "tsx --env-file-if-exists=.env.local scripts/agent-books.ts",
     "eval:pairs": "tsx --env-file-if-exists=.env.local scripts/eval/make-pairs.ts",
     "eval": "tsx --env-file-if-exists=.env.local scripts/eval/run-eval.ts",
     "eval:summary": "tsx scripts/eval/summarize.ts",
@@ -36,6 +37,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22",

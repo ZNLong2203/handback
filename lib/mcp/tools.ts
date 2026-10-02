@@ -34,7 +34,13 @@ export const QuoteArgs = z.object({
 export const BookingArgs = QuoteArgs.extend({
   name: z.string().trim().min(1).max(80).describe("The renter's full name, as they gave it"),
   email: z.string().trim().email().describe("The renter's email address"),
-  assistant: z.string().trim().min(1).max(60).optional().describe("Your name as an assistant, e.g. Claude. Shown to the renter; not verified."),
+  assistant: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe("What you call yourself, so the renter knows which assistant booked for them. Leave it out rather than guess. Shown to the renter; not verified."),
 });
 
 export const StatusArgs = z.object({
