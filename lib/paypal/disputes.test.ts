@@ -85,12 +85,15 @@ describe("availableActions", () => {
 });
 
 describe("chooseEvidenceType", () => {
-  it("files under OTHER when PayPal asks for proof that needs a tracking number", () => {
+  it("files under OTHER when PayPal asks for proof a counter rental does not have", () => {
     expect(model.chooseEvidenceType(inquiry)).toBe("OTHER");
+    // What the sandbox asked for after require-evidence on a billing claim.
+    const asked = ["PROOF_OF_FULFILLMENT", "PROOF_OF_REFUND", "PROOF_OF_DELIVERY_SIGNATURE"].map((t) => ({ evidence_type: t, source: "REQUESTED_FROM_SELLER" }));
+    expect(model.chooseEvidenceType({ ...inquiry, evidences: asked })).toBe("OTHER");
   });
-  it("uses the requested type when Handback can answer it with documents", () => {
-    const d = { ...inquiry, evidences: [{ evidence_type: "PROOF_OF_RECEIPT_COPY", source: "REQUESTED_FROM_SELLER" }] };
-    expect(model.chooseEvidenceType(d)).toBe("PROOF_OF_RECEIPT_COPY");
+  it("uses the first requested type the pack really is", () => {
+    const asked = ["PROOF_OF_REFUND", "PRICE_DIFFERENCE_REASON", "PROOF_OF_DAMAGE"].map((t) => ({ evidence_type: t, source: "REQUESTED_FROM_SELLER" }));
+    expect(model.chooseEvidenceType({ ...inquiry, evidences: asked })).toBe("PRICE_DIFFERENCE_REASON");
   });
 });
 

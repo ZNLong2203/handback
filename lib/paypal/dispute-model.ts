@@ -41,7 +41,12 @@ export const DisputeSchema = z.looseObject({
   status: z.string(),
   dispute_state: z.string().optional(),
   dispute_amount: Money,
-  dispute_outcome: z.looseObject({ outcome_code: z.string().optional(), amount_refunded: Money.optional() }).optional(),
+  dispute_outcome: z.looseObject({ outcome_code: z.string().optional(), outcome_reason: z.string().optional(), amount_refunded: Money.optional() }).optional(),
+  adjudications: z.array(z.looseObject({ type: z.string().optional(), adjudication_time: z.string().optional(), reason: z.string().optional() })).optional(),
+  /** The sandbox reported the disputed amount held from and released to the seller here (party "RECEIVER"). */
+  fund_movements: z
+    .array(z.looseObject({ party: z.string().optional(), amount: Money.optional(), initiated_time: z.string().optional(), type: z.string().optional(), reason: z.string().optional() }))
+    .optional(),
   dispute_life_cycle_stage: z.string().optional(),
   dispute_channel: z.string().optional(),
   messages: z.array(z.looseObject({ posted_by: z.string().optional(), time_posted: z.string().optional(), content: z.string().optional() })).optional(),
@@ -141,17 +146,33 @@ export function requestedEvidence(d: Dispute): string[] {
   return [...new Set(types)];
 }
 
-/** PayPal expects tracking numbers or refund ids with these, which an in-store rental does not have. */
-const NEEDS_EVIDENCE_INFO = new Set(["PROOF_OF_FULFILLMENT", "PROOF_OF_REFUND", "PROOF_OF_RETURN"]);
+/**
+ * Evidence types an in-store rental record honestly is, in PayPal's words:
+ * an explanation of a price difference, documentation of damage, "in-store
+ * receipt or online verification ... that the buyer picked up the item", a
+ * receipt, purchase or order details, the merchant's response. Not here:
+ * shipping labels, tracking, delivery signatures or refund ids, which a
+ * counter rental does not have.
+ */
+const PACK_FITS = new Set([
+  "PRICE_DIFFERENCE_REASON",
+  "PROOF_OF_DAMAGE",
+  "PROOF_OF_INSTORE_RECEIPT",
+  "PROOF_OF_RECEIPT_COPY",
+  "DETAILS_OF_PURCHASE",
+  "ORDER_DETAILS",
+  "MERCHANT_RESPONSE",
+  "OTHER",
+]);
 
 /**
- * The evidence type to file the pack under: what PayPal asked for, unless
- * that type needs a tracking number or refund id; otherwise OTHER, which the
- * schema allows with notes and documents (and which PayPal's sandbox guide
- * says to use for internal disputes).
+ * The evidence type to file the pack under: the first type PayPal asked for
+ * that the pack really is, otherwise OTHER, which the schema allows with
+ * notes and documents (and which PayPal's sandbox guide uses for internal
+ * disputes).
  */
 export function chooseEvidenceType(d: Dispute): string {
-  return requestedEvidence(d).find((t) => !NEEDS_EVIDENCE_INFO.has(t)) ?? "OTHER";
+  return requestedEvidence(d).find((t) => PACK_FITS.has(t)) ?? "OTHER";
 }
 
 // ─── Evidence uploads ───────────────────────────────────────

@@ -1,8 +1,10 @@
 import "server-only";
 import { getDb } from "@/lib/db/client";
+import { recordDispute, type DisputeLike } from "@/lib/disputes/record";
+import { rentalIdForDispute } from "@/lib/disputes/repo";
 import { publish } from "@/lib/live";
 import { appendEvent } from "./audit";
-import { rentalByAuthorization, rentalById, updateRental } from "./repo";
+import { rentalByAuthorization, rentalById } from "./repo";
 import type { Rental } from "./types";
 
 export type PayPalWebhookEvent = {
@@ -31,7 +33,10 @@ async function rentalByCapture(captureId: string): Promise<Rental | null> {
 /**
  * Applies one verified PayPal webhook. Deliveries are deduplicated on the
  * event id (PayPal retries for up to three days), and every event that
- * touches a rental lands in that rental's audit trail.
+ * touches a rental lands in that rental's audit trail. Dispute events
+ * (CUSTOMER.DISPUTE.CREATED, UPDATED, RESOLVED) carry the dispute itself;
+ * they update the stored dispute and the rental, and a delivery older than
+ * what is stored changes nothing.
  */
 export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"duplicate" | "applied" | "ignored"> {
   const db = await getDb();
@@ -52,17 +57,18 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
   } else if (event.event_type.startsWith("PAYMENT.AUTHORIZATION.") && r.id) {
     rental = await rentalByAuthorization(db, r.id);
   } else if (event.event_type.startsWith("CUSTOMER.DISPUTE.")) {
+    const known = r.dispute_id ? await rentalIdForDispute(db, r.dispute_id) : null;
+    if (known) rental = await rentalById(db, known);
     const captureId = r.disputed_transactions?.[0]?.seller_transaction_id;
-    if (captureId) rental = await rentalByCapture(captureId);
+    if (!rental && captureId) rental = await rentalByCapture(captureId);
   }
   if (!rental) return "ignored";
 
+  const rentalId = rental.id;
   await db.tx(async (tx) => {
-    if (event.event_type === "CUSTOMER.DISPUTE.CREATED") {
-      await updateRental(tx, rental!.id, { status: "disputed", dispute_id: r.dispute_id ?? null });
-      await appendEvent(tx, rental!.id, "paypal", "dispute.opened", { disputeId: r.dispute_id ?? null, reason: r.reason ?? null, webhookEventId: event.id });
-    } else {
-      await appendEvent(tx, rental!.id, "paypal", "webhook.received", {
+    const recorded = event.event_type.startsWith("CUSTOMER.DISPUTE.") && r.dispute_id ? await recordDispute(tx, rentalId, r as DisputeLike, "webhook", event.id) : null;
+    if (recorded === null || recorded === "unchanged" || recorded === "stale") {
+      await appendEvent(tx, rentalId, "paypal", "webhook.received", {
         eventType: event.event_type,
         resourceId,
         status: r.status ?? null,
@@ -70,6 +76,6 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
       });
     }
   });
-  publish(rental.id, event.event_type);
+  publish(rentalId, event.event_type);
   return "applied";
 }
