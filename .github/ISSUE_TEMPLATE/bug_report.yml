@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in Handback does not work the way the docs or the page say it should.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Please leave out API keys, client secrets, webhook ids, sandbox passwords and real personal data.
+        For a security problem, follow [SECURITY.md](https://github.com/OWNER/REPO/blob/main/SECURITY.md) instead of opening an issue.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: The strip at the top of every page shows which mode the app is in.
+      options:
+        - "Demo mode (PayPal stand-in, recorded AI replies)"
+        - "PayPal sandbox"
+        - "Not sure"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - "Booking and the PayPal button (/rent)"
+        - "Counter (/shop)"
+        - "Customer page (/r/...)"
+        - "Photo comparison"
+        - "Settlement, release or hold renewal"
+        - "Webhooks"
+        - "Tests, CI or the dev container"
+        - "Docs"
+        - "Something else"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `npm run dev` with no keys set
+        2. Book the mirrorless camera kit
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and PayPal references
+      description: Server log lines, and the PayPal reference (debug_id) from the error message or the rental's audit trail, if there is one.
+      render: text
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`.
+  - type: input
+    id: environment
+    attributes:
+      label: Node version, OS and browser
+      placeholder: "Node 22.18.0, macOS 15, Chrome 141"

@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest something Handback should do, or do differently.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the open issues and the "In progress" list in the README first; it may already be underway.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Who runs into it (the shop, the renter, or a developer) and when.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should happen?
+      description: Describe the behaviour you would like. For anything that moves money, say who approves it and when.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other options you considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "Booking and the PayPal button"
+        - "Counter"
+        - "Customer page"
+        - "Photo comparison"
+        - "Settlement and deposits"
+        - "Developer experience, tests or docs"
+        - "Something else"
