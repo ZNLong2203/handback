@@ -1,4 +1,4 @@
-import { addDaysIso } from "@/lib/dates";
+import { addDaysIso, shortDate } from "@/lib/dates";
 import type { RentalStatus } from "@/lib/rentals/types";
 
 // Pure date arithmetic for the schedule. Everything here works on whole days
@@ -16,6 +16,13 @@ export function overlaps(a: Span, b: Span): boolean {
 /** Whole days from a to b; negative when b is earlier. */
 export function dayDiff(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
+}
+
+/** "Oct 7", "Oct 7–9", "Oct 30–Nov 2". */
+export function spanLabel(s: Span): string {
+  if (s.start === s.end) return shortDate(s.start);
+  if (s.start.slice(0, 7) === s.end.slice(0, 7)) return `${shortDate(s.start)}–${Number(s.end.slice(8, 10))}`;
+  return `${shortDate(s.start)}–${shortDate(s.end)}`;
 }
 
 /** The same number of days, starting on `start`. */

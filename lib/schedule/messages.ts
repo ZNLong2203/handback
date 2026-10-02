@@ -3,7 +3,7 @@ import { z } from "zod";
 import { shortDate } from "@/lib/dates";
 import { aiConfigured } from "@/lib/inspection/run";
 import { generateJson } from "./gemini";
-import type { Span } from "./spans";
+import { spanLabel, type Span } from "./spans";
 
 /**
  * What a customer needs to hear about a proposed change. The message only
@@ -23,7 +23,7 @@ export type MessageFacts = {
 };
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
-const dates = (s: Span) => (s.start === s.end ? shortDate(s.start) : `${shortDate(s.start)}–${shortDate(s.end)}`);
+const dates = spanLabel;
 const WHY: Record<MessageFacts["why"], string> = {
   repair: "needs a repair",
   maintenance: "is booked in for maintenance",
@@ -60,7 +60,7 @@ export function checkMessage(text: string, f: MessageFacts): string | null {
   if (!t.includes(firstName(f.customerName))) return "missing the customer's name";
   if (/https?:|www\.|@/i.test(t)) return "contains a link or address";
   if (/[$€£]|\b\d+(?:\.\d+)?\s*(?:usd|dollars?)\b/i.test(t)) return "mentions money";
-  if (/\b(?:refund\w*|discount\w*|free of charge|compensat\w*|vouchers?|credits?)\b/i.test(t)) return "promises something nobody decided";
+  if (/\b(?:refund\w*|discount\w*|free of charge|compensat\w*|vouchers?|credits?|per ?cent)\b|\d\s*%/i.test(t)) return "promises something nobody decided";
   const allowed = new Set([f.booked.start, f.booked.end, f.offered?.start, f.offered?.end].filter(Boolean).map((d) => shortDate(d!)));
   for (const m of t.matchAll(MONTH_DAY)) {
     if (!allowed.has(`${m[1]} ${Number(m[2])}`)) return `mentions a date that is not part of the plan (${m[0]})`;

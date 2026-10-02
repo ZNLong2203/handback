@@ -1,15 +1,12 @@
 import "server-only";
 import { catalogItem } from "@/lib/catalog";
-import { shortDate } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { rentalById, updateRental } from "@/lib/rentals/repo";
 import { UserError, type Rental } from "@/lib/rentals/types";
 import { occupantsForItem, unitsForItem } from "./repo";
-import { earliestSlot, firstFreeUnit, type Occupant, type Span } from "./spans";
+import { earliestSlot, firstFreeUnit, spanLabel, type Occupant, type Span } from "./spans";
 
 const spanOf = (r: Rental): Span => ({ start: r.startDate, end: r.endDate });
-
-export const spanLabel = (s: Span) => (s.start === s.end ? shortDate(s.start) : `${shortDate(s.start)}–${shortDate(s.end)}`);
 
 /** "Every Portable projector is booked for Oct 5–8. The earliest free dates for a rental this long are Oct 10–13." */
 function fullyBookedMessage(rental: Rental, unitIds: string[], occupants: Occupant[]): string {
@@ -21,10 +18,11 @@ function fullyBookedMessage(rental: Rental, unitIds: string[], occupants: Occupa
 
 /**
  * Gives a new booking the first unit of its item that is free for the whole
- * stay. The item's units are locked while choosing, so two people booking the
- * last unit at the same moment cannot both get it. When nothing is free the
- * draft is removed and the customer gets a message with the earliest dates
- * that would work; no PayPal order exists yet at this point.
+ * stay, counting slots held for a pending fix as taken. The item's units are
+ * locked while choosing, so two people booking the last unit at the same
+ * moment cannot both get it. When nothing is free the draft is removed and
+ * the customer gets a message with the earliest dates that would work; no
+ * PayPal order exists yet at this point.
  */
 export async function assignUnitForBooking(rentalId: string, now = new Date()): Promise<string> {
   const db = await getDb();
@@ -32,7 +30,8 @@ export async function assignUnitForBooking(rentalId: string, now = new Date()): 
     const rental = await rentalById(tx, rentalId);
     if (!rental) throw new UserError("That booking does not exist.");
     const units = await unitsForItem(tx, rental.itemId, true);
-    const occupants = await occupantsForItem(tx, rental.itemId, now);
+    // Slots the agent has set aside for a pending fix count as taken.
+    const occupants = await occupantsForItem(tx, rental.itemId, now, true);
     const unitId = firstFreeUnit(
       units.map((u) => u.id),
       spanOf(rental),
@@ -62,7 +61,7 @@ export async function confirmUnitBeforePayment(rentalId: string, now = new Date(
     const rental = await rentalById(tx, rentalId);
     if (!rental) throw new UserError("That booking does not exist.");
     const units = await unitsForItem(tx, rental.itemId, true);
-    const occupants = await occupantsForItem(tx, rental.itemId, now);
+    const occupants = await occupantsForItem(tx, rental.itemId, now, true);
     const ids = units.map((u) => u.id);
     // Keep the unit it already has when that is still free.
     const order = rental.unitId ? [rental.unitId, ...ids.filter((id) => id !== rental.unitId)] : ids;

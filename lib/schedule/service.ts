@@ -7,9 +7,8 @@ import { appendEvent } from "@/lib/rentals/audit";
 import { rentalById, updateRental } from "@/lib/rentals/repo";
 import { UserError, type Rental } from "@/lib/rentals/types";
 import { runScheduleAgent, staleReason } from "./agent";
-import { spanLabel } from "./assign";
 import * as repo from "./repo";
-import { clashesOn, dayDiff, type Occupant, type Span } from "./spans";
+import { clashesOn, dayDiff, spanLabel, type Occupant, type Span } from "./spans";
 
 // Every change to the schedule goes through here, whoever asked for it: a
 // drag on the timeline, an approved proposal, or a confirmed command. The

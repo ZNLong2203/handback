@@ -8,11 +8,10 @@ import { latestAssessment, rentalById, toRental } from "@/lib/rentals/repo";
 import { isCharged } from "@/lib/rentals/settlement";
 import type { Rental, ReviewedFinding } from "@/lib/rentals/types";
 import { SHOP } from "@/lib/shop";
-import { spanLabel } from "./assign";
 import { draftMessage, templateMessage, type MessageFacts } from "./messages";
 import { repairDays } from "./repair-days";
 import * as repo from "./repo";
-import { clashesOn, displaySpan, earliestSlot, firstFreeUnit, type Occupant, type Span } from "./spans";
+import { clashesOn, displaySpan, earliestSlot, firstFreeUnit, spanLabel, type Occupant, type Span } from "./spans";
 
 // The schedule agent. It never moves a booking by itself: it blocks a unit
 // that came back damaged (a fact, from the settled charges), and for every
