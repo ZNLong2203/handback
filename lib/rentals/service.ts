@@ -28,7 +28,7 @@ const newStatusToken = () => `st_${randomBytes(18).toString("base64url")}`;
  * Runs one PayPal step. A PayPal failure is written to the audit log with its
  * debug_id and turned into a message staff or customers can act on.
  */
-async function paypalStep<T>(rentalId: string, step: string, fn: () => Promise<T>): Promise<T> {
+export async function paypalStep<T>(rentalId: string, step: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -65,7 +65,7 @@ function explainPayPalError(err: PayPalRefusal): string {
   }
 }
 
-async function mustRental(id: string): Promise<Rental> {
+export async function mustRental(id: string): Promise<Rental> {
   const rental = await rentalById(await getDb(), id);
   if (!rental) throw new UserError("That rental does not exist.");
   return rental;

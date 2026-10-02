@@ -91,3 +91,59 @@ Design consequences:
 
 - Anyone holding the approval link can reach the cancel URL, so it carries no rental token. Only an approval, which takes the payer's PayPal login, reaches the return URL and the renter's page.
 - In headless Chromium, PayPal's checkout page sometimes did not reach `DOMContentLoaded` within 30 seconds after the forged return. The script now waits only for the navigation to start, then for the login form or the review button.
+
+## 2026-10-02: a renter disputes a settled charge
+
+`scripts/spike-dispute.ts` takes a rental settled on the sandbox (the same browser flow as `scripts/sandbox-walkthrough.ts`), logs in as the sandbox buyer at www.sandbox.paypal.com, files a case in PayPal's Resolution Center on the $35.00 damage capture, and then answers it from the counter's dispute panel in the running app. Every PayPal step below went through the app's own code (`lib/paypal/disputes.ts` via `lib/disputes/service.ts`) unless it says otherwise. Times are UTC.
+
+Rental `R-VRMP3Y`: booking order `0MA82407P1909110K`, fee capture `5AP06223DR0959317` ($87.00), deposit authorization `3TX25764335213158` ($300.00 on the saved wallet), damage capture `4NV53685RT809600J` ($35.00 kept, $265.00 released) at 13:51:00.
+
+| Time | Step | What PayPal returned |
+|---|---|---|
+| 13:56:35 | Buyer files: "I was billed a different amount" → "I was charged the wrong amount", says $15.00 was right, seller contacted: yes, plus a note | Case `PP-R-HKL-10190228`. The buyer sees the payment as transaction `0M869413G0742232S`, listed as "Preapproved Payment" (the saved wallet), with an "automatic payment" page before the reasons |
+| 13:58:03 | `GET /v1/customer/disputes/PP-R-HKL-10190228` | `INCORRECT_AMOUNT`, `dispute_amount` 20.00, stage `CHARGEBACK`, channel `INTERNAL`, status `UNDER_REVIEW`, only a `self` link. `GET /v1/customer/disputes?disputed_transaction_id=4NV53685RT809600J` returned no items yet |
+| 14:00:04 | | `fund_movements`: `HOLD_PLACED` 20.00 from the seller (`RECEIVER`, `DEBIT`) |
+| 14:00:23 | | `WAITING_FOR_SELLER_RESPONSE`; links `provide_evidence` and `accept_claim`; `allowed_response_options.accept_claim.accept_claim_types` `["REFUND"]`; requested `PROOF_OF_REFUND` and `OTHER`; `seller_response_due_date` 2026-10-13T06:59:59Z. The list by `disputed_transaction_id` now returns it |
+| 14:02 | Counter: "Check PayPal for disputes" | Found by the list call, read in full, stored; the rental shows as disputed |
+| 14:03:57 | Counter sends the pack (round 1): `evidence_type` `OTHER`, `R-VRMP3Y-evidence.pdf` (SHA-256 `325d470a…`, summary written by `gemini-3.8-flash` and passed the fact check) plus the two original photos, multipart/form-data | 200, debug id `f220242c4dcd9`. Status `UNDER_REVIEW`; only `provide_supporting_info` offered |
+| 14:06:41 | | `require_evidence`, `adjudicate` and `accept_claim` links appear, about 2.7 minutes after the evidence |
+| 14:06:48 | Counter: sandbox require-evidence `{"action":"SELLER_EVIDENCE"}` | Refused: `MISSING_OR_INVALID_REQUEST_BODY`, debug id `f9903187d5dd5`; the dispute did not change. We did not find the cause: the same body succeeded twice later (next two rows) |
+| 14:17:45 | The same require-evidence body sent by hand, without `Prefer` or `PayPal-Request-Id` | 200, debug id `f97130073a62c`. Links drop to `provide_supporting_info` |
+| 14:18:13 | | `WAITING_FOR_SELLER_RESPONSE` again; requested `PROOF_OF_FULFILLMENT`, `PROOF_OF_REFUND`, `PROOF_OF_DELIVERY_SIGNATURE`; new due date 2026-10-06T06:59:59Z |
+| 14:54:13 | Counter sends a fresh pack (round 2; SHA-256 `e427ae17…`, the record now includes the dispute), again as `OTHER` because none of the requested types is something an in-store rental has | 200, debug id `f912133b33b30`; a new round, so a new `PayPal-Request-Id` |
+| 14:56:23 | | `require_evidence` and `adjudicate` offered again, 2.2 minutes later |
+| 14:57:10 | Counter: sandbox require-evidence, same body as at 14:06:48 | 200, debug id `f807543b599d2`; `WAITING_FOR_SELLER_RESPONSE` by 14:57:34 |
+| 14:57:59 | Request-id experiment (`spike-dispute.ts replay`): one small PDF sent twice with the same `PayPal-Request-Id` and identical bytes | First: 200, debug id `f20299005f64d`, filed. Second: 422 `ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`, debug id `f966554107b99`. PayPal did not replay the first answer; it ran the request again against the new state |
+| about 15:01 | | `adjudicate` offered, 2 to 4 minutes after that evidence |
+| 15:02:26 | Counter: sandbox adjudicate `SELLER_FAVOR` | Accepted, debug id `f198568fe5e99`; status stays `UNDER_REVIEW` for two minutes |
+| 15:03:34 | | `fund_movements`: `HOLD_RELEASED` 20.00 back to the seller (`CREDIT`) |
+| 15:04:27 | | `RESOLVED`, `dispute_outcome.outcome_code` `RESOLVED_SELLER_FAVOUR`, `outcome_reason` `INELIGIBLE_BUYER_PROTECTION_POLICY`. The rental returns to settled |
+
+A second run, start to finish with `spike-dispute.ts all --customer-wins`, ended the other way. Rental `R-6JWZXR`: booking order `9D2431970P214323G`, fee capture `1H00780667125013X`, authorization `5E408447NM8686102`, damage capture `4BY84394LR2477457`.
+
+| Time | Step | What PayPal returned |
+|---|---|---|
+| 15:24:05 | Buyer files the same kind of case through the script (buyer transaction `68C156779L057173E`) | Case `PP-R-XKA-10190233`, readable at once with status `OPEN`, then `UNDER_REVIEW` |
+| 15:27:34 | | `HOLD_PLACED` 20.00 |
+| 15:27:42 | | `WAITING_FOR_SELLER_RESPONSE`, asking for `PROOF_OF_REFUND` and `OTHER`; the list by `disputed_transaction_id` returned it from 15:28:00 |
+| 15:29:14 | Counter sends the pack (round 1) | 200, debug id `ca444bdba6a73` |
+| 15:31:53 | | `require_evidence`, `adjudicate`, `accept_claim` offered |
+| 15:32:13 | Counter: sandbox require-evidence | 200, debug id `f792211799984`, first try |
+| 15:33:12 | Counter sends a fresh pack (round 2) | 200, debug id `f903744bcf57c` |
+| 15:36:16 | Counter: sandbox adjudicate `BUYER_FAVOR` | Accepted, debug id `f2707289f8529`; adjudication type `RECOVER_FROM_SELLER` |
+| 15:37:35 | | `fund_movements`: `DISPUTE_SETTLEMENT` 20.00 debited from the seller, `DISPUTE_FEE` 15.00 debited from the seller, `DISPUTE_SETTLEMENT` 20.00 credited to the buyer; refund transaction `47P84858FY551494G` |
+| 15:38:43 | | `RESOLVED`, `RESOLVED_BUYER_FAVOUR`, `outcome_reason` `INELIGIBLE_SELLER_PROTECTION_POLICY`, `amount_refunded` 20.00 |
+
+Design consequences:
+
+- Actions are taken only through the links PayPal returned on a fresh read. The links change with every step, and accepting the claim stayed offered during review.
+- A new dispute can be read by id within two minutes, but the list by `disputed_transaction_id` found it only after about four, in both runs. Webhooks (`CUSTOMER.DISPUTE.CREATED`, `UPDATED`, `RESOLVED`) are the main path; the counter's "Check PayPal for disputes" button is the fallback.
+- The Disputes API does not deduplicate on `PayPal-Request-Id`, so the desk stops double sends itself (`dispute_actions`, one row per action and round). Because a retried request can be refused although the first one was carried out, an error on any dispute action is followed by a read of the dispute, which looks for the change only that action makes: a new seller submission with the pack's file names (evidence), the accept link gone and the customer refunded (accepting the claim), the offered amount (an offer), new requests to the seller or a new deadline (sandbox require-evidence), a new adjudication or the case resolved (sandbox adjudicate). If it is there, the action is recorded as done ("confirmed by reading the dispute"). The refused retry itself was seen in the sandbox only for evidence. The changes the read looks for were seen there for evidence, require-evidence and adjudicate; accepting a claim and making an offer were not run in the sandbox, so those two checks follow PayPal's schema and are tested only against the stand-in.
+- PayPal asked a counter rental for proof of shipment, refund and a delivery signature. The pack is filed as `OTHER` instead of under a type it is not.
+- In both runs PayPal held the disputed $20.00 from the shop's balance about three and a half minutes after the case was filed. A decision for the shop released it about a minute after the adjudicate call; a decision for the customer paid it out and charged the shop a $15.00 `DISPUTE_FEE`, the Standard fee the recommendation uses. The panel shows these from `fund_movements`, and the demo stand-in now reports the same movements.
+- The sandbox needs minutes between steps. The panel says so and offers "Refresh from PayPal"; in production the webhooks bring the changes.
+- `api-m.sandbox.paypal.com` timed out several times during the run. `lib/paypal/rest.ts` now retries a response whose body stalls, and a token request that gets no answer or a 429 or 5xx (also the refresh after a 401), with the same request id.
+
+PayPal's simulated `CUSTOMER.DISPUTE.UPDATED` and `RESOLVED` payloads (`POST /v1/notifications/simulate-event`) carry the full dispute as `resource`, including `status`, `dispute_outcome` and `links`, but write the links on `api.sandbox.paypal.com` rather than `api-m.sandbox.paypal.com`. The client accepts both names of the same environment's API and always sends the request to the configured base.
+
+An earlier exploratory run the same day, before the panel existed, filed format-test evidence on case `PP-R-CHU-10190215` (capture `8JN17439E0980024P`). PayPal's record of it shows the same sequence: hold placed 3.5 minutes after filing, adjudication `DENY_BUYER` at 08:00:40, hold released at 08:01:34, `RESOLVED_SELLER_FAVOUR`.

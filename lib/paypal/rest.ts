@@ -2,64 +2,109 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { paypalConfig } from "./config";
 import { paypalErrorFromBody, PayPalError } from "./errors";
+import { encodeMultipart, type MultipartPart } from "./multipart";
 
 /**
  * A small REST client for the PayPal APIs the Server SDK does not cover
  * (Webhooks, Disputes). Tokens are cached until a minute before expiry and
- * refreshed on a 401; 429 and 5xx are retried with backoff, honouring
- * Retry-After; every POST carries a PayPal-Request-Id.
+ * refreshed on a 401; network failures, 429 and 5xx are retried with
+ * backoff, honouring Retry-After, and so is a token request that fails that
+ * way. Every POST carries a PayPal-Request-Id, the same one on every retry.
+ * That stops a retried POST acting twice only where PayPal deduplicates on
+ * the header. The Disputes API does not: in the sandbox a repeated id was
+ * run again and refused with a 422 (docs/paypal-sandbox-notes.md), so
+ * lib/disputes guards its actions itself, with dispute_actions and a read
+ * of the dispute after an error.
  */
 let token: { value: string; expiresAt: number } | undefined;
 
 async function accessToken(force = false): Promise<string> {
   if (!force && token && token.expiresAt > Date.now()) return token.value;
   const cfg = paypalConfig();
-  const res = await fetch(`${cfg.apiBase}/v1/oauth2/token`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}` },
-    body: "grant_type=client_credentials",
-  });
-  const body = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number };
+  let res: Response;
+  let body: { access_token?: string; expires_in?: number };
+  try {
+    res = await fetch(`${cfg.apiBase}/v1/oauth2/token`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}` },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(20_000),
+    });
+    body = (await res.json().catch(() => ({}))) as typeof body;
+  } catch (err) {
+    // Status 0 marks it as a network failure; paypalRequest retries those.
+    throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, `PayPal's token endpoint did not answer: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!res.ok || !body.access_token) throw paypalErrorFromBody(res.status, body, res.headers.get("paypal-debug-id"));
   token = { value: body.access_token, expiresAt: Date.now() + Math.max(60, (body.expires_in ?? 3600) - 60) * 1000 };
   return token.value;
 }
 
-type Options = { requestId?: string; body?: unknown; form?: FormData; attempts?: number };
+type Options = {
+  requestId?: string;
+  /** Sent as JSON. */
+  body?: unknown;
+  /** Sent as multipart/form-data (Disputes evidence uploads). */
+  multipart?: MultipartPart[];
+  attempts?: number;
+};
 
-export async function paypalRest<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, opts: Options = {}): Promise<T> {
+export type PayPalResponse<T> = { data: T; status: number; debugId: string | null };
+
+/** Like paypalRest, but also returns the HTTP status and PayPal-Debug-Id of a success. */
+export async function paypalRequest<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, opts: Options = {}): Promise<PayPalResponse<T>> {
+  if (opts.body !== undefined && opts.multipart) throw new TypeError("send either a JSON body or multipart parts, not both");
   const cfg = paypalConfig();
   const attempts = opts.attempts ?? 3;
+  // Decided once, before the first attempt: retries must reuse the same id and bytes.
+  const requestId = method === "POST" ? (opts.requestId ?? randomUUID()) : undefined;
+  const multipart = opts.multipart ? encodeMultipart(opts.multipart) : undefined;
+  const body = multipart ? multipart.body : opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
   let refreshed = false;
+  let forceToken = false;
   for (let attempt = 1; ; attempt++) {
-    const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken()}`, Prefer: "return=representation" };
-    if (method === "POST") headers["PayPal-Request-Id"] = opts.requestId ?? randomUUID();
-    if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     let res: Response;
+    let text: string;
     try {
-      res = await fetch(`${cfg.apiBase}${path}`, {
-        method,
-        headers,
-        body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
-        signal: AbortSignal.timeout(20_000),
-      });
+      const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken(forceToken)}`, Prefer: "return=representation" };
+      forceToken = false;
+      if (requestId) headers["PayPal-Request-Id"] = requestId;
+      if (multipart) headers["Content-Type"] = multipart.contentType;
+      else if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+      // The timeout covers reading the body too: a stalled body is a network failure, retried like one.
+      res = await fetch(`${cfg.apiBase}${path}`, { method, headers, body: body as BodyInit | undefined, signal: AbortSignal.timeout(20_000) });
+      text = await res.text();
     } catch (err) {
-      if (attempt >= attempts) throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
+      // fetch throws only for network failures; a PayPalError here came from the token request.
+      const retry = !(err instanceof PayPalError) || err.status === 0 || err.retryable;
+      if (!retry || attempt >= attempts) throw err instanceof PayPalError ? err : new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
       await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       continue;
     }
     if (res.status === 401 && !refreshed) {
+      // The new token is fetched inside the try above, so a failed refresh is retried like any other.
       refreshed = true;
-      await accessToken(true);
+      forceToken = true;
       attempt--;
       continue;
     }
-    const text = await res.text();
-    const json = text ? (JSON.parse(text) as unknown) : {};
-    if (res.ok) return json as T;
-    const err = paypalErrorFromBody(res.status, json, res.headers.get("paypal-debug-id"));
+    const debugId = res.headers.get("paypal-debug-id");
+    let json: unknown = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      // A proxy or outage page instead of PayPal JSON: keep the status, drop the body.
+      if (res.ok) throw new PayPalError(res.status, "INVALID_RESPONSE", undefined, debugId ?? undefined, "PayPal answered with something that is not JSON");
+      json = {};
+    }
+    if (res.ok) return { data: json as T, status: res.status, debugId };
+    const err = paypalErrorFromBody(res.status, json, debugId);
     if (!err.retryable || attempt >= attempts) throw err;
     const retryAfter = Number(res.headers.get("retry-after"));
     await new Promise((r) => setTimeout(r, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 400 * 2 ** attempt));
   }
+}
+
+export async function paypalRest<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, opts: Options = {}): Promise<T> {
+  return (await paypalRequest<T>(method, path, opts)).data;
 }

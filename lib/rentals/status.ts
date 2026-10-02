@@ -2,7 +2,7 @@ import type { Rental, RentalStatus } from "./types";
 
 type Tone = "brand" | "held" | "released" | "charged" | "note" | "neutral";
 
-export const STATUS: Record<RentalStatus, { label: string; customerLabel?: string; tone: Tone; staffNext: string; customer: string }> = {
+export const STATUS: Record<RentalStatus, { label: string; customerLabel?: string; tone: Tone; customerTone?: Tone; staffNext: string; customer: string }> = {
   draft: { label: "Not paid", tone: "neutral", staffNext: "Waiting for PayPal approval", customer: "Finish paying to confirm your booking." },
   booked: { label: "Booked", tone: "brand", staffNext: "Photograph it and hold the deposit at pickup", customer: "You're booked. The deposit is held at pickup, not now." },
   out: { label: "Out", customerLabel: "Deposit held", tone: "held", staffNext: "Photograph it when it comes back", customer: "Enjoy it. Your deposit is held on PayPal, not charged." },
@@ -11,7 +11,7 @@ export const STATUS: Record<RentalStatus, { label: string; customerLabel?: strin
   responded: { label: "Customer answered", customerLabel: "Answers sent", tone: "charged", staffNext: "Read the answers and settle", customer: "Thanks. The shop is reading your answers." },
   settled: { label: "Settled", tone: "released", staffNext: "Done", customer: "All settled." },
   cancelled: { label: "Cancelled", tone: "neutral", staffNext: "Done", customer: "This booking was cancelled." },
-  disputed: { label: "Disputed", tone: "charged", staffNext: "Answer the PayPal dispute", customer: "You opened a dispute with PayPal." },
+  disputed: { label: "Disputed", customerLabel: "Case with PayPal", tone: "charged", customerTone: "neutral", staffNext: "Answer the PayPal dispute", customer: "PayPal is looking at a case about this rental." },
 };
 
 /**
@@ -58,6 +58,13 @@ const EVENT_LABEL: Record<string, string> = {
   "webhook.received": "PayPal confirmed by webhook",
   "deposit.reauthorized": "Deposit hold renewed",
   "dispute.opened": "Customer opened a PayPal dispute",
+  "dispute.updated": "PayPal updated the dispute",
+  "dispute.resolved": "PayPal closed the dispute",
+  "dispute.evidence_sent": "Evidence pack sent to PayPal",
+  "dispute.offer_made": "Shop offered a refund through PayPal",
+  "dispute.claim_accepted": "Shop accepted the claim; PayPal refunds the customer",
+  "dispute.sandbox_evidence_requested": "Sandbox: PayPal's test system asked for evidence",
+  "dispute.sandbox_decided": "Sandbox: PayPal's test system decided the case",
 };
 
 export function eventLabel(type: string): string {

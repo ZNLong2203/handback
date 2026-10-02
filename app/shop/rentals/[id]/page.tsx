@@ -1,8 +1,9 @@
 import { ArrowLeft, CheckCircle2, ExternalLink, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { holdDepositAction, inspectAction, sendToCustomerAction, settleAction } from "@/app/actions";
+import { demoOpenDisputeAction, findDisputesAction, holdDepositAction, inspectAction, sendToCustomerAction, settleAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { DisputePanel } from "@/components/dispute-panel";
 import { ShopHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -12,6 +13,8 @@ import { Qr } from "@/components/qr";
 import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice, cx } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
+import { loadDisputeDesk } from "@/lib/disputes/service";
+import { paypalConfig } from "@/lib/paypal/config";
 import { formatUsd } from "@/lib/money";
 import { samplesFor } from "@/lib/samples";
 import { renewalDueAt } from "@/lib/rentals/jobs";
@@ -57,6 +60,10 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
   const status = STATUS[rental.status];
   const customerUrl = `${appUrl()}/r/${rental.token}`;
   const kept = assessment?.findings.filter((f) => f.decision !== "note" && f.price && f.staff === "keep") ?? [];
+  const desk = await loadDisputeDesk(view);
+  // A dispute does not undo the settlement: the money view stays as it was.
+  const settled = rental.status === "settled" || rental.status === "disputed";
+  const paypalMode = paypalConfig().mode;
 
   return (
     <>
@@ -82,6 +89,8 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             </div>
             <p className="mt-5 text-sm font-medium text-ink-soft">Next: {status.staffNext}.</p>
           </Card>
+
+          {desk && <DisputePanel desk={desk} rental={rental} />}
 
           {rental.status === "booked" && (
             <Card className="space-y-5 p-6">
@@ -137,7 +146,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             </Card>
           )}
 
-          {assessment && checkout && checkin && ["inspecting", "customer_review", "responded", "settled"].includes(rental.status) && (
+          {assessment && checkout && checkin && ["inspecting", "customer_review", "responded", "settled", "disputed"].includes(rental.status) && (
             <Card className="space-y-5 p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -158,7 +167,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                 mode={rental.status === "inspecting" ? "staff" : rental.status === "responded" ? "resolve" : "readonly"}
                 rentalId={rental.id}
               />
-              {rental.authorizedCents && plan && rental.status !== "settled" && (
+              {rental.authorizedCents && plan && !settled && (
                 <div className="rounded-2xl bg-paper p-4">
                   <MoneyBar state="proposed" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
                 </div>
@@ -208,7 +217,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             </Card>
           )}
 
-          {rental.status === "settled" && (
+          {settled && (
             <Card className="p-6">
               <h2 className="font-display text-2xl font-bold">Settled</h2>
               <div className="mt-4">
@@ -239,6 +248,27 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                   <dd className="inline">{rental.authorizationId}</dd>
                 </div>
               </dl>
+              {desk?.dispute.outcome === "RESOLVED_BUYER_FAVOUR" && (
+                <p className="mt-3 text-sm text-charged">After the dispute, PayPal refunded {formatUsd(desk.dispute.refundedCents ?? desk.dispute.amountCents ?? 0)} of this to the customer.</p>
+              )}
+              {!desk && (
+                <div className="mt-5 flex flex-wrap items-start gap-3 border-t border-line pt-4">
+                  {paypalMode === "demo" ? (
+                    <ActionButton action={demoOpenDisputeAction.bind(null, rental.id)} variant="outline" size="sm" pendingLabel="Opening…">
+                      Demo stand-in: the customer disputes this charge with PayPal
+                    </ActionButton>
+                  ) : (
+                    <ActionButton action={findDisputesAction.bind(null, rental.id)} variant="outline" size="sm" pendingLabel="Asking PayPal…">
+                      Check PayPal for disputes
+                    </ActionButton>
+                  )}
+                  <p className="max-w-sm text-xs text-muted">
+                    {paypalMode === "demo"
+                      ? "In the sandbox or live, the customer opens a dispute in PayPal and it arrives here by webhook."
+                      : "Disputes arrive here by webhook. Without one, this asks PayPal for disputes on this rental's payments."}
+                  </p>
+                </div>
+              )}
             </Card>
           )}
         </div>
@@ -277,10 +307,10 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             {rental.authorizationId ? (
               <dl className="mt-2 space-y-1.5 text-sm">
                 <div className="flex justify-between gap-3">
-                  <dt className="text-muted">{rental.status === "settled" ? "Was held" : "Held"}</dt>
+                  <dt className="text-muted">{settled ? "Was held" : "Held"}</dt>
                   <dd className="tabular font-semibold text-held">{formatUsd(rental.authorizedCents ?? 0)}</dd>
                 </div>
-                {rental.status === "settled" && (
+                {settled && (
                   <>
                     <div className="flex justify-between gap-3">
                       <dt className="text-muted">Kept</dt>
@@ -292,7 +322,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                     </div>
                   </>
                 )}
-                {rental.authorizationExpiresAt && rental.status !== "settled" && (
+                {rental.authorizationExpiresAt && !settled && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted">Hold expires</dt>
                     <dd>{shortDate(rental.authorizationExpiresAt)}</dd>

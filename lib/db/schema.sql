@@ -119,6 +119,59 @@ create table if not exists webhook_events (
   received_at timestamptz not null default now()
 );
 
+-- PayPal disputes on a rental's captures, as PayPal last described them
+-- (a GET or a webhook). `paypal` keeps the whole object for audit; the
+-- columns are what pages and queries need.
+create table if not exists disputes (
+  id text primary key,
+  rental_id text not null references rentals (id),
+  transaction_id text,
+  reason text not null,
+  status text not null,
+  stage text,
+  amount_cents integer,
+  seller_response_due_at timestamptz,
+  outcome text,
+  refunded_cents integer,
+  paypal jsonb not null,
+  paypal_update_time timestamptz,
+  opened_at timestamptz,
+  synced_at timestamptz not null default now()
+);
+
+create index if not exists disputes_rental on disputes (rental_id);
+
+-- Evidence packs, content-addressed like photos: the key is the SHA-256 of
+-- the PDF, and the same facts always render to the same bytes.
+create table if not exists evidence_packs (
+  sha256 text primary key,
+  rental_id text not null references rentals (id),
+  dispute_id text,
+  facts_sha text not null,
+  facts jsonb not null,
+  narrative jsonb not null,
+  bytes bytea not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists evidence_packs_rental on evidence_packs (rental_id, created_at);
+create index if not exists evidence_packs_facts on evidence_packs (facts_sha);
+
+-- One row per dispute action and PayPal request round. The Disputes API
+-- does not deduplicate on PayPal-Request-Id: in the sandbox a repeated id
+-- was run again against the new state and refused with a 422, not answered
+-- with the first reply. So a double tap is stopped here instead.
+create table if not exists dispute_actions (
+  dispute_id text not null,
+  action text not null,
+  round text not null,
+  request_id text not null,
+  state text not null,
+  debug_id text,
+  created_at timestamptz not null default now(),
+  primary key (dispute_id, action, round)
+);
+
 -- State of the in-memory PayPal stand-in, so demo mode survives restarts.
 create table if not exists demo_paypal (
   k text primary key,
