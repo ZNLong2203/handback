@@ -6,15 +6,18 @@
  *   - false charges: how often would an unchanged item have been charged?
  *
  * Raw model replies are saved under eval/runs/ so the app's demo mode and the
- * tests can replay them without an API key.
+ * tests can replay them without an API key. --set real runs the pairs built
+ * on real photographs (eval/real) and saves under eval/real/runs/ instead.
  *
- *   npm run eval -- [--model gemini-3.8-flash] [--thinking low|medium|high] [--only <id-substring>] [--tag r2]
+ *   npm run eval -- [--set synthetic|real] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
  */
+import { ApiError } from "@google/genai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogItem } from "@/lib/catalog";
 import { compareCondition, DEFAULT_VISION_MODEL, type Thinking } from "@/lib/inspection/compare";
 import { mergeLooks } from "@/lib/inspection/consensus";
+import { PROMPT_VERSION } from "@/lib/inspection/prompt";
 import { assess, type AssessedFinding } from "@/lib/inspection/policy";
 import type { ModelOutput } from "@/lib/inspection/schema";
 
@@ -33,6 +36,12 @@ const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
+/** Each dataset keeps its pairs, images, runs and reports under its own folder. */
+const SETS = { synthetic: "eval", real: "eval/real" } as const;
+const SET_DESCRIPTION = { synthetic: "AI-generated photo pairs", real: "photo pairs built on real photographs" } as const;
+const set = (arg("set") ?? "synthetic") as keyof typeof SETS;
+if (!(set in SETS)) throw new Error(`--set must be one of: ${Object.keys(SETS).join(", ")}`);
+const ROOT = SETS[set];
 const model = arg("model") ?? DEFAULT_VISION_MODEL;
 const thinking = (arg("thinking") ?? "low") as Thinking;
 const only = arg("only");
@@ -60,6 +69,8 @@ type Scored = {
   ms: number;
   repaired: boolean;
   usage: { inputTokens: number; outputTokens: number };
+  /** Requests sent again after a network error or a 429/5xx. */
+  retries: number;
   caught: { change: string; any: boolean; charged: boolean; priceRight: boolean }[];
   falseCharges: string[];
   notes: number;
@@ -70,15 +81,35 @@ type Scored = {
   error?: string;
 };
 
+/**
+ * The eval measures the model's judgement, not the network: a request that
+ * never got an answer (connection dropped, 429, 5xx) is sent again, up to
+ * twice, and counted in `retries`. A reply that fails validation is not
+ * retried here; that stays an error.
+ */
+async function withRetry<T>(call: () => Promise<T>, onRetry: () => void): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const transient = (err instanceof TypeError && err.message === "fetch failed") || (err instanceof ApiError && (err.status === 429 || err.status >= 500));
+      if (!transient || attempt === 2) throw err;
+      onRetry();
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
+}
+
 async function image(rel: string) {
-  return { base64: (await readFile(path.join("eval", rel))).toString("base64"), mimeType: "image/jpeg" };
+  return { base64: (await readFile(path.join(ROOT, rel))).toString("base64"), mimeType: "image/jpeg" };
 }
 
 async function scorePair(pair: Pair): Promise<Scored> {
   const item = catalogItem(pair.item);
+  let retries = 0;
   try {
     const input = { before: await image(pair.before), after: await image(pair.after), item, shopName: SHOP, model, thinking };
-    const looks = await Promise.all(Array.from({ length: passes }, () => compareCondition(input)));
+    const looks = await Promise.all(Array.from({ length: passes }, () => withRetry(() => compareCondition(input), () => retries++)));
     const result = {
       output: looks[0].output,
       outputs: looks.map((l) => l.output),
@@ -104,6 +135,7 @@ async function scorePair(pair: Pair): Promise<Scored> {
       ms: result.ms,
       repaired: result.repaired,
       usage: result.usage,
+      retries,
       caught,
       falseCharges,
       notes: a.findings.filter((f) => f.decision === "note").length,
@@ -114,7 +146,7 @@ async function scorePair(pair: Pair): Promise<Scored> {
     };
   } catch (err) {
     return {
-      id: pair.id, changed: pair.truth.changed, ms: 0, repaired: false, usage: { inputTokens: 0, outputTokens: 0 },
+      id: pair.id, changed: pair.truth.changed, ms: 0, repaired: false, usage: { inputTokens: 0, outputTokens: 0 }, retries,
       caught: pair.truth.changes.map((c) => ({ change: `${c.kind}: ${c.item}`, any: false, charged: false, priceRight: false })),
       falseCharges: [], notes: 0, proposedCents: 0, usable: false, error: err instanceof Error ? err.message : String(err),
     };
@@ -144,9 +176,9 @@ const quantile = (xs: number[], q: number) => {
 };
 
 async function main() {
-  const { pairs } = JSON.parse(await readFile("eval/pairs.json", "utf8")) as { pairs: Pair[] };
+  const { pairs } = JSON.parse(await readFile(path.join(ROOT, "pairs.json"), "utf8")) as { pairs: Pair[] };
   const todo = only ? pairs.filter((p) => p.id.includes(only)) : pairs;
-  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}) on ${todo.length} pairs`);
+  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}) on ${todo.length} ${set} pairs`);
   const results = await pool(todo, 4, scorePair);
 
   const changes = results.flatMap((r) => r.caught);
@@ -157,6 +189,8 @@ async function main() {
   const tokens = results.reduce((s, r) => ({ i: s.i + r.usage.inputTokens, o: s.o + r.usage.outputTokens }), { i: 0, o: 0 });
 
   const metrics = {
+    set,
+    prompt: PROMPT_VERSION,
     model,
     thinking,
     passes,
@@ -170,6 +204,7 @@ async function main() {
     falseChargesOnChangedPairs: changed.reduce((s, r) => s + r.falseCharges.length, 0),
     errors: errors.length,
     repaired: results.filter((r) => r.repaired).length,
+    networkRetries: results.reduce((s, r) => s + r.retries, 0),
     p50ms: quantile(ms, 0.5),
     p95ms: quantile(ms, 0.95),
     inputTokensPerPair: Math.round(tokens.i / Math.max(1, results.length)),
@@ -177,13 +212,13 @@ async function main() {
   };
 
   const label = `${model}-${thinking}${passes > 1 ? `-x${passes}` : ""}${tag ? `-${tag}` : ""}`;
-  await mkdir("eval/runs", { recursive: true });
-  await writeFile(`eval/runs/${label}.json`, `${JSON.stringify({ metrics, results }, null, 2)}\n`);
+  await mkdir(path.join(ROOT, "runs"), { recursive: true });
+  await writeFile(path.join(ROOT, "runs", `${label}.json`), `${JSON.stringify({ metrics, results }, null, 2)}\n`);
 
   const lines = [
     `# Condition-check eval: ${model}, thinking ${thinking}, ${passes} independent look${passes > 1 ? "s that must agree" : ""}`,
     "",
-    `${metrics.pairs} labeled photo pairs: ${changed.length} with real changes (${metrics.realChanges} changes in total) and ${unchanged.length} unchanged pairs that only differ in light, pose, dust or glare.`,
+    `${metrics.pairs} labeled ${SET_DESCRIPTION[set]}: ${changed.length} with real changes (${metrics.realChanges} changes in total) and ${unchanged.length} unchanged pairs that only differ in light, pose, dust or glare.`,
     "",
     "| Metric | Result |",
     "|---|---|",
@@ -192,7 +227,7 @@ async function main() {
     `| ...with the right price-list entry | ${metrics.pricedRight}/${metrics.caughtCharged} |`,
     `| Unchanged pairs that would have been charged | ${metrics.unchangedWithFalseCharge}/${metrics.unchangedPairs} (${pct(metrics.unchangedWithFalseCharge, metrics.unchangedPairs)}) |`,
     `| Extra charges on changed pairs | ${metrics.falseChargesOnChangedPairs} |`,
-    `| Errors / replies repaired | ${metrics.errors} / ${metrics.repaired} |`,
+    `| Errors / replies repaired / requests retried after a network error | ${metrics.errors} / ${metrics.repaired} / ${metrics.networkRetries} |`,
     `| Latency p50 / p95 | ${(metrics.p50ms / 1000).toFixed(1)} s / ${(metrics.p95ms / 1000).toFixed(1)} s |`,
     `| Tokens per pair (in / out) | ${metrics.inputTokensPerPair} / ${metrics.outputTokensPerPair} |`,
     "",
@@ -206,9 +241,9 @@ async function main() {
     }),
     "",
   ];
-  await writeFile(`eval/report-${label}.md`, lines.join("\n"));
+  await writeFile(path.join(ROOT, `report-${label}.md`), lines.join("\n"));
   console.log(lines.slice(4, 15).join("\n"));
-  console.log(`\nwrote eval/report-${label}.md and eval/runs/${label}.json`);
+  console.log(`\nwrote ${ROOT}/report-${label}.md and ${ROOT}/runs/${label}.json`);
 }
 
 main().catch((err) => {

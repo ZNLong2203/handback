@@ -1,0 +1,24 @@
+{
+  "about": "Written by npm run eval:summary from the saved runs; do not edit by hand.",
+  "prompt": 2,
+  "sets": [
+    {
+      "id": "synthetic",
+      "pairs": 36,
+      "runs": 3,
+      "changesCharged": 41,
+      "changes": 42,
+      "unchangedCharged": 0,
+      "unchanged": 72
+    },
+    {
+      "id": "real",
+      "pairs": 55,
+      "runs": 3,
+      "changesCharged": 63,
+      "changes": 66,
+      "unchangedCharged": 0,
+      "unchanged": 99
+    }
+  ]
+}

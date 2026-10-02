@@ -1,5 +1,8 @@
 import type { RentalItem } from "@/lib/catalog";
 
+/** Bump when the wording below changes, so every eval run records which prompt it measured. */
+export const PROMPT_VERSION = 2;
+
 export function buildComparePrompt(item: RentalItem, shopName: string): string {
   const prices = item.prices.map((p) => `- ${p.id}: ${p.label} (for ${p.kind === "damage" ? "new_damage" : p.kind})`).join("\n");
   return `You are the check-in inspector at ${shopName}, a small rental shop. A customer has just returned a rental and you must decide, fairly, whether anything changed while they had it.
@@ -19,6 +22,7 @@ Report only real changes to the item between photo A and photo B:
 - wear: light, expected signs of normal use.
 
 Never report a difference caused by lighting or colour temperature, exposure, camera angle, position, zoom or framing, reflections or glare, sensor noise, dust specks or lint, the background or counter mat, or an accessory that has only been moved.
+Two of these are easy to mistake for damage. Printed text and markings never turn around: text that seems to read upside down or mirrored in one photo comes from the camera, not the item. Glare washes out texture: ribbed rubber, fabric or paint that looks smooth or faded only where the light is brightest is glare, not wear.
 
 Report every distinct change as its own finding. A part can be both dirty and damaged: mud or stains never explain a change in shape, such as bending, cracking, tearing or a missing piece, so report that damage separately.
 
