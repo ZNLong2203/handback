@@ -11,7 +11,7 @@ There are two labeled sets of check-out / check-in photo pairs. Both are scored 
 36 pairs of the demo shop's eight rental items (`lib/catalog.ts`): 12 changed pairs with 14 changes in total, and 24 unchanged pairs.
 
 - **Changed pairs.** A Gemini image model removed an accessory or added damage to the check-out photo (a missing lens hood, a torn grip, a snapped propeller, a cracked projector lens, a bent mudguard with mud, and so on). Code then shifted the light or the framing so the two photos look like two separate visits to the counter. Every edited pair was reviewed by eye and its labels corrected where the edit changed something else.
-- **Unchanged pairs (hard negatives).** The same check-out photo with only a lighting change, a 4–5° rotation and crop, or dust specks and a glare spot added in code. Nothing about the item changed, so any proposed charge is a false charge.
+- **Unchanged pairs (hard negatives).** The same check-out photo with only a lighting change (a warm tint that also drains colour, which matters little on these mostly grey scenes), a 4–5° rotation and crop, or dust specks and a glare spot added in code. Nothing about the item changed, so any proposed charge is a false charge.
 
 All base photos are AI-generated (`scripts/eval/make-pairs.ts`). That makes ground truth exact, but clean generated scenes are easier than real photos. The app's demo mode replays one saved run of this set.
 
@@ -20,16 +20,20 @@ All base photos are AI-generated (`scripts/eval/make-pairs.ts`). That makes grou
 55 pairs built on 11 real photographs from Wikimedia Commons under CC0, CC BY and CC BY-SA licenses: 22 changed pairs with 22 changes in total, and 33 unchanged pairs. Sources, authors and licenses are in [`real/CREDITS.md`](real/CREDITS.md); the photos and the changes asked of the image model are listed in `scripts/eval/real-photos.ts`.
 
 - **Base photos.** Real photographs of gear like the demo shop rents: three camera bodies (one laid out as a kit), two telephoto lenses, a drone with its controller, an action camera with its housing, a portable speaker, a projector, and two bicycle rears. They have real lighting, reflections, texture, printed text and cluttered backgrounds (a wooden table, a railing with grass, paving), which the synthetic set lacks. Each pair is mapped to the catalog item whose kit list and price list fit it.
-- **Changed pairs.** The same Gemini image model edited each photo (a scratch, a dent, a crack, a torn grille, mud, or a removed accessory), but only a box around the requested change was pasted back onto the original photo with a soft edge. Everything outside that box is the original photograph. Code then shifted the light or turned the photo by 3°. Every pair was reviewed by eye; labels say what the edit actually shows.
-- **Unchanged pairs.** As in the synthetic set: a lighting change, a 3° turn with the smallest crop that hides the corners, or dust and glare, all in code.
+- **Changed pairs.** The same Gemini image model edited each photo (a scratch, a dent, a crack, a torn grille, mud, or a removed accessory). The model redraws the whole photo and often shifts or zooms it a little, so its edit is first lined up with the original (`scripts/eval/composite.ts`), and only a box around the requested change is pasted back with a soft edge. Everything outside that box is the original photograph. Code then made the light warmer and dimmer or turned the photo by 3°. Every pair was reviewed by eye. Five prompts the model ignored were rewritten and run again, and labels say what the edit actually shows where it differs from what was asked (a chipped, not shortened, tripod foot; a cracked, not bent, mudguard).
+- **Unchanged pairs.** A warmer, dimmer light that keeps the photo's colours, a 3° turn with the smallest crop that hides the corners, or dust specks and a glare spot, all in code.
 
 What this set does not show: the damage itself is still drawn by an image model, and the second photo is the first one shifted in code, not a second photo taken minutes later with a phone. Most base photos are well-lit product shots rather than counter photos taken by staff. A set of real before / after photos of real damage is still missing.
 
 ## Scoring
 
-A real change counts as caught when a finding of a compatible kind names it and the policy (`lib/inspection/policy.ts`) turns it into a proposed charge. "False charge" means a proposed charge that matches no real change. Low-confidence findings, pre-existing marks and wear are never charged and are not counted against the model.
+A real change counts as caught when a finding of a compatible kind names it and the policy (`lib/inspection/policy.ts`) turns it into a proposed charge. "False charge" means a proposed charge that matches no real change. Low-confidence findings, pre-existing marks and wear are never charged, so they never count as false charges.
 
 With **2 looks**, two independent model calls run in parallel and a charge is proposed only when both point at the same kind of finding and the same price-list entry (`lib/inspection/consensus.ts`).
+
+"Unchanged pairs with any finding" counts unchanged pairs where any look reported a change other than a mark already there at check-out, charged or not. An uncharged finding is not a false charge, but it still reaches staff and the customer as a note.
+
+Requests that fail on the network (or get a 429 or 5xx) are sent again, up to twice; a reply that fails validation counts as an error. The first two-look run of the real set lost two requests to the network before this retry existed and was run again.
 
 ## Results
 
@@ -39,6 +43,7 @@ With **2 looks**, two independent model calls run in parallel and a charge is pr
 |---|---|---|---|---|---|---|---|---|
 | gemini-3.8-flash, thinking low, 1 look, prompt v1 | 3 | 40/42 (95%) | 40/40 | 1/72 (1%) | 1/72 (1%) | 0 | 0 | 12.7 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v1 | 3 | 41/42 (98%) | 41/41 | 0/72 (0%) | 0/72 (0%) | 0 | 0 | 17.5 s |
+| gemini-3.8-flash, thinking low, 2 looks, prompt v2 | 3 | 41/42 (98%) | 41/41 | 0/72 (0%) | 1/72 (1%) | 0 | 0 | 11.6 s |
 
 ### Real-photo set
 
@@ -46,6 +51,34 @@ With **2 looks**, two independent model calls run in parallel and a charge is pr
 |---|---|---|---|---|---|---|---|---|
 | gemini-3.8-flash, thinking low, 1 look, prompt v1 | 3 | 66/66 (100%) | 66/66 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 9.7 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v1 | 3 | 63/66 (95%) | 63/63 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 13.1 s |
+| gemini-3.8-flash, thinking low, 2 looks, prompt v2 | 3 | 63/66 (95%) | 63/63 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 10.0 s |
+
+### What the real photos showed
+
+- **Charges.** In every run on the real photos, with one look or two, no unchanged pair was charged and every charged change got the right price-list entry.
+- **What two looks cost.** The one real change missed is the removed Sigma lens hood (`sigma-150-600__missing-hood`). Without it the lens ends in a front barrel almost as wide and just as black, and in every two-look run at least one look did not see the hood was gone, so consensus kept it off the bill. With one look it was charged in all three runs. Two looks trade a little recall for safety, which is the trade the app makes.
+- **Findings on unchanged items.** Two unchanged pairs drew high-confidence findings in almost every run. None was charged, because the second look disagreed or no price-list entry fit, but uncharged findings still reach staff and the customer as notes:
+  - After a 3° turn of the Nikon photo the model said the "Z 6II" badge was now upside down. It is not: apart from the 3° turn and the crop, the two photos are the same pixels. In one two-look run one look also priced "inverted" lens and mode-dial markings at $120 + $60; the other look disagreed.
+  - A glare spot over a textured or painted part was read as damage: the ribbed zoom ring of the Sony lens "worn smooth", the e-bike's seat tube "scuffed". The spot also lightens the background around it, which a person would take as a sign of light, not wear.
+
+### Prompt v2: what changed and what did not
+
+The prompt already told the model to ignore camera angle and glare. Prompt v2 (`lib/inspection/prompt.ts`) names the two cases above: printed text never turns around, and texture that only looks smooth where the light is brightest is glare. Both sets were run again three times with two looks:
+
+| Two looks, three runs | Prompt v1 | Prompt v2 |
+|---|---|---|
+| Real set: changes charged | 63/66 | 63/66 |
+| Real set: unchanged pairs charged | 0/99 | 0/99 |
+| Real set: unchanged pairs with any finding | 6/99 | 6/99 |
+| Real set: runs where the Nikon text was called upside down | 2 of 3 | 0 of 3 |
+| Real set: runs where glare was called wear or damage | 3 of 3 | 3 of 3 |
+| Synthetic set: changes charged | 41/42 | 41/42 |
+| Synthetic set: unchanged pairs charged | 0/72 | 0/72 |
+| Synthetic set: unchanged pairs with any finding | 0/72 | 1/72 |
+
+The text sentence worked; the glare sentence did not, and a sharper glare sentence tried for one run did no better, so it was not kept. The one new finding on the synthetic set is a grille dent one look priced on an unchanged speaker, which the other look did not see. Prompt v2 is what the app now sends. The demo mode still replays a prompt v1 run of the synthetic set.
+
+**Proposed fix for glare (not built yet).** Glare is a photo problem more than a wording problem, so the fix belongs before the model: `lib/photos.ts` already rejects blurry, dark and washed-out photos in code. A local check could compare the check-in photo with the check-out photo and flag a region where brightness rises while contrast and colour drop across both the item and its background, and ask staff to retake the photo away from the light before the condition check runs.
 
 ### What went wrong, pair by pair
 
@@ -56,6 +89,9 @@ Synthetic set:
   - `ebike-rear__same-light`: false charge: new_damage: rear light (high) in 1 of 3 runs
 - **gemini-3.8-flash, thinking low, 2 looks, prompt v1** (3 runs):
   - `ebike-rear__bent-fender-mud`: damage: rear mudguard missed in 1 of 3 runs
+- **gemini-3.8-flash, thinking low, 2 looks, prompt v2** (3 runs):
+  - `ebike-rear__bent-fender-mud`: damage: rear mudguard noted but not charged in 1 of 3 runs
+  - `pa-speaker__same-pose`: nothing changed, but a finding was noted (not charged) in 1 of 3 runs: new_damage "grille"
 
 Real-photo set:
 
@@ -67,5 +103,9 @@ Real-photo set:
   - `nikon-z6ii__same-pose`: nothing changed, but a finding was noted (not charged) in 2 of 3 runs: new_damage "model badge", new_damage "camera body badge", new_damage "lens barrel", new_damage "mode dial", new_damage "camera body"
   - `sigma-150-600__missing-hood`: missing: lens hood noted but not charged in 3 of 3 runs
   - `sony-100-400__same-dust-glare`: nothing changed, but a finding was noted (not charged) in 3 of 3 runs: new_damage "zoom ring rubber grip", wear "rubber ring grip", wear "telephoto lens", wear "focus ring rubber", wear "rubber zoom ring"
+- **gemini-3.8-flash, thinking low, 2 looks, prompt v2** (3 runs):
+  - `ebike-rear__same-dust-glare`: nothing changed, but a finding was noted (not charged) in 3 of 3 runs: new_damage "seat tube paint", new_damage "seat tube"
+  - `sigma-150-600__missing-hood`: missing: lens hood missed in 2 of 3 runs; missing: lens hood noted but not charged in 1 of 3 runs
+  - `sony-100-400__same-dust-glare`: nothing changed, but a finding was noted (not charged) in 3 of 3 runs: new_damage "telephoto lens", new_damage "zoom ring rubber grip", wear "telephoto lens"
 
 Per-pair results and the model's raw replies are in `runs/` and `real/runs/`. Reproduce with `npm run eval:pairs -- --set real`, then `npm run eval -- --set real --passes 2 --tag r1`, then `npm run eval:summary` (leave out `--set real` for the synthetic set).
