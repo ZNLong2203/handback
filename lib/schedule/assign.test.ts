@@ -72,6 +72,20 @@ describe("units at booking time", () => {
     expect(await rental(late.rentalId)).toMatchObject({ status: "draft", feeCaptureId: null });
   });
 
+  it("starts the booking form on the first dates some unit is free, and those dates book", async () => {
+    const { firstFreeStay } = await import("./assign");
+    expect(await firstFreeStay("pa-speaker", 3)).toEqual({ start: T(0), end: T(3) });
+    await svc.confirmBooking((await book("pa-speaker", "Pat One", 0, 3)).orderId);
+    await svc.confirmBooking((await book("pa-speaker", "Pat Two", 1, 2)).orderId);
+    await expect(book("pa-speaker", "Pat Three", 0, 3)).rejects.toThrow(/Every Portable PA speaker is booked/);
+
+    // Speaker B is free again the day after Pat Two brings it back.
+    const free = (await firstFreeStay("pa-speaker", 3))!;
+    expect(free).toEqual({ start: T(3), end: T(6) });
+    const { rentalId } = await svc.startBooking({ itemId: "pa-speaker", name: "Pat Three", email: "pat@example.com", startDate: free.start, endDate: free.end });
+    expect((await rental(rentalId)).unitId).toBe("pa-speaker-b");
+  });
+
   it("keeps a unit the customer still has when PayPal opens a dispute, so it is not sold twice", async () => {
     const ann = await book("projector", "Ann Out", 20, 22);
     await svc.confirmBooking(ann.orderId);

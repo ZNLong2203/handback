@@ -177,3 +177,22 @@ test("dragging a booking to another unit is checked by the server", async ({ bro
   await expect(counter.getByText("drone-kit-b → drone-kit-a · dragged on the schedule")).toBeVisible();
   await expect(counter.getByText("drone-kit-a → drone-kit-b · typed request, confirmed")).toBeVisible();
 });
+
+test("a busy item opens the booking form on its first free dates, and those dates book", async ({ browser }) => {
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
+  // Three camera kits: at most three stays can include today, so by the fourth visit the form has to start later.
+  for (let i = 1; i <= 4; i++) {
+    await phone.goto("/rent/camera-kit");
+    if (i === 4) {
+      await expect(phone.getByTestId("first-free")).toContainText("so the dates below start on the first free ones");
+      const today = (await phone.getByLabel("Pickup").getAttribute("min"))!;
+      await expect(phone.getByLabel("Pickup")).not.toHaveValue(today);
+      await shot(phone, "s07-first-free-dates");
+    }
+    await phone.getByLabel("Your name").fill(`Visitor ${i}`);
+    await phone.getByLabel("Email").fill(`visitor${i}@example.com`);
+    await phone.getByRole("button", { name: "Pay $87.00 (demo PayPal)" }).click();
+    await phone.waitForURL(/\/r\//);
+    await expect(phone.getByText("Paid $87.00 with PayPal")).toBeVisible();
+  }
+});

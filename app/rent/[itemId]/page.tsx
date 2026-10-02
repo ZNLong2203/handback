@@ -3,20 +3,28 @@ import { BookingForm } from "@/components/booking-form";
 import { StoreHeader } from "@/components/headers";
 import { Badge, Card, Eyebrow } from "@/components/ui";
 import { CATALOG } from "@/lib/catalog";
-import { todayIso } from "@/lib/dates";
+import { addDaysIso, todayIso } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
 import { paypalConfig } from "@/lib/paypal/config";
+import { firstFreeStay } from "@/lib/schedule/assign";
+import { spanLabel } from "@/lib/schedule/spans";
 import { SHOP } from "@/lib/shop";
 
 export const dynamic = "force-dynamic";
 
 const SAMPLE: Record<string, string> = { ebike: "ebike-rear" };
+/** The stay the booking form offers first. */
+const FIRST_STAY_DAYS = 3;
 
 export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
   const { itemId } = await props.params;
   const item = CATALOG.find((i) => i.id === itemId);
   if (!item) notFound();
   const cfg = paypalConfig();
+  const today = todayIso();
+  // Start the form on dates a unit is free for, so a busy shop does not open on dates it would refuse.
+  const free = await firstFreeStay(item.id, FIRST_STAY_DAYS);
+  const later = free && free.start !== today ? free : null;
 
   return (
     <>
@@ -37,13 +45,19 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
         <Card className="h-fit p-6 lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <h2 className="font-display text-2xl font-bold">Book it</h2>
           <p className="mt-1 text-sm text-muted">Pick up and return at {SHOP.name}, {SHOP.city}.</p>
+          {later && (
+            <p className="mt-2 text-sm text-held" data-testid="first-free">
+              No {item.name.toLowerCase()} is free for {FIRST_STAY_DAYS} days from today, so the dates below start on the first free ones, {spanLabel(later)}.
+            </p>
+          )}
           <div className="mt-5">
             <BookingForm
               itemId={item.id}
               dailyCents={item.dailyCents}
               depositCents={item.depositCents}
               maxDays={SHOP.maxRentalDays}
-              today={todayIso()}
+              today={today}
+              initial={free ?? { start: today, end: addDaysIso(today, FIRST_STAY_DAYS) }}
               paypal={cfg.mode === "demo" ? null : { clientId: cfg.clientId, environment: cfg.mode === "live" ? "production" : "sandbox" }}
             />
           </div>

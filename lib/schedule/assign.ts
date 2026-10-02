@@ -1,5 +1,6 @@
 import "server-only";
 import { catalogItem } from "@/lib/catalog";
+import { addDaysIso, todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { rentalById, updateRental } from "@/lib/rentals/repo";
 import { UserError, type Rental } from "@/lib/rentals/types";
@@ -72,4 +73,25 @@ export async function confirmUnitBeforePayment(rentalId: string, now = new Date(
     }
     if (unitId !== rental.unitId) await updateRental(tx, rentalId, { unit_id: unitId });
   });
+}
+
+/**
+ * The first dates, from today on, when some unit of the item is free for a
+ * stay of `days` (pickup day plus `days`, as the booking form counts it),
+ * with slots set aside for a pending fix counted as taken. The booking form
+ * starts on these, so a busy shop does not open on dates it would refuse.
+ * Only a starting point: the booking is checked again when it is made.
+ */
+export async function firstFreeStay(itemId: string, days: number, now = new Date()): Promise<Span | null> {
+  const db = await getDb();
+  const today = todayIso(now);
+  const units = await unitsForItem(db, itemId);
+  const occupants = await occupantsForItem(db, itemId, now, true);
+  const slot = earliestSlot(
+    units.map((u) => u.id),
+    { start: today, end: addDaysIso(today, days) },
+    today,
+    occupants,
+  );
+  return slot?.span ?? null;
 }
