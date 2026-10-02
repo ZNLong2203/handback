@@ -35,3 +35,13 @@ The PayPal Server SDK Context Plugin (`paypaldev/server-sdk-context-plugin-previ
 - `typescript-error-handling` notes that `result` can be undefined on a bare `ApiError`. `lib/paypal/errors.ts` falls back to parsing `body` and the `paypal-debug-id` header, so every failure keeps PayPal's `issue` and `debug_id`.
 - `typescript-getting-started` notes that the root barrel mixes value and type exports; enums are imported as values and models with `import type`.
 - The SDK's `ClientCredentialsAuthManager` refreshes expired tokens itself, unlike the Agent Toolkit client noted above, so the gateway uses one long-lived SDK client.
+
+### 2026-10-02: The dispute desk
+
+Claude Code built the dispute desk (Disputes v1 client, evidence pack, counter panel) and then ran it against a real buyer dispute in the sandbox (`scripts/spike-dispute.ts`, recorded in [paypal-sandbox-notes.md](paypal-sandbox-notes.md)). What the sandbox run corrected:
+
+- The client assumed a reused `PayPal-Request-Id` would make a retried evidence upload safe. The sandbox ran the repeated request again and refused it with a 422 instead of replaying the first answer. The desk now guards double sends itself, and after an error it reads the dispute to see whether PayPal filed the evidence anyway.
+- The REST client let a timeout while reading a response body, or a failed token request, escape its retry loop. `api-m.sandbox.paypal.com` stalled several times during the run, which is how this showed up.
+- Dispute links were only followed on `api-m.sandbox.paypal.com`. PayPal's own webhook samples write them on `api.sandbox.paypal.com`; both names are now accepted.
+- The first spike script hung: outside the Playwright test runner, locator calls wait forever unless a timeout is set.
+- One sandbox require-evidence call was refused with `MISSING_OR_INVALID_REQUEST_BODY` and the same body succeeded twice later. The cause was not found; the notes say so rather than guess.
