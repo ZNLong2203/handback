@@ -1,6 +1,7 @@
 import "server-only";
 import { catalogItem } from "@/lib/catalog";
 import { getDb } from "@/lib/db/client";
+import { disputesFor } from "@/lib/disputes/repo";
 import { firstBrokenLink } from "./audit";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
 import { planSettlement } from "./settlement";
@@ -10,10 +11,11 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
   const db = await getDb();
   const rental = "id" in by ? await rentalById(db, by.id) : await rentalByToken(db, by.token);
   if (!rental) return null;
-  const [inspections, assessment, events] = await Promise.all([
+  const [inspections, assessment, events, disputes] = await Promise.all([
     inspectionsFor(db, rental.id),
     latestAssessment(db, rental.id),
     eventsFor(db, rental.id),
+    disputesFor(db, rental.id),
   ]);
   const checkout = inspections.filter((i) => i.phase === "checkout").at(-1) ?? null;
   const checkin = inspections.filter((i) => i.phase === "checkin").at(-1) ?? null;
@@ -27,6 +29,8 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     events,
     plan,
     chainIntact: firstBrokenLink(events) === null,
+    /** The newest PayPal dispute on the rental, if any. */
+    dispute: disputes[0] ?? null,
   };
 }
 

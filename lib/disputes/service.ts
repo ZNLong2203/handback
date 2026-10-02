@@ -309,10 +309,14 @@ export type DisputeDesk = {
   sent: { sha256: string; at: string; evidenceType: string; files: string[] }[];
   /** The disputed amount PayPal held from the shop's balance, if PayPal reported it. */
   hold: { cents: Cents; placedAt: string | null; releasedAt: string | null } | null;
+  /** Whole days until PayPal's response deadline, when there is one. */
+  daysLeft: number | null;
+  /** What the customer wrote when they opened the case. */
+  customerNote: string | null;
   mode: PayPalMode;
 };
 
-export async function loadDisputeDesk(view: RentalView): Promise<DisputeDesk | null> {
+export async function loadDisputeDesk(view: RentalView, now = new Date()): Promise<DisputeDesk | null> {
   const { rental } = view;
   const db = await getDb();
   const [stored] = await disputesFor(db, rental.id);
@@ -372,6 +376,8 @@ export async function loadDisputeDesk(view: RentalView): Promise<DisputeDesk | n
     pack: latest ? { ...latest, current: latest.factsSha === factsSha(nowFacts) } : null,
     sent,
     hold: placed?.amount ? { cents: usdCents(placed.amount) ?? 0, placedAt: placed.initiated_time ?? null, releasedAt: released?.initiated_time ?? null } : null,
+    daysLeft: stored.sellerResponseDueAt ? Math.max(0, Math.ceil((Date.parse(stored.sellerResponseDueAt) - now.getTime()) / 86_400_000)) : null,
+    customerNote: stored.paypal.evidences?.find((e) => e.source === "SUBMITTED_BY_BUYER" && e.notes)?.notes ?? null,
     mode: disputeApi().mode,
   };
 }

@@ -124,12 +124,12 @@ export function recommend(i: RecommendInput): Recommendation {
   const base = { offerCents, options, fee };
 
   if (i.status === "RESOLVED") return { ...base, action: "done", headline: "PayPal has closed this dispute.", reasons: [] };
-  if (!i.actions.provideEvidence && !canAccept && !canOffer) {
+  if (i.status === "UNDER_REVIEW" || i.status === "WAITING_FOR_BUYER_RESPONSE" || (!i.actions.provideEvidence && !canAccept && !canOffer)) {
     return {
       ...base,
       action: "wait",
-      headline: "Nothing to answer right now.",
-      reasons: [i.status === "UNDER_REVIEW" ? "PayPal is reviewing the case." : `The dispute is ${i.status.toLowerCase().replace(/_/g, " ")}.`, "PayPal will ask for evidence or decide; this page updates when it does."],
+      headline: i.status === "WAITING_FOR_BUYER_RESPONSE" ? "Wait: the customer has to answer." : "Wait: PayPal is reviewing the case.",
+      reasons: ["PayPal will ask for more evidence or decide; this page updates when it does.", ...(canAccept ? ["Accepting is still possible, at the cost shown below."] : [])],
     };
   }
 

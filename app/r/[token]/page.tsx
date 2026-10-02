@@ -9,6 +9,7 @@ import { MoneyBar } from "@/components/money-bar";
 import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
+import { utc } from "@/lib/disputes/facts";
 import { formatUsd } from "@/lib/money";
 import { STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
@@ -24,6 +25,9 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { rental, item, checkout, checkin, assessment, plan } = view;
   const status = STATUS[rental.status];
   const firstName = rental.customerName.split(" ")[0];
+  const settled = rental.status === "settled" || rental.status === "disputed";
+  const dispute = view.dispute;
+  const evidenceSent = Boolean(dispute && view.events.some((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === dispute.id));
 
   return (
     <>
@@ -41,13 +45,13 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <Badge tone={status.tone}>{status.customerLabel ?? status.label}</Badge>
+              <Badge tone={status.customerTone ?? status.tone}>{status.customerLabel ?? status.label}</Badge>
               <LiveRefresh channel={rental.id} />
             </div>
           </div>
           <p className="mt-4 text-ink-soft">{status.customer}</p>
           <div className="mt-5">
-            {rental.status === "settled" ? (
+            {settled ? (
               <MoneyBar
                 state="settled"
                 size="lg"
@@ -104,10 +108,10 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
           </Notice>
         )}
 
-        {assessment && checkout && checkin && ["customer_review", "responded", "settled"].includes(rental.status) && (
+        {assessment && checkout && checkin && ["customer_review", "responded", "settled", "disputed"].includes(rental.status) && (
           <Card className="p-6">
             <h2 className="font-display text-2xl font-bold">
-              {rental.status === "customer_review" ? "Please review what the shop found" : rental.status === "settled" ? "What was decided" : "Your answers"}
+              {rental.status === "customer_review" ? "Please review what the shop found" : settled ? "What was decided" : "Your answers"}
             </h2>
             {rental.status === "customer_review" && (
               <p className="mt-1 text-sm text-muted">
@@ -132,7 +136,28 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
           </Card>
         )}
 
-        {rental.status === "settled" && (
+        {dispute &&
+          (dispute.status === "RESOLVED" ? (
+            <Notice tone="note" title="PayPal closed the case">
+              {dispute.outcome === "RESOLVED_BUYER_FAVOUR"
+                ? `PayPal decided in your favour and refunded ${formatUsd(dispute.refundedCents ?? dispute.amountCents ?? 0)} to your PayPal account.`
+                : dispute.outcome === "RESOLVED_SELLER_FAVOUR"
+                  ? "PayPal reviewed the case and decided the charge stands."
+                  : dispute.outcome === "CANCELED_BY_BUYER"
+                    ? "You withdrew the case."
+                    : "PayPal has closed the case."}{" "}
+              PayPal&apos;s email has the details.
+            </Notice>
+          ) : (
+            <Notice tone="note" title="Your case with PayPal">
+              You asked PayPal to look at {dispute.amountCents !== null ? `${formatUsd(dispute.amountCents)} of ` : ""}this rental&apos;s charges
+              {dispute.openedAt ? ` on ${utc(dispute.openedAt).slice(0, 10)}` : ""}. PayPal decides from what you and the shop send it.{" "}
+              {evidenceSent ? "The shop has sent PayPal the same photos and answers you see on this page. " : ""}PayPal will email you; you do not need to do
+              anything here.
+            </Notice>
+          ))}
+
+        {settled && (
           <Card className="p-6">
             <h2 className="flex items-center gap-2 font-display text-2xl font-bold">
               <Receipt className="h-6 w-6" aria-hidden /> Receipt

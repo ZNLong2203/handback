@@ -79,6 +79,10 @@ describe("recommend", () => {
 
   it("waits while PayPal reviews, and is done once resolved", () => {
     expect(recommend(input({ status: "UNDER_REVIEW", actions: { ...none, provideSupportingInfo: true } })).action).toBe("wait");
+    // The sandbox offers accept_claim during review too; the advice is still to wait.
+    const reviewing = recommend(input({ status: "UNDER_REVIEW", actions: { ...none, acceptClaim: ["REFUND"], adjudicate: true } }));
+    expect(reviewing).toMatchObject({ action: "wait", headline: "Wait: PayPal is reviewing the case." });
+    expect(reviewing.options.find((o) => o.action === "accept")?.available).toBe(true);
     expect(recommend(input({ status: "RESOLVED", actions: none })).action).toBe("done");
   });
 });

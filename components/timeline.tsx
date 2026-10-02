@@ -13,7 +13,8 @@ const ACTOR = {
 
 function detail(e: AuditEvent): string | null {
   const d = e.data as Record<string, unknown>;
-  const ids = ["orderId", "captureId", "authorizationId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
+  const ids = ["orderId", "captureId", "authorizationId", "disputeId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
+  if (e.type.startsWith("dispute.") && typeof d.status === "string") ids.push(String(d.outcome ?? d.status).toLowerCase().replace(/_/g, " "));
   if (typeof d.debugId === "string") ids.push(`debug_id ${d.debugId}`);
   if (typeof d.issue === "string") ids.push(String(d.issue));
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);

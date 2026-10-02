@@ -1,6 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
+import * as desk from "@/lib/disputes/service";
 import * as svc from "@/lib/rentals/service";
 import { UserError, type Phase } from "@/lib/rentals/types";
 
@@ -89,4 +90,55 @@ export async function resolveContestAction(rentalId: string, findingId: string, 
 
 export async function settleAction(rentalId: string) {
   return run(() => svc.settle(rentalId));
+}
+
+// ─── Dispute desk ───────────────────────────────────────────
+
+export async function findDisputesAction(rentalId: string) {
+  return run(async () => {
+    const found = await desk.findDisputes(rentalId);
+    return found === 0 ? "PayPal reports no dispute on this rental's payments." : `Found ${found} dispute${found === 1 ? "" : "s"} on PayPal.`;
+  });
+}
+
+export async function refreshDisputeAction(rentalId: string) {
+  return run(() => desk.refreshDispute(rentalId));
+}
+
+export async function prepareEvidenceAction(rentalId: string) {
+  return run(async () => {
+    await desk.prepareEvidence(rentalId);
+  });
+}
+
+export async function submitEvidenceAction(rentalId: string) {
+  return run(async () => {
+    await desk.submitEvidence(rentalId);
+  });
+}
+
+export async function acceptClaimAction(rentalId: string) {
+  return run(() => desk.acceptClaim(rentalId));
+}
+
+export async function makeOfferAction(rentalId: string, cents: number) {
+  return run(async () => {
+    if (!Number.isSafeInteger(cents)) throw new UserError("Enter the offer in whole cents.");
+    await desk.makeOffer(rentalId, cents);
+  });
+}
+
+export async function sandboxRequireEvidenceAction(rentalId: string) {
+  return run(() => desk.sandboxRequireEvidence(rentalId));
+}
+
+export async function sandboxDecideAction(rentalId: string, outcome: "SELLER_FAVOR" | "BUYER_FAVOR") {
+  return run(async () => {
+    if (outcome !== "SELLER_FAVOR" && outcome !== "BUYER_FAVOR") throw new UserError("Unknown outcome.");
+    await desk.sandboxDecide(rentalId, outcome);
+  });
+}
+
+export async function demoOpenDisputeAction(rentalId: string) {
+  return run(() => desk.demoOpenDispute(rentalId));
 }
