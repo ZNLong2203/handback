@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import * as svc from "@/lib/rentals/service";
 import { UserError, type Phase } from "@/lib/rentals/types";
+import { runInspection } from "@/lib/workflows/dispatch";
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -71,8 +72,9 @@ export async function holdDepositAction(rentalId: string) {
   return run(() => svc.holdDeposit(rentalId));
 }
 
+/** Runs on Render Workflows when the deployment is set up for it, in this process otherwise. */
 export async function inspectAction(rentalId: string) {
-  return run(() => svc.inspect(rentalId));
+  return run(() => runInspection(rentalId));
 }
 
 export async function setStaffDecisionAction(rentalId: string, findingId: string, staff: "keep" | "waive") {

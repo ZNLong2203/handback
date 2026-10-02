@@ -18,6 +18,7 @@ function detail(e: AuditEvent): string | null {
   if (typeof d.issue === "string") ids.push(String(d.issue));
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);
   if (e.type === "inspection.completed") ids.push(`${d.source} · ${d.model} · ${d.looks} looks · ${Math.round(Number(d.ms) / 100) / 10}s`);
+  if (typeof d.taskRunId === "string") ids.push(`Render Workflows run ${d.taskRunId}`);
   return ids.length ? ids.join(" · ") : null;
 }
 
