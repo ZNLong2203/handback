@@ -28,6 +28,12 @@ const fairness = [
   { icon: FileCheck2, title: "Evidence, not vibes", body: "Photos are stored under their SHA-256 hash, and every step is hash-chained with its PayPal ids." },
 ];
 
+/** From eval/README.md: two looks, prompt v2, three runs of each set. */
+const measured = [
+  { set: "36 AI-generated pairs", caught: "41/42", charged: "0/72" },
+  { set: "55 pairs built on real photos", caught: "63/66", charged: "0/99" },
+];
+
 const paypal = [
   "Orders v2: fee capture with vault, deposit AUTHORIZE",
   "Vault v3: merchant-initiated holds and charges",
@@ -115,18 +121,26 @@ export default function Home() {
                 can only propose, uncertain findings are never charged, and nothing moves until the person paying has seen the evidence.
               </p>
               <div className="mt-6 rounded-2xl border border-line bg-card p-5">
-                <p className="text-sm font-semibold">Measured on 36 labeled photo pairs, three runs</p>
-                <dl className="mt-3 grid grid-cols-2 gap-4">
-                  <div>
-                    <dt className="text-xs text-muted">Real changes caught</dt>
-                    <dd className="font-display text-3xl font-bold">41/42</dd>
+                <p className="text-sm font-semibold">Measured on labeled photo pairs, three runs of each set</p>
+                {measured.map((m) => (
+                  <div key={m.set} className="mt-4 border-t border-line pt-3 first-of-type:border-t-0 first-of-type:pt-0">
+                    <p className="text-xs font-semibold text-ink-soft">{m.set}</p>
+                    <dl className="mt-1 grid grid-cols-2 gap-4">
+                      <div>
+                        <dt className="text-xs text-muted">Real changes caught</dt>
+                        <dd className="font-display text-3xl font-bold">{m.caught}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted">Unchanged items charged</dt>
+                        <dd className="font-display text-3xl font-bold text-released">{m.charged}</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div>
-                    <dt className="text-xs text-muted">Unchanged items charged</dt>
-                    <dd className="font-display text-3xl font-bold text-released">0/72</dd>
-                  </div>
-                </dl>
-                <p className="mt-2 text-xs text-muted">AI-generated pairs with exact ground truth; a real-photo set is next. Details in eval/README.md.</p>
+                ))}
+                <p className="mt-3 text-xs text-muted">
+                  The real-photo pairs start from freely licensed photos, but the damage in them is still drawn by an image model. Details in
+                  eval/README.md.
+                </p>
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
