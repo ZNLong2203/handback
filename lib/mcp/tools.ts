@@ -8,7 +8,7 @@ import { DepositMandateSchema, mandateExpiry, mandateTerms } from "@/lib/rentals
 import { latestAssessment, rentalByToken } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
-import { STATUS } from "@/lib/rentals/status";
+import { feePending, STATUS } from "@/lib/rentals/status";
 import { RENTAL_STATUSES, UserError, type Rental } from "@/lib/rentals/types";
 import { SHOP } from "@/lib/shop";
 
@@ -99,6 +99,8 @@ export const StatusOut = z.object({
   amounts: z.object({
     fee: Money,
     feePaid: z.boolean(),
+    /** Approved, but PayPal left the capture PENDING; the booking is confirmed when it completes. */
+    feePending: z.boolean(),
     depositHold: Money,
     heldNow: Money.nullable(),
     kept: Money.nullable(),
@@ -167,6 +169,7 @@ function tokenFrom(input: string): string {
 }
 
 function nextStepFor(rental: Rental, pageUrl: string): string {
+  if (feePending(rental)) return "The renter approved in PayPal. PayPal is still processing the rental fee; the booking is confirmed when it completes.";
   const steps: Record<Rental["status"], string> = {
     draft: "Waiting for the renter to approve the booking in PayPal. If they lost the link, give them approveUrl again.",
     booked: `Booked and paid. The renter picks the item up on ${rental.startDate}; the shop photographs it and holds the deposit then.`,
@@ -175,7 +178,7 @@ function nextStepFor(rental: Rental, pageUrl: string): string {
     customer_review: `The shop proposes the charges in waitingForRenter. Only the renter can accept or question them, on their own page: ${pageUrl}`,
     responded: "The renter has answered. A person at the shop settles next; nothing more is needed from the renter.",
     settled: "Settled. Nothing more to do.",
-    cancelled: "This booking was cancelled.",
+    cancelled: "This booking was cancelled; nothing more happens on it. The renter can book again.",
     disputed: "The renter opened a PayPal dispute about this rental; PayPal handles it from here.",
   };
   return steps[rental.status];
@@ -192,6 +195,7 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
   // settlement, and PayPal holds the deposit from pickup until settlement.
   const settled = rental.settledAt !== null;
   const holding = !settled && rental.authorizationId !== null && rental.authorizedCents !== null;
+  const processing = feePending(rental);
   return {
     rentalId: rental.id,
     item: { id: rental.itemId, name: item?.name ?? rental.itemId },
@@ -199,13 +203,14 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
     return: rental.endDate,
     status: rental.status,
     statusLabel: STATUS[rental.status].customerLabel ?? STATUS[rental.status].label,
-    explanation: STATUS[rental.status].customer,
+    explanation: processing ? "PayPal is still processing the renter's payment." : STATUS[rental.status].customer,
     nextStep: nextStepFor(rental, pageUrl),
-    approveUrl: rental.status === "draft" ? rental.approveUrl : null,
+    approveUrl: rental.status === "draft" && !processing ? rental.approveUrl : null,
     rentalPageUrl: pageUrl,
     amounts: {
       fee: money(rental.feeCents),
-      feePaid: rental.feeCaptureId !== null,
+      feePaid: rental.feeCaptureId !== null && rental.status !== "draft" && rental.status !== "cancelled",
+      feePending: processing,
       depositHold: money(rental.depositCents),
       heldNow: holding ? money(rental.authorizedCents!) : null,
       kept: settled ? money(rental.capturedCents ?? 0) : null,

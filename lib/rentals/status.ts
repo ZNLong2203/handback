@@ -1,4 +1,4 @@
-import type { RentalStatus } from "./types";
+import type { Rental, RentalStatus } from "./types";
 
 type Tone = "brand" | "held" | "released" | "charged" | "note" | "neutral";
 
@@ -13,6 +13,12 @@ export const STATUS: Record<RentalStatus, { label: string; customerLabel?: strin
   cancelled: { label: "Cancelled", tone: "neutral", staffNext: "Done", customer: "This booking was cancelled." },
   disputed: { label: "Disputed", tone: "charged", staffNext: "Answer the PayPal dispute", customer: "You opened a dispute with PayPal." },
 };
+
+/**
+ * The renter approved and PayPal accepted the fee capture but left it
+ * PENDING: the rental stays unpaid until PayPal's webhook says how it ended.
+ */
+export const feePending = (r: Pick<Rental, "status" | "feeCaptureId">) => r.status === "draft" && r.feeCaptureId !== null;
 
 /** The steps of a rental, for the progress strip. */
 export const STEPS: { key: string; label: string; statuses: RentalStatus[] }[] = [
@@ -33,6 +39,8 @@ const EVENT_LABEL: Record<string, string> = {
   "mandate.refused": "Refused: outside the renter's deposit mandate",
   "booking.started": "Booking started; PayPal order created",
   "booking.paid": "Rental fee paid; PayPal saved for the deposit",
+  "booking.pending": "Rental fee approved; PayPal is still processing it",
+  "booking.declined": "PayPal did not take the rental fee",
   "photo.added": "Photo recorded",
   "deposit.held": "Deposit held on PayPal",
   "checkout.acknowledged": "Customer confirmed the pickup photos",

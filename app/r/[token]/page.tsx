@@ -13,7 +13,7 @@ import { Badge, ButtonAnchor, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
 import { captureRefusal, returnFromPayPal } from "@/lib/rentals/service";
-import { STATUS } from "@/lib/rentals/status";
+import { feePending, STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
 import { SHOP } from "@/lib/shop";
 
@@ -30,7 +30,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   // way, so neither a reload nor a live update can run it again.
   const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) };
   const back = fromPayPal.token || fromPayPal.paypal ? await returnFromPayPal(token, fromPayPal) : "none";
-  if (back === "approved") redirect(`/r/${token}`);
+  if (back === "approved" || back === "pending") redirect(`/r/${token}`);
   if (back === "failed") redirect(`/r/${token}?paypal=failed`);
 
   const view = await loadRentalView({ token });
@@ -39,7 +39,9 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const status = STATUS[rental.status];
   const firstName = rental.customerName.split(" ")[0];
   const byAssistant = view.mandate?.mandate.issuedTo.party === "assistant";
-  const refused = fromPayPal.paypal === "failed" && rental.status === "draft" ? (captureRefusal(view.events) ?? "PayPal has not completed the payment yet.") : null;
+  const processing = feePending(rental);
+  const refused =
+    fromPayPal.paypal === "failed" && rental.status === "draft" && !processing ? (captureRefusal(view.events) ?? "Approve the booking in PayPal again.") : null;
 
   return (
     <>
@@ -57,32 +59,47 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <Badge tone={status.tone}>{status.customerLabel ?? status.label}</Badge>
+              <Badge tone={processing ? "held" : status.tone}>{processing ? "Payment processing" : (status.customerLabel ?? status.label)}</Badge>
               <LiveRefresh channel={rental.id} />
             </div>
           </div>
-          <p className="mt-4 text-ink-soft">{status.customer}</p>
-          <div className="mt-5">
-            {rental.status === "settled" ? (
-              <MoneyBar
-                state="settled"
-                size="lg"
-                authorizedCents={rental.authorizedCents ?? 0}
-                capturedCents={rental.capturedCents ?? 0}
-                releasedCents={rental.releasedCents ?? 0}
-                extraCents={rental.extraCents ?? 0}
-              />
-            ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
-              <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
-            ) : rental.authorizedCents ? (
-              <MoneyBar state="held" size="lg" authorizedCents={rental.authorizedCents} />
-            ) : (
-              <MoneyBar state="none" size="lg" depositCents={rental.depositCents} />
-            )}
-          </div>
+          <p className="mt-4 text-ink-soft">{processing ? "Your booking is confirmed when PayPal finishes processing the payment." : status.customer}</p>
+          {rental.status !== "cancelled" && (
+            <div className="mt-5">
+              {rental.status === "settled" ? (
+                <MoneyBar
+                  state="settled"
+                  size="lg"
+                  authorizedCents={rental.authorizedCents ?? 0}
+                  capturedCents={rental.capturedCents ?? 0}
+                  releasedCents={rental.releasedCents ?? 0}
+                  extraCents={rental.extraCents ?? 0}
+                />
+              ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
+                <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
+              ) : rental.authorizedCents ? (
+                <MoneyBar state="held" size="lg" authorizedCents={rental.authorizedCents} />
+              ) : (
+                <MoneyBar state="none" size="lg" depositCents={rental.depositCents} />
+              )}
+            </div>
+          )}
         </Card>
 
-        {rental.status === "draft" && (
+        {processing && (
+          <Card className="p-6">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Clock3 className="h-5 w-5 text-held" aria-hidden /> PayPal is still processing your payment
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              You approved the {formatUsd(rental.feeCents)} rental fee and PayPal accepted it, but has not finished processing it. There is nothing to pay
+              again. The booking is confirmed when PayPal confirms the payment, and this page updates by itself. If PayPal declines it, nothing is charged
+              and this page says so.
+            </p>
+          </Card>
+        )}
+
+        {rental.status === "draft" && !processing && (
           <Card className="p-6">
             <h2 className="font-semibold">Approve the booking in PayPal</h2>
             {back === "cancelled" && (
@@ -115,6 +132,19 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                 .
               </p>
             )}
+          </Card>
+        )}
+
+        {rental.status === "cancelled" && (
+          <Card className="p-6">
+            <h2 className="font-semibold">This booking was not paid</h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {captureRefusal(view.events) ?? "Nothing was charged."}{" "}
+              <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
+                Book the {item.name.toLowerCase()} again
+              </Link>
+              .
+            </p>
           </Card>
         )}
 

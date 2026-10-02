@@ -348,6 +348,57 @@ describe("approving by redirect", () => {
     expect((await rental(b.rentalId)).status).toBe("booked");
   });
 
+  /** Runs fn while PayPal answers every booking capture with a PENDING capture. Returns how often it was asked. */
+  async function withPendingCaptures(captureId: string, fn: () => Promise<void>): Promise<number> {
+    const shared = globalThis as { depositGateway?: object };
+    const real = shared.depositGateway!;
+    let asked = 0;
+    shared.depositGateway = Object.assign(Object.create(real), {
+      captureBookingOrder: async () => {
+        asked++;
+        return { captureId, status: "PENDING", capturedCents: 9000, vaultId: "DEMO-VAULT-PENDING", payerEmail: "sam@example.com" };
+      },
+    });
+    try {
+      await fn();
+    } finally {
+      shared.depositGateway = real;
+    }
+    return asked;
+  }
+
+  it("waits for PayPal when it leaves the fee capture pending, and books when the capture completes", async () => {
+    const b = await draft();
+    const captureId = `PENDING-${b.rentalId}`;
+    const asked = await withPendingCaptures(captureId, async () => {
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("pending");
+      // A reload, or the in-page button, does not capture again.
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("pending");
+      expect(await svc.confirmBooking(b.orderId)).toEqual({ token: b.token, pending: true });
+    });
+    expect(asked).toBe(1);
+    expect(await rental(b.rentalId)).toMatchObject({ status: "draft", feeCaptureId: captureId, vaultId: "DEMO-VAULT-PENDING" });
+    expect(svc.captureRefusal(await repo.eventsFor(await getDb(), b.rentalId))).toBeNull();
+
+    const completed = { id: `WH-${b.rentalId}-done`, event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { id: captureId, status: "COMPLETED" } };
+    expect(await applyPayPalWebhook(completed)).toBe("applied");
+    expect(await applyPayPalWebhook({ ...completed, id: `WH-${b.rentalId}-again` })).toBe("applied");
+    expect(await rental(b.rentalId)).toMatchObject({ status: "booked", feeCaptureId: captureId });
+    const types = (await repo.eventsFor(await getDb(), b.rentalId)).map((e) => e.type);
+    expect(types.filter((t) => t.startsWith("booking."))).toEqual(["booking.started", "booking.pending", "booking.paid"]);
+  });
+
+  it("cancels the booking, with nothing charged, when PayPal denies the pending capture", async () => {
+    const b = await draft();
+    const captureId = `PENDING-${b.rentalId}`;
+    await withPendingCaptures(captureId, async () => {
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("pending");
+    });
+    await applyPayPalWebhook({ id: `WH-${b.rentalId}-denied`, event_type: "PAYMENT.CAPTURE.DENIED", resource: { id: captureId, status: "DENIED" } });
+    expect((await rental(b.rentalId)).status).toBe("cancelled");
+    expect(svc.captureRefusal(await repo.eventsFor(await getDb(), b.rentalId))).toBe("PayPal did not take the payment (capture DENIED), so nothing was charged.");
+  });
+
   it("reports a cancel, and ignores a return for some other order or without a payer", async () => {
     const b = await draft();
     expect(await svc.returnFromPayPal(b.token, { paypal: "cancelled", token: b.orderId })).toBe("cancelled");

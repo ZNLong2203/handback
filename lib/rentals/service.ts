@@ -217,18 +217,40 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
   return { rentalId: id, token, orderId: order.orderId, approveUrl, mandate, mandateSha256: sealed.sha256 };
 }
 
-/** After the buyer approves in PayPal: capture the fee and keep the saved-wallet token. Safe to call twice, even at once. */
-export async function confirmBooking(orderId: string): Promise<{ token: string }> {
+/**
+ * After the buyer approves in PayPal: capture the fee and keep the
+ * saved-wallet token. Safe to call twice, even at once. When PayPal accepts
+ * the capture but leaves it PENDING, the capture id is kept and the rental
+ * waits, unpaid, for PayPal's PAYMENT.CAPTURE.COMPLETED webhook (see
+ * webhooks.ts); it is never captured a second time.
+ */
+export async function confirmBooking(orderId: string): Promise<{ token: string; pending: boolean }> {
   const db = await getDb();
   const rental = await rentalByOrder(db, orderId);
   if (!rental) throw new UserError("We couldn't find this booking.");
-  if (rental.status !== "draft") return { token: rental.token };
+  if (rental.status !== "draft") return { token: rental.token, pending: false };
+  if (rental.feeCaptureId) return { token: rental.token, pending: true };
 
   const paid = await paypalStep(rental.id, "capture the rental fee", () =>
     depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`),
   );
+  if (paid.status === "PENDING") {
+    const recorded = await db.tx(async (tx) => {
+      const rows = await tx.query(
+        "update rentals set fee_capture_id = $2, vault_id = $3, payer_email = $4, updated_at = now() where id = $1 and status = 'draft' and fee_capture_id is null returning id",
+        [rental.id, paid.captureId, paid.vaultId ?? null, paid.payerEmail ?? null],
+      );
+      if (rows.length > 0) {
+        await appendEvent(tx, rental.id, "paypal", "booking.pending", { captureId: paid.captureId, feeCents: paid.capturedCents, savedWallet: Boolean(paid.vaultId) });
+      }
+      return rows.length > 0;
+    });
+    if (recorded) publish(rental.id, "booking.pending");
+    return { token: rental.token, pending: true };
+  }
   if (paid.status !== "COMPLETED") {
-    throw new UserError("PayPal has not completed the payment yet. Check back in a few minutes.");
+    await appendEvent(db, rental.id, "paypal", "booking.declined", { captureId: paid.captureId, status: paid.status });
+    throw new UserError(declinedMessage(paid.status));
   }
   const booked = await db.tx(async (tx) => {
     const moved = await updateRental(
@@ -247,10 +269,12 @@ export async function confirmBooking(orderId: string): Promise<{ token: string }
     return moved;
   });
   if (booked) publish(rental.id, "booking.paid");
-  return { token: rental.token };
+  return { token: rental.token, pending: false };
 }
 
-export type PayPalReturn = "none" | "approved" | "cancelled" | "failed";
+const declinedMessage = (status: string) => `PayPal did not take the payment (capture ${status}), so nothing was charged.`;
+
+export type PayPalReturn = "none" | "approved" | "pending" | "cancelled" | "failed";
 
 /**
  * PayPal sends the renter back to their page after the approval step: with
@@ -261,12 +285,11 @@ export type PayPalReturn = "none" | "approved" | "cancelled" | "failed";
 export async function returnFromPayPal(rentalToken: string, query: { token?: string; PayerID?: string; paypal?: string }): Promise<PayPalReturn> {
   const rental = await rentalByToken(await getDb(), rentalToken);
   if (!rental) return "none";
-  if (query.paypal === "cancelled") return rental.status === "draft" ? "cancelled" : "none";
+  if (query.paypal === "cancelled") return rental.status === "draft" && !rental.feeCaptureId ? "cancelled" : "none";
   if (!query.token || !query.PayerID || query.token !== rental.bookingOrderId) return "none";
   if (rental.status !== "draft") return "approved";
   try {
-    await confirmBooking(query.token);
-    return "approved";
+    return (await confirmBooking(query.token)).pending ? "pending" : "approved";
   } catch (err) {
     if (err instanceof UserError) return "failed";
     throw err;
@@ -276,11 +299,12 @@ export async function returnFromPayPal(rentalToken: string, query: { token?: str
 /**
  * Why the last attempt to capture the booking failed, from the audit log, so
  * the page can explain it after moving to a URL that does not retry it. Null
- * when PayPal did not refuse (a capture still pending).
+ * when PayPal did not refuse.
  */
 export function captureRefusal(events: AuditEvent[]): string | null {
-  const last = events.findLast((e) => e.type === "paypal.error" && e.data.step === "capture the rental fee");
+  const last = events.findLast((e) => (e.type === "paypal.error" && e.data.step === "capture the rental fee") || e.type === "booking.declined");
   if (!last) return null;
+  if (last.type === "booking.declined") return declinedMessage(String(last.data.status));
   const d = last.data as Partial<PayPalRefusal>;
   return explainPayPalError({
     step: "capture the rental fee",
