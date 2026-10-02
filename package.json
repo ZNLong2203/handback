@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Rental deposits that settle themselves fairly: PayPal holds the deposit, AI compares check-out and check-in photos, and only proven damage is captured.",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,6 +15,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "check": "next typegen && npm run lint && npm run typecheck && npm test",
     "smoke:sandbox": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/sandbox-smoke.ts",
     "seed:aged-holds": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-aged-holds.ts",
     "eval:pairs": "tsx --env-file-if-exists=.env.local scripts/eval/make-pairs.ts",
