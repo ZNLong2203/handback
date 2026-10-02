@@ -1,6 +1,6 @@
-# Every push and pull request: lint, types and unit tests, then the browser
-# test of a whole rental. Both jobs run in demo mode, so no secrets are needed
-# and none are available to the workflow.
+# Every push and pull request: lint, types and unit tests in one job, and the
+# browser test of a whole rental in a second job that runs alongside it. Both
+# run in demo mode, so no secrets are needed and the workflow references none.
 name: CI
 
 on:
