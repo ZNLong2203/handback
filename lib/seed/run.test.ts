@@ -9,7 +9,7 @@ delete process.env.PAYPAL_CLIENT_ID;
 const { getDb } = await import("@/lib/db/client");
 const { depositGateway } = await import("@/lib/paypal");
 const repo = await import("@/lib/rentals/repo");
-const { seedCounter } = await import("./run");
+const { latestSavedWallet, seedCounter } = await import("./run");
 
 const byEmail = async () => {
   const db = await getDb();
@@ -27,6 +27,11 @@ describe("seedCounter", () => {
     expect(rentals.get("priya.nair@example.com")?.authorizationId).toBeTruthy();
     expect(rentals.get("alex.kim@example.com")).toMatchObject({ capturedCents: 0, releasedCents: 12000 });
     expect(rentals.get("dana.okafor@example.com")).toMatchObject({ capturedCents: 5500, releasedCents: 9500 });
+  });
+
+  it("finds the newest saved wallet for SEED_VAULT_ID=latest", async () => {
+    const newest = [...(await byEmail()).values()].filter((r) => r.vaultId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    expect(await latestSavedWallet()).toBe(newest.vaultId);
   });
 
   it("changes nothing when run again", async () => {

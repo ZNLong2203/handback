@@ -50,6 +50,15 @@ export async function seedCounter(opts: { vaultId?: string } = {}): Promise<Seed
   return { mode, lines };
 }
 
+/** The wallet saved at the most recent booking paid through the PayPal button, for SEED_VAULT_ID=latest. */
+export async function latestSavedWallet(): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.query<{ vault_id: string }>(
+    "select vault_id from rentals where vault_id is not null and status <> 'draft' order by created_at desc limit 1",
+  );
+  return rows[0]?.vault_id ?? null;
+}
+
 async function findRental(email: string): Promise<Rental | null> {
   const db = await getDb();
   const rows = await db.query<{ id: string }>("select id from rentals where customer_email = $1 order by created_at desc limit 1", [email]);

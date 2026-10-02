@@ -5,6 +5,7 @@
  *
  *   npm run seed:demo                              # demo mode: the PayPal stand-in
  *   SEED_VAULT_ID=<vault id> npm run seed:demo     # sandbox: real sandbox payments
+ *   SEED_VAULT_ID=latest npm run seed:demo         # the newest wallet saved at a booking
  *
  * Safe to run again: each rental is found by its customer's email and only
  * the missing steps run. It refuses to run against live PayPal. On Render it
@@ -13,7 +14,7 @@
  */
 import { paypalConfig } from "@/lib/paypal/config";
 import { aiConfigured } from "@/lib/inspection/run";
-import { seedCounter } from "@/lib/seed/run";
+import { latestSavedWallet, seedCounter } from "@/lib/seed/run";
 import { workflowsConfig } from "@/lib/workflows/config";
 
 const jobs = workflowsConfig();
@@ -21,7 +22,10 @@ console.log(
   `Seeding the counter. PayPal: ${paypalConfig().mode}. AI: ${aiConfigured() ? "Gemini, live" : "recorded replies"}. Inspections: ${jobs.runner === "render" ? "Render Workflows" : "in this process"}.`,
 );
 
-const report = await seedCounter({ vaultId: process.env.SEED_VAULT_ID?.trim() || undefined });
+const requested = process.env.SEED_VAULT_ID?.trim() || undefined;
+const vaultId = requested === "latest" ? ((await latestSavedWallet()) ?? undefined) : requested;
+if (requested === "latest") console.log(vaultId ? `Using the newest saved wallet: ${vaultId}` : "No booking has saved a wallet yet.");
+const report = await seedCounter({ vaultId });
 if (report.skipped) console.log(report.skipped);
 for (const line of report.lines) {
   const what = line.stopped ? `stopped: ${line.stopped}` : line.ran.length ? `ran ${line.ran.join(", ")}` : "already there";
