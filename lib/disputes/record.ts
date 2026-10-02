@@ -24,6 +24,23 @@ export function rentalStatusFor(current: RentalStatus, disputeStatus: string): R
 }
 
 /**
+ * The dispute to store once PayPal has described it again. A full read
+ * replaces the stored view: PayPal leaves out fields that no longer apply
+ * (under review, a sandbox GET had no seller_response_due_date and no
+ * allowed_response_options), so merging would keep a deadline that is gone.
+ * A webhook resource may leave fields out, so it is laid over the stored
+ * view, but a deadline survives only while PayPal is still waiting on the
+ * shop. Keys set to undefined count as left out, as they would in JSON.
+ */
+export function nextDisputeView(stored: DisputeLike | null, incoming: DisputeLike, via: "paypal" | "webhook" | "demo"): DisputeLike {
+  const given = Object.fromEntries(Object.entries(incoming).filter(([, v]) => v !== undefined)) as DisputeLike;
+  if (!stored || via !== "webhook") return given;
+  const d: DisputeLike = { ...stored, ...given };
+  if (d.status !== "WAITING_FOR_SELLER_RESPONSE" && !given.seller_response_due_date) delete d.seller_response_due_date;
+  return d;
+}
+
+/**
  * Stores PayPal's latest view of a dispute and writes what changed into the
  * rental's audit trail: opened, a new status or stage, resolved. A view
  * older than the stored one (webhooks can arrive out of order) is ignored.
@@ -40,7 +57,7 @@ export async function recordDispute(
   const existing = await disputeById(tx, incoming.dispute_id);
   if (existing?.paypalUpdateTime && incoming.update_time && Date.parse(incoming.update_time) < Date.parse(existing.paypalUpdateTime)) return "stale";
 
-  const d: DisputeLike = existing ? { ...existing.paypal, ...incoming } : incoming;
+  const d = nextDisputeView(existing?.paypal ?? null, incoming, via);
   const status = d.status ?? "OPEN";
   const stage = d.dispute_life_cycle_stage ?? null;
   const row = {

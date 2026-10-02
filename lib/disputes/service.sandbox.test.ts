@@ -24,6 +24,7 @@ const { addDaysIso, todayIso } = await import("@/lib/dates");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
 const desk = await import("./service");
+const disputes = await import("./repo");
 
 type Part = { name: string; filename: string | null; type: string | null; body: Buffer };
 
@@ -152,8 +153,16 @@ describe("dispute desk against a mocked PayPal REST API", () => {
     const inspections = await repo.inspectionsFor(await getDb(), r.id);
     expect(sha(parts[2].body)).toBe(inspections.find((i) => i.phase === "checkout")!.photoSha);
     expect(sha(parts[3].body)).toBe(inspections.find((i) => i.phase === "checkin")!.photoSha);
+    // Under review PayPal sends no answer deadline, so none is shown (sandbox GET, 2026-10-02).
+    const reviewing = (await disputes.disputeById(await getDb(), opened.dispute_id))!;
+    expect(reviewing).toMatchObject({ status: "UNDER_REVIEW", sellerResponseDueAt: null });
+    expect(reviewing.paypal).not.toHaveProperty("seller_response_due_date");
 
     await desk.sandboxRequireEvidence(r.id);
+    const asked = (await disputes.disputeById(await getDb(), opened.dispute_id))!;
+    expect(asked.status).toBe("WAITING_FOR_SELLER_RESPONSE");
+    expect(asked.sellerResponseDueAt).toBe((await server.get(opened.dispute_id)).seller_response_due_date);
+    expect(asked.sellerResponseDueAt).not.toBeNull();
     const require = seen.filter((s) => s.path.endsWith("/require-evidence"));
     expect(require.map((s) => JSON.parse(s.body!.toString()))).toEqual([{ action: "SELLER_EVIDENCE" }]);
     await desk.submitEvidence(r.id);

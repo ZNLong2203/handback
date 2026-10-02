@@ -69,8 +69,11 @@ export class DemoDisputeApi implements DisputeApi {
     await this.loaded;
   }
 
+  /** Applies a change; a field patched to undefined is removed, as PayPal leaves it out of the JSON. */
   private async change(d: Dispute, patch: Partial<Dispute>): Promise<ActionReceipt> {
-    const next = DisputeSchema.parse({ ...this.state.disputes[d.dispute_id], ...patch, update_time: this.now().toISOString() });
+    const merged: Record<string, unknown> = { ...this.state.disputes[d.dispute_id], ...patch, update_time: this.now().toISOString() };
+    for (const [k, v] of Object.entries(patch)) if (v === undefined) delete merged[k];
+    const next = DisputeSchema.parse(merged);
     this.state.disputes[d.dispute_id] = next;
     await this.store.save(this.state);
     return { status: 200, debugId: `demo-${next.update_time}` };

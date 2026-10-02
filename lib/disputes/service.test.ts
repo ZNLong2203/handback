@@ -11,7 +11,8 @@ delete process.env.GEMINI_API_KEY;
 const { DemoDisputeApi } = await import("@/lib/paypal/demo-disputes");
 const { DemoDepositGateway } = await import("@/lib/paypal/demo-gateway");
 (globalThis as { depositGateway?: unknown }).depositGateway = new DemoDepositGateway();
-(globalThis as { disputeApi?: unknown }).disputeApi = new DemoDisputeApi();
+const demoApi = new DemoDisputeApi();
+(globalThis as { disputeApi?: unknown }).disputeApi = demoApi;
 
 const { getDb } = await import("@/lib/db/client");
 const { addDaysIso, todayIso } = await import("@/lib/dates");
@@ -77,6 +78,9 @@ describe("dispute desk (demo mode)", () => {
     expect(sent).toBe(sha);
     d = (await deskFor(id))!;
     expect(d.dispute.status).toBe("UNDER_REVIEW");
+    // Like PayPal's JSON, the stand-in leaves the deadline out under review rather than sending it empty.
+    expect(Object.hasOwn(await demoApi.get(d.dispute.id), "seller_response_due_date")).toBe(false);
+    expect(d).toMatchObject({ daysLeft: null, dispute: { sellerResponseDueAt: null } });
     expect(d.sent).toEqual([{ sha256: sha, at: expect.any(String), evidenceType: "OTHER", files: [`${id}-evidence.pdf`, `${id}-pickup.jpg`, `${id}-return.jpg`] }]);
     expect(d.paypal!.evidences!.at(-1)).toMatchObject({ source: "SUBMITTED_BY_SELLER", documents: [{ name: `${id}-evidence.pdf` }, { name: `${id}-pickup.jpg` }, { name: `${id}-return.jpg` }] });
     // The link is gone once PayPal has the evidence, so a second send is refused.
@@ -168,6 +172,11 @@ describe("dispute webhooks", () => {
     expect(await send(3, "CUSTOMER.DISPUTE.UPDATED", { status: "UNDER_REVIEW", update_time: "2026-10-02T07:42:59.000Z" })).toBe("applied");
     expect((await disputes.disputeById(await getDb(), dispute))!.status).toBe("WAITING_FOR_SELLER_RESPONSE");
 
+    // Once PayPal is reviewing, the resource has no deadline and the old one is dropped.
+    expect(await send(5, "CUSTOMER.DISPUTE.UPDATED", { status: "UNDER_REVIEW", update_time: "2026-10-02T07:50:12.000Z" })).toBe("applied");
+    stored = (await disputes.disputeById(await getDb(), dispute))!;
+    expect(stored).toMatchObject({ status: "UNDER_REVIEW", sellerResponseDueAt: null, amountCents: 2000 });
+
     expect(
       await send(4, "CUSTOMER.DISPUTE.RESOLVED", {
         status: "RESOLVED",
@@ -179,8 +188,8 @@ describe("dispute webhooks", () => {
     expect(stored).toMatchObject({ status: "RESOLVED", outcome: "RESOLVED_SELLER_FAVOUR", sellerResponseDueAt: null });
     expect(await rental(id)).toMatchObject({ status: "settled" });
 
-    const log = (await types(id)).slice(-4);
-    expect(log).toEqual(["dispute.opened", "dispute.updated", "webhook.received", "dispute.resolved"]);
+    const log = (await types(id)).slice(-5);
+    expect(log).toEqual(["dispute.opened", "dispute.updated", "webhook.received", "dispute.updated", "dispute.resolved"]);
   });
 
   it("does not change where a running rental is when its fee is disputed", async () => {
