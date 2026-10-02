@@ -35,3 +35,12 @@ The PayPal Server SDK Context Plugin (`paypaldev/server-sdk-context-plugin-previ
 - `typescript-error-handling` notes that `result` can be undefined on a bare `ApiError`. `lib/paypal/errors.ts` falls back to parsing `body` and the `paypal-debug-id` header, so every failure keeps PayPal's `issue` and `debug_id`.
 - `typescript-getting-started` notes that the root barrel mixes value and type exports; enums are imported as values and models with `import type`.
 - The SDK's `ClientCredentialsAuthManager` refreshes expired tokens itself, unlike the Agent Toolkit client noted above, so the gateway uses one long-lived SDK client.
+
+### 2026-10-02: Assistant bookings over MCP
+
+- Checked npm first. `@modelcontextprotocol/sdk` 1.31.0 is current; the split v2 packages (`@modelcontextprotocol/server`, `@modelcontextprotocol/client`, 2.2.0) also exist. The server uses 1.31.0's `WebStandardStreamableHTTPServerTransport`, which takes a Web `Request` and returns a `Response`, so a Next.js route handler needs no Express shim. Reading the transport's source showed that in JSON response mode the `Response` body is a finished string, so the per-request server can be closed as soon as `handleRequest` returns.
+- `McpServer` sends a thrown error's message straight back to the client. Tool handlers now return a `UserError`'s message and replace anything else with a generic one, so database or SDK internals do not reach an assistant.
+- In stateless mode every request gets a fresh server, so the request that books never sees the client's `initialize` and its name. The mandate records the name the assistant gives itself and says it is self-reported.
+- In the demo client, Gemini copied the "e.g. Claude" example from a tool parameter's description and named itself Claude. The example is gone, and the script tells the model which assistant it is.
+- Unit tests passed while the real thing failed: in the sandbox, a rental page that should have shown PayPal's `ORDER_NOT_APPROVED` refusal answered 500. Next.js gives route handlers and pages separate copies of a module, and the PayPal gateway created by the MCP route is shared through `globalThis`, so `instanceof PayPalError` failed in the page. Errors now carry a `Symbol.for` brand (`PayPalError.is`), and a test builds the error from a second copy of the module.
+- The booking form's consent line said the shop charges only damage the renter "has not questioned", but the code lets a person at the shop keep a questioned charge. The mandate states what the code does, and the consent line now matches it.
