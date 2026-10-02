@@ -11,6 +11,7 @@
  *
  *   npm run eval -- [--set synthetic|real] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
  */
+import { ApiError } from "@google/genai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogItem } from "@/lib/catalog";
@@ -67,6 +68,8 @@ type Scored = {
   ms: number;
   repaired: boolean;
   usage: { inputTokens: number; outputTokens: number };
+  /** Requests sent again after a network error or a 429/5xx. */
+  retries: number;
   caught: { change: string; any: boolean; charged: boolean; priceRight: boolean }[];
   falseCharges: string[];
   notes: number;
@@ -77,15 +80,35 @@ type Scored = {
   error?: string;
 };
 
+/**
+ * The eval measures the model's judgement, not the network: a request that
+ * never got an answer (connection dropped, 429, 5xx) is sent again, up to
+ * twice, and counted in `retries`. A reply that fails validation is not
+ * retried here; that stays an error.
+ */
+async function withRetry<T>(call: () => Promise<T>, onRetry: () => void): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const transient = (err instanceof TypeError && err.message === "fetch failed") || (err instanceof ApiError && (err.status === 429 || err.status >= 500));
+      if (!transient || attempt === 2) throw err;
+      onRetry();
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
+}
+
 async function image(rel: string) {
   return { base64: (await readFile(path.join(ROOT, rel))).toString("base64"), mimeType: "image/jpeg" };
 }
 
 async function scorePair(pair: Pair): Promise<Scored> {
   const item = catalogItem(pair.item);
+  let retries = 0;
   try {
     const input = { before: await image(pair.before), after: await image(pair.after), item, shopName: SHOP, model, thinking };
-    const looks = await Promise.all(Array.from({ length: passes }, () => compareCondition(input)));
+    const looks = await Promise.all(Array.from({ length: passes }, () => withRetry(() => compareCondition(input), () => retries++)));
     const result = {
       output: looks[0].output,
       outputs: looks.map((l) => l.output),
@@ -111,6 +134,7 @@ async function scorePair(pair: Pair): Promise<Scored> {
       ms: result.ms,
       repaired: result.repaired,
       usage: result.usage,
+      retries,
       caught,
       falseCharges,
       notes: a.findings.filter((f) => f.decision === "note").length,
@@ -121,7 +145,7 @@ async function scorePair(pair: Pair): Promise<Scored> {
     };
   } catch (err) {
     return {
-      id: pair.id, changed: pair.truth.changed, ms: 0, repaired: false, usage: { inputTokens: 0, outputTokens: 0 },
+      id: pair.id, changed: pair.truth.changed, ms: 0, repaired: false, usage: { inputTokens: 0, outputTokens: 0 }, retries,
       caught: pair.truth.changes.map((c) => ({ change: `${c.kind}: ${c.item}`, any: false, charged: false, priceRight: false })),
       falseCharges: [], notes: 0, proposedCents: 0, usable: false, error: err instanceof Error ? err.message : String(err),
     };
@@ -178,6 +202,7 @@ async function main() {
     falseChargesOnChangedPairs: changed.reduce((s, r) => s + r.falseCharges.length, 0),
     errors: errors.length,
     repaired: results.filter((r) => r.repaired).length,
+    networkRetries: results.reduce((s, r) => s + r.retries, 0),
     p50ms: quantile(ms, 0.5),
     p95ms: quantile(ms, 0.95),
     inputTokensPerPair: Math.round(tokens.i / Math.max(1, results.length)),
@@ -200,7 +225,7 @@ async function main() {
     `| ...with the right price-list entry | ${metrics.pricedRight}/${metrics.caughtCharged} |`,
     `| Unchanged pairs that would have been charged | ${metrics.unchangedWithFalseCharge}/${metrics.unchangedPairs} (${pct(metrics.unchangedWithFalseCharge, metrics.unchangedPairs)}) |`,
     `| Extra charges on changed pairs | ${metrics.falseChargesOnChangedPairs} |`,
-    `| Errors / replies repaired | ${metrics.errors} / ${metrics.repaired} |`,
+    `| Errors / replies repaired / requests retried after a network error | ${metrics.errors} / ${metrics.repaired} / ${metrics.networkRetries} |`,
     `| Latency p50 / p95 | ${(metrics.p50ms / 1000).toFixed(1)} s / ${(metrics.p95ms / 1000).toFixed(1)} s |`,
     `| Tokens per pair (in / out) | ${metrics.inputTokensPerPair} / ${metrics.outputTokensPerPair} |`,
     "",
