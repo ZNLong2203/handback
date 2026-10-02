@@ -16,13 +16,15 @@
     "seed:aged-holds": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-aged-holds.ts",
     "eval:pairs": "tsx --env-file-if-exists=.env.local scripts/eval/make-pairs.ts",
     "eval": "tsx --env-file-if-exists=.env.local scripts/eval/run-eval.ts",
-    "eval:summary": "tsx scripts/eval/summarize.ts"
+    "eval:summary": "tsx scripts/eval/summarize.ts",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@google/genai": "^2.26.0",
     "@paypal/paypal-server-sdk": "^2.5.0",
     "@paypal/react-paypal-js": "^10.5.2",
+    "lucide-react": "^1.49.0",
     "next": "16.3.8",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",

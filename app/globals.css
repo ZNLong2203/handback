@@ -1,26 +1,99 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Handback design tokens. Money has three colours used everywhere:
+ * held (amber) while PayPal keeps the deposit, released (green) for what goes
+ * back to the customer, charged (coral) for what the shop keeps.
+ */
+@theme {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-geist), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-paper: #faf7f2;
+  --color-card: #ffffff;
+  --color-ink: #1d1b2f;
+  --color-ink-soft: #3d3b52;
+  --color-muted: #6b6a7a;
+  --color-line: #e9e4dc;
+  --color-line-strong: #d8d1c5;
+
+  --color-brand: #3730a3;
+  --color-brand-soft: #eceafd;
+  --color-brand-ink: #26217a;
+
+  --color-held: #b7791f;
+  --color-held-soft: #fcf3e2;
+  --color-released: #1f7a4d;
+  --color-released-soft: #e4f3ea;
+  --color-charged: #c2462b;
+  --color-charged-soft: #fbe8e2;
+  --color-note: #475569;
+  --color-note-soft: #eef2f6;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(29 27 47 / 0.04), 0 8px 24px -12px rgb(29 27 47 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(29 27 47 / 0.06), 0 18px 40px -16px rgb(29 27 47 / 0.25);
+
+  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--color-brand) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

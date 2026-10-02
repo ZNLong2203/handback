@@ -1,0 +1,33 @@
+import "server-only";
+import { catalogItem } from "@/lib/catalog";
+import { getDb } from "@/lib/db/client";
+import { firstBrokenLink } from "./audit";
+import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
+import { planSettlement } from "./settlement";
+
+/** Everything a rental page shows, loaded in one place for the counter and the customer. */
+export async function loadRentalView(by: { id: string } | { token: string }) {
+  const db = await getDb();
+  const rental = "id" in by ? await rentalById(db, by.id) : await rentalByToken(db, by.token);
+  if (!rental) return null;
+  const [inspections, assessment, events] = await Promise.all([
+    inspectionsFor(db, rental.id),
+    latestAssessment(db, rental.id),
+    eventsFor(db, rental.id),
+  ]);
+  const checkout = inspections.filter((i) => i.phase === "checkout").at(-1) ?? null;
+  const checkin = inspections.filter((i) => i.phase === "checkin").at(-1) ?? null;
+  const plan = assessment && rental.authorizedCents ? planSettlement(assessment.findings, rental.authorizedCents, Boolean(rental.vaultId)) : null;
+  return {
+    rental,
+    item: catalogItem(rental.itemId),
+    checkout,
+    checkin,
+    assessment,
+    events,
+    plan,
+    chainIntact: firstBrokenLink(events) === null,
+  };
+}
+
+export type RentalView = NonNullable<Awaited<ReturnType<typeof loadRentalView>>>;

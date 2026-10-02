@@ -63,8 +63,10 @@ export async function inspectionsFor(db: Query, rentalId: string): Promise<Inspe
 export async function latestAssessment(db: Query, rentalId: string): Promise<Assessment | null> {
   const rows = await db.query<Row>("select * from assessments where rental_id = $1 order by created_at desc limit 1", [rentalId]);
   if (!rows[0]) return null;
-  const { looks: _looks, ...rest } = rows[0];
-  return mapRow<Assessment>(rest);
+  // The raw model replies stay in the database for audit; pages don't need them.
+  const row = { ...rows[0] };
+  delete row.looks;
+  return mapRow<Assessment>(row);
 }
 
 export async function eventsFor(db: Query, rentalId: string): Promise<AuditEvent[]> {

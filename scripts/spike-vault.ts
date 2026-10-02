@@ -26,6 +26,8 @@ async function api(method: string, path: string, body?: unknown) {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation", "PayPal-Request-Id": randomUUID() },
     body: body ? JSON.stringify(body) : undefined,
   });
+  // Spike script: the raw PayPal JSON is inspected ad hoc, not modelled.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = (await res.json().catch(() => ({}))) as any;
   const issue = json?.details?.[0]?.issue;
   console.log(`${method} ${path} -> ${res.status} ${json?.status ?? ""} ${json?.name ?? ""} ${issue ?? ""} debug_id=${res.headers.get("paypal-debug-id")}`);
@@ -78,7 +80,7 @@ const order = await api("POST", "/v2/checkout/orders", {
     },
   },
 });
-const approveUrl = order.links?.find((l: any) => l.rel === "payer-action")?.href;
+const approveUrl = (order.links as { rel: string; href: string }[] | undefined)?.find((l) => l.rel === "payer-action")?.href ?? "";
 console.log("approve url:", approveUrl);
 
 const browser = await chromium.launch({ headless: process.env.HEADED !== "1" });

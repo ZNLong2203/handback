@@ -91,8 +91,15 @@ export class DemoDepositGateway implements DepositGateway {
   }
 
   private view(auth: DemoAuth): Authorization {
-    const { capturedCents: _c, reauthorized: _r, ...rest } = auth;
-    return { ...rest };
+    return {
+      authorizationId: auth.authorizationId,
+      status: auth.status,
+      amountCents: auth.amountCents,
+      createdAt: auth.createdAt,
+      expiresAt: auth.expiresAt,
+      vaultId: auth.vaultId,
+      payerEmail: auth.payerEmail,
+    };
   }
 
   private newAuth(totalCents: number, vaultId?: string): DemoAuth {
