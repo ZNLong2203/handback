@@ -209,7 +209,10 @@ insert into units (id, item_id, label, position) values
   ('ebike-b', 'ebike', 'E-bike B', 2),
   ('ebike-c', 'ebike', 'E-bike C', 3),
   ('projector-a', 'projector', 'Projector A', 1),
-  ('projector-b', 'projector', 'Projector B', 2)
+  ('projector-b', 'projector', 'Projector B', 2),
+  ('city-bike-a', 'city-bike', 'City bike A', 1),
+  ('city-bike-b', 'city-bike', 'City bike B', 2),
+  ('city-bike-c', 'city-bike', 'City bike C', 3)
 on conflict (id) do nothing;
 
 alter table rentals add column if not exists unit_id text references units (id);
