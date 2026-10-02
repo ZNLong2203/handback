@@ -1,0 +1,29 @@
+{
+  // Opens the app in demo mode: the PayPal stand-in, recorded Gemini replies
+  // for the bundled sample photos and an in-memory database. No keys needed.
+  "name": "Handback (demo mode)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "containerEnv": {
+    "DEMO_MODE": "true",
+    "DATABASE_URL": "memory"
+  },
+  "postCreateCommand": "npm ci",
+  // Starts the dev server each time the editor attaches. If one is already
+  // running, Next moves the new one to the next free port.
+  "postAttachCommand": "npm run dev",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Handback",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "bradlc.vscode-tailwindcss"]
+    },
+    "codespaces": {
+      "openFiles": ["README.md"]
+    }
+  }
+}
