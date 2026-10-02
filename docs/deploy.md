@@ -189,7 +189,7 @@ On Oct 2, 2026, on a development machine, not yet on Render:
 | The Playwright e2e flow against a production build on Postgres 18, with runs sent to the local task server | Passes; the comparison ran as run `trn-davm35q7tef4d1gaq240` in 476 ms (recorded replies) |
 | "Compare the photos" in sandbox mode with live Gemini, through the task server | Run `trn-davm4gq7tef5e1aqc45g`, 6.8 s; found the lens barrel dent and proposed the $140 repair from the price list |
 | Cron script, web route and `renew-holds` run against three real sandbox holds | `HTTP 200`, run `trn-davm4cq7tef5e1aqc450`, all three `not-due` |
-| Seed against the PayPal sandbox and live Gemini on Postgres 18 | Six rentals; fee captures, four deposit holds (for example `3VM4358255896500L`), a $55 capture `8EK84013W6902232K` with $95 released, one full release; a second run changed nothing |
+| Seed against the PayPal sandbox and live Gemini on Postgres 18 | Six rentals; six fee captures, five deposit holds (for example `3VM4358255896500L`), then a $55 capture `8EK84013W6902232K` with $95 released and one full release; a second run changed nothing |
 
 Running the app on a real Postgres turned up a bug the PGlite-based tests could not: postgres.js encoded every jsonb parameter a second time, so findings and audit data came back as strings. It is fixed in `lib/db/client.ts`, and `lib/db/client.test.ts` checks it whenever `TEST_DATABASE_URL` points at a Postgres.
 
