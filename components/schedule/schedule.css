@@ -280,14 +280,28 @@
 }
 
 .hb-drag-tip {
+  display: grid;
+  gap: 0.2rem;
   font-family: var(--font-sans);
   font-size: 0.82rem;
   line-height: 1.45;
-  color: var(--color-released);
 }
-.hb-drag-tip strong {
+.hb-drag-tip .hb-drag-tip-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: 700;
   color: var(--color-ink);
 }
-.hb-drag-tip.hb-drag-tip-bad {
+.hb-drag-tip .hb-drag-tip-title span {
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hb-drag-tip .hb-drag-tip-msg {
+  font-weight: 600;
+  color: var(--color-released);
+}
+.hb-drag-tip.hb-drag-tip-bad .hb-drag-tip-msg {
   color: var(--color-charged);
 }

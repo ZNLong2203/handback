@@ -253,7 +253,8 @@ export default function BryntumTimeline({ view, focus, onPick, onNotice }: Timel
         // The dates cannot change in a drag, so the tip names the booking, its real dates and the outcome.
         tooltipTemplate: ({ eventRecord, newResource }) => {
           const { valid, message } = checkDrop(eventRecord, newResource);
-          return `<div class="hb-drag-tip ${valid ? "" : "hb-drag-tip-bad"}"><strong>${StringHelper.encodeHtml(eventRecord.name)}</strong> · ${range(get<string>(eventRecord, "start"), get<string>(eventRecord, "end"))}<br>${StringHelper.encodeHtml(message)}</div>`;
+          const when = range(get<string>(eventRecord, "start"), get<string>(eventRecord, "end"));
+          return `<div class="hb-drag-tip ${valid ? "" : "hb-drag-tip-bad"}"><div class="hb-drag-tip-title">${StringHelper.encodeHtml(eventRecord.name)}<span>${when}</span></div><div class="hb-drag-tip-msg">${StringHelper.encodeHtml(message)}</div></div>`;
         },
       }}
       eventResizeFeature={false}
