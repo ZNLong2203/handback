@@ -17,6 +17,7 @@ const { addDaysIso, todayIso } = await import("@/lib/dates");
 const { canonicalJson } = await import("@/lib/rentals/audit");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
+const { applyPayPalWebhook } = await import("@/lib/rentals/webhooks");
 const { handleMcpRequest } = await import("./server");
 
 const ENDPOINT = "http://localhost:3000/api/mcp";
@@ -141,6 +142,16 @@ describe("MCP tools", () => {
     await svc.settle(booking.rentalId);
     status = await call(client, "get_rental_status", { token });
     expect(status).toMatchObject({ status: "settled", amounts: { kept: { usd: "$89.00" }, released: { usd: "$211.00" }, heldNow: null } });
+
+    // A PayPal dispute after settlement changes the status, not the money already moved.
+    const captureId = (await repo.rentalById(await getDb(), booking.rentalId))!.settlementCaptureId;
+    await applyPayPalWebhook({
+      id: `WH-${booking.rentalId}`,
+      event_type: "CUSTOMER.DISPUTE.CREATED",
+      resource: { dispute_id: "PP-D-MCP", disputed_transactions: [{ seller_transaction_id: captureId! }] },
+    });
+    status = await call(client, "get_rental_status", { token });
+    expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: null, kept: { usd: "$89.00" }, released: { usd: "$211.00" } } });
   });
 
   it("does not find a rental without its token", async () => {
