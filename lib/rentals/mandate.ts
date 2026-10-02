@@ -130,10 +130,10 @@ export function mandateTerms(m: Pick<DepositMandate, "feeCents" | "hold" | "expi
   return [
     `The rental fee of ${formatUsd(m.feeCents)} is paid when you approve the booking in PayPal. Nothing is charged before that.`,
     `When you pick the item up, the shop can hold up to ${formatUsd(m.hold.maxCents)} on the same PayPal account. A hold is not a charge.`,
-    "The shop can charge only prices from the price list in this mandate, and only after showing you each charge with the pickup and return photos on your rental page.",
+    "The shop can charge only prices from the price list fixed in the mandate, and only after showing you each charge with the pickup and return photos on your rental page.",
     "You accept or question each charge yourself. A charge you question is decided by a person at the shop after reading your reason.",
     "If the charges come to more than the hold, the difference is charged to the same PayPal account.",
-    `Everything held and not charged is released when the shop settles. Nothing can be held or charged under this mandate from ${shortDate(m.expiresAt)}.`,
+    `Everything held and not charged is released when the shop settles. Nothing can be held or charged under the mandate from ${shortDate(m.expiresAt)}.`,
   ];
 }
 
