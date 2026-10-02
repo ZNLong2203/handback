@@ -8,7 +8,7 @@ You need Node.js 22.12 or later (`.nvmrc` pins the major version) and npm.
 
 ```bash
 git clone https://github.com/ZNLong2203/handback.git
-cd REPO
+cd handback
 nvm use        # optional: picks Node 22 from .nvmrc
 npm ci
 git config core.hooksPath scripts/hooks
@@ -45,16 +45,38 @@ To try a whole rental, follow the six steps under [Run it in two minutes](README
    |---|---|---|
    | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Sandbox REST app credentials. Without them the app runs in demo mode. | `lib/paypal/config.ts` |
    | `PAYPAL_ENVIRONMENT` | `sandbox` (default) or `live`. | `lib/paypal/config.ts` |
-   | `GEMINI_API_KEY` | Live photo comparison. Without it, only the bundled sample photos can be compared (recorded replies). | `lib/inspection/compare.ts`, `lib/inspection/run.ts` |
-   | `AI_MODEL` | Overrides the vision model (default `gemini-3.8-flash`). | `lib/inspection/compare.ts` |
-   | `APP_URL` | Public URL, used for PayPal return URLs and the customer's link and QR code. Default `http://localhost:3000`. | `lib/shop.ts` |
-   | `DEMO_MODE` | `true` forces the PayPal stand-in and recorded AI replies. | `lib/paypal/config.ts`, `lib/inspection/run.ts` |
-   | `DATABASE_URL` | Postgres URL, `memory`, or unset for PGlite in `.data/`. Not in `.env.example`. | `lib/db/client.ts` |
+   | `GEMINI_API_KEY` | Live Gemini: the photo comparison, the dispute summary, the schedule's messages and typed commands. Without it, only the bundled sample photos can be compared (recorded replies), and the others use templates or a simple parser. | `lib/inspection/compare.ts`, `lib/inspection/run.ts`, `lib/disputes/narrative.ts`, `lib/schedule/gemini.ts`, and the eval and demo scripts |
+   | `AI_MODEL` | Overrides the Gemini model (default `gemini-3.8-flash`). | `lib/inspection/compare.ts`, `lib/disputes/narrative.ts`, `lib/schedule/gemini.ts`, `lib/health.ts` |
+   | `APP_URL` | Public URL, used for PayPal return and cancel URLs and the customer's link and QR code. Default `RENDER_EXTERNAL_URL`, then `http://localhost:3000`. | `lib/shop.ts` |
+   | `DEMO_MODE` | `true` forces the PayPal stand-in, recorded AI replies and template texts. | `lib/paypal/config.ts`, `lib/inspection/run.ts`, `lib/disputes/narrative.ts` |
+   | `DATABASE_URL` | Postgres URL, `memory`, or unset for PGlite in `.data/`. Not in `.env.example`. | `lib/db/client.ts`, `lib/health.ts` |
    | `PAYPAL_WEBHOOK_ID` | Id of the registered webhook. Without it the webhook route answers 503. | `lib/paypal/config.ts` |
-   | `CRON_SECRET` | Bearer token for `POST /api/jobs/renew-holds`. Without it the route answers 503. | `app/api/jobs/renew-holds/route.ts` |
-   | `PAYPAL_SANDBOX_BUYER_EMAIL`, `PAYPAL_SANDBOX_BUYER_PASSWORD` | A sandbox personal account, for the scripted walkthrough only. | `scripts/sandbox-walkthrough.ts` |
+   | `CRON_SECRET` | Bearer token for `POST /api/jobs/renew-holds`. Without it the route answers 503. | `app/api/jobs/renew-holds/route.ts`, `scripts/cron/renew-holds.mjs` |
+   | `RENDER_WORKFLOW_SLUG`, `RENDER_API_KEY` | With both, photo comparisons and hold renewals run as Render Workflows tasks; otherwise in the web process. `render.yaml` sets the slug. | `lib/workflows/config.ts` |
+   | `RENDER_WORKFLOWS` | `off` keeps jobs in the web process even when Render Workflows is set up. Not in `.env.example`. | `lib/workflows/config.ts` |
+   | `RENDER_USE_LOCAL_DEV`, `RENDER_LOCAL_DEV_URL` | Send task runs to `render workflows dev` (the Render SDK's default is `http://localhost:8120`). | `lib/workflows/config.ts` |
+   | `HANDBACK_URL`, `HANDBACK_HOSTPORT` | Where the cron job finds the web service. `render.yaml` sets `HANDBACK_HOSTPORT`. Not in `.env.example`. | `scripts/cron/renew-holds.mjs` |
+   | `SEED_VAULT_ID` | A saved sandbox wallet, or `latest`, for `npm run seed:demo` in sandbox mode. | `scripts/seed-demo.ts` |
+   | `ANTHROPIC_API_KEY` | The MCP demo client uses Claude when this is set, Gemini otherwise. | `scripts/agent-books.ts` |
+   | `AGENT_MODEL` | Model for the MCP demo client (default `claude-opus-5-5` with Claude, `gemini-3.8-flash` with Gemini). | `scripts/agent-books.ts` |
+   | `MCP_URL` | Endpoint for the MCP demo client. Default `$APP_URL/api/mcp`. | `scripts/agent-books.ts` |
+   | `PAYPAL_SANDBOX_BUYER_EMAIL`, `PAYPAL_SANDBOX_BUYER_PASSWORD` | A sandbox personal account, for the scripts that approve in PayPal's checkout. | `scripts/lib/sandbox-browser.ts`, `scripts/sandbox-agent-booking.ts`, `scripts/spike-vault.ts` |
 
-   Other entries in `.env.example` (`AI_PROVIDER`, `ANTHROPIC_API_KEY` and the sponsor-tool keys) are placeholders that the code does not read yet.
+   Read only by scripts and tests, and not in `.env.example`:
+
+   | Variable | What it does | Read in |
+   |---|---|---|
+   | `WALKTHROUGH_URL`, `WALKTHROUGH_SHOTS` | The app the walkthrough drives (default `http://localhost:3000`), and a folder for its screenshots. | `scripts/sandbox-walkthrough.ts`, `scripts/sandbox-agent-booking.ts` (screenshots only) |
+   | `SPIKE_URL`, `SPIKE_SHOTS` | The app the dispute spike drives (default `http://localhost:3000`), and a folder for screenshots. | `scripts/spike-dispute.ts`, `scripts/spike-vault.ts` (screenshots only) |
+   | `HEADED` | `1` shows the browser in the vault spike. | `scripts/spike-vault.ts` |
+   | `GEMINI_IMAGE_MODEL` | Image model that edits the eval photos (default `gemini-3-pro-image`). | `scripts/eval/make-pairs.ts` |
+   | `TEST_DATABASE_URL` | A Postgres to round-trip JSON through in the database client test; skipped when unset. | `lib/db/client.test.ts` |
+   | `EVIDENCE_PDF_OUT` | Path where the evidence test writes a sample PDF to look at. | `lib/disputes/evidence.test.ts` |
+   | `E2E_PORT`, `E2E_BASE_URL`, `E2E_SCREENSHOTS` | Playwright options; see [Tests](#tests). | `playwright.config.ts`, `e2e/*.spec.ts` |
+
+   Set by the platform, never by hand: `RENDER_EXTERNAL_URL` (the fallback for `APP_URL`), `RENDER_GIT_COMMIT` and `RENDER_GIT_BRANCH` (shown by `/api/health`), `RENDER_SDK_SOCKET_PATH` (present in a Render Workflows task run; `workflows/main.ts` stops without it) and `CI` (GitHub Actions).
+
+   `AI_PROVIDER` and the sponsor-tool keys in `.env.example` (`AG_GRID_LICENSE_KEY`, `CHANNEL3_API_KEY`, `KERNEL_API_KEY`) are placeholders that the code does not read.
 
 3. Run `npm run dev`. The strip at the top now says **PayPal: sandbox**. Book as above; the PayPal button opens PayPal's checkout, where you log in with one of the sandbox personal accounts listed in the developer dashboard.
 
@@ -64,18 +86,23 @@ Sandbox buyer passwords often contain `#`. In `.env.local`, wrap such a value in
 
 - `npm run smoke:sandbox` runs the real PayPal gateway against the sandbox: it places a hold with a sandbox test card, reads it, settles part of it, repeats the settle with the same `PayPal-Request-Id` to show the retry returns the first capture, refunds part of the capture, voids a second hold, and shows the error for reauthorizing a voided hold.
 - `npx tsx --env-file-if-exists=.env.local scripts/sandbox-walkthrough.ts [--headed]` drives the running app (`npm run dev` with sandbox keys, on http://localhost:3000 or `WALKTHROUGH_URL`) in a browser: it clicks the PayPal button, approves as the sandbox buyer in the popup, holds the deposit, compares photos and settles. Set `WALKTHROUGH_SHOTS=<dir>` to save screenshots. The results of one run are in [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md).
-- PayPal only delivers webhooks to public HTTPS URLs on port 443. To receive them, deploy the app, then register its URL with `npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/register-webhook.ts https://<your-host>` and put the printed id in `PAYPAL_WEBHOOK_ID`.
+- `npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts [--early-return] [--cancel-first] [--settle]` books over MCP against the running app in sandbox mode (with `APP_URL` set to its address) and approves PayPal's link as the sandbox buyer; `--settle` then runs the rental to a final capture at the counter. See [docs/agents.md](docs/agents.md).
+- `npm run agent:book -- "rent a drone this weekend for Sam, sam@example.com"` gives the request to Gemini, or to Claude when `ANTHROPIC_API_KEY` is set, with the MCP tools, and prints PayPal's approval link.
+- `npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/spike-dispute.ts all [--customer-wins]` settles a rental in the running app, files a buyer dispute in the sandbox Resolution Center, and answers it from the counter. It keeps its state in `private/`, which git ignores.
+- `npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/schedule-ai-smoke.ts` sends the schedule's prompts to the real Gemini API once.
+- `npm run seed:demo` walks six rentals to six different steps of the counter. In sandbox mode it needs `SEED_VAULT_ID`; see [docs/deploy.md](docs/deploy.md).
+- PayPal only delivers webhooks to public HTTPS URLs on port 443. To receive them, deploy the app, then register its URL with `npm run paypal:webhook -- https://<your-host>` and put the printed id in `PAYPAL_WEBHOOK_ID`.
 
 ## Tests
 
 ```bash
 npm run check   # what CI runs first: route types, lint, typecheck, unit tests
-npm run e2e     # the browser test, in demo mode
+npm run e2e     # the browser tests, in demo mode
 ```
 
 - `npm run check` runs `next typegen`, `npm run lint`, `npm run typecheck` and `npm test`. `next typegen` comes first because `tsc` needs the route types Next generates (`PageProps`, `RouteContext`).
-- `npm test` runs the vitest suite (`lib/**/*.test.ts`). The rental scenarios run in demo mode against an in-memory database, so they need no keys.
-- `npm run e2e` builds the app, starts it in demo mode on port 3200 and drives one rental from booking to settlement with Playwright, with the counter on a desktop and the renter on a phone-sized screen. Run `npx playwright install chromium` once first. `E2E_PORT=3305 npm run e2e` uses another port; `E2E_BASE_URL=http://localhost:3100 npm run e2e` reuses a server that is already running in demo mode; `E2E_SCREENSHOTS=<dir>` saves a screenshot at each step.
+- `npm test` runs the vitest suite (every `*.test.ts` outside `node_modules`, `.next` and `.claude`). The rental, dispute, MCP and schedule scenarios run in demo mode against an in-memory database, so they need no keys.
+- `npm run e2e` builds the app, starts it in demo mode on port 3200 and runs the four Playwright specs in `e2e/` (a rental from booking to settlement, the dispute desk, an assistant's booking over MCP, and the schedule), with the counter on a desktop and the renter on a phone-sized screen. Run `npx playwright install chromium` once first. `E2E_PORT=3305 npm run e2e` uses another port; `E2E_BASE_URL=http://localhost:3100 npm run e2e` reuses a server that is already running in demo mode; `E2E_SCREENSHOTS=<dir>` saves a screenshot at each step.
 - `npm run eval` scores the photo comparison on the labeled pairs in `eval/`. It calls Gemini for every pair, so it needs `GEMINI_API_KEY` and uses API quota. See [eval/README.md](eval/README.md).
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same steps as `npm run check`, and `npm run e2e` in a second job, on every push and pull request. Neither needs secrets.
