@@ -59,7 +59,7 @@ export function CommandBox({ ai, onProposal }: { ai: boolean; onProposal: (propo
           maxLength={300}
           onChange={(e) => setText(e.target.value)}
           placeholder={EXAMPLES[0]}
-          className="h-11 min-w-0 flex-1 rounded-full border border-line-strong bg-paper px-4 text-sm text-ink placeholder:text-muted"
+          className="h-11 min-w-[12rem] flex-1 rounded-full border border-line-strong bg-paper px-4 text-sm text-ink placeholder:text-muted"
           autoComplete="off"
         />
         <Button type="submit" variant="brand" disabled={pending || !text.trim()}>

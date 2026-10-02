@@ -73,18 +73,17 @@ export function ShopHeader({ live }: { live?: React.ReactNode }) {
     <>
       <ModeStrip />
       <header className="border-b border-line bg-card/70 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
-          <div className="flex items-center gap-5">
-            <Logo href="/shop" suffix="Counter" />
-            <nav className="flex items-center gap-1 text-sm font-medium" aria-label="Counter">
-              <Link href="/shop" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
-                Rentals
-              </Link>
-              <Link href="/shop/schedule" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
-                Schedule
-              </Link>
-            </nav>
-          </div>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-5 gap-y-1 px-5 py-4">
+          <Logo href="/shop" suffix="Counter" />
+          {/* On a phone the links get their own line under the logo. */}
+          <nav className="order-last -mx-3 flex w-full items-center gap-1 text-sm font-medium sm:order-none sm:mx-0 sm:mr-auto sm:w-auto" aria-label="Counter">
+            <Link href="/shop" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
+              Rentals
+            </Link>
+            <Link href="/shop/schedule" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
+              Schedule
+            </Link>
+          </nav>
           <div className="flex items-center gap-4 text-sm">
             {live}
             <span className="hidden text-muted sm:inline">{SHOP.name}</span>
