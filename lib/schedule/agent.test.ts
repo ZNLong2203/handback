@@ -249,4 +249,28 @@ describe("the schedule agent on two weeks of demo bookings", () => {
       await interpretCommand("move it", new Date(), async () => ({ name: "reassign_booking", args: { booking_id: "R-NOTREAL", to_unit_id: "drone-kit-b" } })),
     ).toMatchObject({ ok: false, message: expect.stringMatching(/does not match a booking/) });
   });
+
+  it("does not apply a suggestion that went out of date: approving checks it again and nothing moves", async () => {
+    const maya = await byName("Maya Chen");
+    const toB = (await pending()).find((p) => p.rentalId === maya.id)!;
+    expect(toB).toMatchObject({ kind: "reassign", fromUnitId: "drone-kit-a", toUnitId: "drone-kit-b" });
+    const moves = async () => (await types(maya.id)).filter((t) => t === "schedule.moved").length;
+    const movesBefore = await moves();
+    // Drone kit B is taken for two of Maya's days after the suggestion was made, without the agent running.
+    await repo.insertBlock(await db(), {
+      id: repo.newId("B"),
+      unitId: "drone-kit-b",
+      startDate: T(4),
+      endDate: T(5),
+      kind: "maintenance",
+      reason: "Firmware update",
+      rentalId: null,
+      createdBy: "staff",
+    });
+    await expect(schedule.approveProposal(toB.id)).rejects.toThrow(/out of date: That unit is no longer free/);
+    expect((await byName("Maya Chen")).unitId).toBe("drone-kit-a");
+    expect(await repo.proposalById(await db(), toB.id)).toMatchObject({ status: "superseded", decisionNote: "That unit is no longer free." });
+    expect(await moves()).toBe(movesBefore);
+    await assertNoDoubleBooking();
+  });
 });
