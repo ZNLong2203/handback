@@ -138,10 +138,11 @@ export async function staleReason(p: repo.Proposal, now: Date): Promise<string |
     return "Those dates are no longer free.";
   }
   if (p.kind === "call") {
+    // Ask what the agent asked when it made the call: slots set aside for other pending fixes are taken.
+    // Leaving them out would retire the call for a slot nobody can offer, and the next run would make it again.
     const units = await repo.unitsForItem(db, rental.itemId);
-    if (earliestSlot(units.map((u) => u.id), spanOf(rental), addDaysIso(rental.startDate, 1), occupants, rental.id, SEARCH_DAYS)) {
-      return "A unit has come free.";
-    }
+    const reserved = await repo.occupantsForItem(db, rental.itemId, now, true);
+    if (planFix(rental, units.map((u) => u.id), reserved).kind !== "call") return "A unit has come free.";
   }
   return null;
 }
