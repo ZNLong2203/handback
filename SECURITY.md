@@ -28,6 +28,7 @@ This is a one-person project with no bug bounty and no fixed response time. You 
 - A webhook that gets past signature verification (`app/api/paypal/webhooks/route.ts`, `lib/paypal/webhooks.ts`, `lib/paypal/webhook-signature.ts`).
 - Calling the hold renewal job (`POST /api/jobs/renew-holds`) without `CRON_SECRET`.
 - Reading or answering another customer's rental without their link.
+- A way for an assistant using the MCP endpoint (`app/api/mcp/route.ts`, `lib/mcp/`) to move money, answer a charge, settle, or get a renter's page link, or a hold or charge that the deposit mandate should have refused (`lib/rentals/mandate.ts`).
 - Secrets that reach the browser, the logs or the repository.
 
 ## Known limits of this build
@@ -37,3 +38,4 @@ These are known and documented, so they do not need a report:
 - The counter pages (`/shop`) have no sign-in. Anyone who can reach a running copy can act as staff.
 - A customer's page (`/r/<token>`) is protected only by the random token in its link (18 random bytes).
 - The audit log is tamper-evident, not tamper-proof: each entry's hash covers the previous one, but anyone with write access to the database can rewrite the whole chain.
+- The MCP endpoint (`/api/mcp`) has no sign-in and no rate limit, so anyone can create unpaid drafts there, as with the booking form. The assistant's name in a mandate is self-reported, and the mandate is hashed, not signed. [docs/agents.md](docs/agents.md#limits) lists the rest.

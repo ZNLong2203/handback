@@ -76,8 +76,6 @@ To try a whole rental, follow the six steps under [Run it in two minutes](README
 
    Set by the platform, never by hand: `RENDER_EXTERNAL_URL` (the fallback for `APP_URL`), `RENDER_GIT_COMMIT` and `RENDER_GIT_BRANCH` (shown by `/api/health`), `RENDER_SDK_SOCKET_PATH` (present in a Render Workflows task run; `workflows/main.ts` stops without it) and `CI` (GitHub Actions).
 
-   `AI_PROVIDER` and the sponsor-tool keys in `.env.example` (`AG_GRID_LICENSE_KEY`, `CHANNEL3_API_KEY`, `KERNEL_API_KEY`) are placeholders that the code does not read.
-
 3. Run `npm run dev`. The strip at the top now says **PayPal: sandbox**. Book as above; the PayPal button opens PayPal's checkout, where you log in with one of the sandbox personal accounts listed in the developer dashboard.
 
 Sandbox buyer passwords often contain `#`. In `.env.local`, wrap such a value in single quotes, or everything after the `#` is dropped as a comment.
@@ -102,7 +100,7 @@ npm run e2e     # the browser tests, in demo mode
 
 - `npm run check` runs `next typegen`, `npm run lint`, `npm run typecheck` and `npm test`. `next typegen` comes first because `tsc` needs the route types Next generates (`PageProps`, `RouteContext`).
 - `npm test` runs the vitest suite (every `*.test.ts` outside `node_modules`, `.next` and `.claude`). The rental, dispute, MCP and schedule scenarios run in demo mode against an in-memory database, so they need no keys.
-- `npm run e2e` builds the app, starts it in demo mode on port 3200 and runs the four Playwright specs in `e2e/` (a rental from booking to settlement, the dispute desk, an assistant's booking over MCP, and the schedule), with the counter on a desktop and the renter on a phone-sized screen. Run `npx playwright install chromium` once first. `E2E_PORT=3305 npm run e2e` uses another port; `E2E_BASE_URL=http://localhost:3100 npm run e2e` reuses a server that is already running in demo mode; `E2E_SCREENSHOTS=<dir>` saves a screenshot at each step.
+- `npm run e2e` builds the app, starts two demo-mode servers on ports 3200 and 3201 (the schedule spec gets its own, because the other specs' bookings would change the demo schedule it checks) and runs the four Playwright specs in `e2e/` (a rental from booking to settlement, the dispute desk, an assistant's booking over MCP, and the schedule), with the counter on a desktop and the renter on a phone-sized screen. Run `npx playwright install chromium` once first. `E2E_PORT=3305 npm run e2e` uses ports 3305 and 3306; `E2E_BASE_URL=http://localhost:3100 npm run e2e` reuses a server that is already running in demo mode; `E2E_SCREENSHOTS=<dir>` saves a screenshot at each step.
 - `npm run eval` scores the photo comparison on the labeled pairs in `eval/`. It calls Gemini for every pair, so it needs `GEMINI_API_KEY` and uses API quota. See [eval/README.md](eval/README.md).
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same steps as `npm run check`, and `npm run e2e` in a second job, on every push and pull request. Neither needs secrets.

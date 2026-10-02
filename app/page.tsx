@@ -41,7 +41,8 @@ const measured = headline.sets.map((s) => ({
 const paypal = [
   "Orders v2: fee capture with vault, deposit AUTHORIZE",
   "Vault v3: merchant-initiated holds and charges",
-  "Payments v2: partial capture, void, reauthorize, refund",
+  "Payments v2: final partial capture, void, reauthorize",
+  "Disputes v1: evidence pack from the rental's own record",
   "JS SDK v6: PayPal button with savePayment",
   "PayPal-Request-Id on every POST; debug_id in the audit log",
 ];
