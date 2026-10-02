@@ -167,6 +167,8 @@ describe("MCP tools", () => {
   });
 
   it("still reports the deposit as held when a dispute comes before settlement", async () => {
+    // The dispute desk moves only a settled rental to disputed; one opened on
+    // the fee while the item is out leaves the rental out, with its hold.
     const booking = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam });
     const token = (await repo.rentalById(await getDb(), booking.rentalId))!.token;
     await svc.returnFromPayPal(token, { token: booking.approveUrl.split("token=")[1], PayerID: "DEMOPAYER" });
@@ -179,7 +181,7 @@ describe("MCP tools", () => {
       resource: { dispute_id: "PP-D-FEE", disputed_transactions: [{ seller_transaction_id: feeCapture }] },
     });
     const status = await call(client, "get_rental_status", { statusToken: booking.statusToken });
-    expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: { usd: "$300.00" }, kept: null, released: null } });
+    expect(status).toMatchObject({ status: "out", amounts: { heldNow: { usd: "$300.00" }, kept: null, released: null } });
   });
 
   it("reads a rental only with its status token, not with the renter's page token or a guess", async () => {
