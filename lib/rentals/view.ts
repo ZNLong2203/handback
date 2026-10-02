@@ -2,6 +2,7 @@ import "server-only";
 import { catalogItem } from "@/lib/catalog";
 import { getDb } from "@/lib/db/client";
 import { firstBrokenLink } from "./audit";
+import { openMandate } from "./mandate";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
 import { planSettlement } from "./settlement";
 
@@ -18,6 +19,7 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
   const checkout = inspections.filter((i) => i.phase === "checkout").at(-1) ?? null;
   const checkin = inspections.filter((i) => i.phase === "checkin").at(-1) ?? null;
   const plan = assessment && rental.authorizedCents ? planSettlement(assessment.findings, rental.authorizedCents, Boolean(rental.vaultId)) : null;
+  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
   return {
     rental,
     item: catalogItem(rental.itemId),
@@ -26,6 +28,7 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     assessment,
     events,
     plan,
+    mandate: opened ? { ...opened, json: rental.mandateJson!, sha256: rental.mandateSha256! } : null,
     chainIntact: firstBrokenLink(events) === null,
   };
 }

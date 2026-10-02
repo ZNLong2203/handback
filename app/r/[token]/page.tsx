@@ -1,15 +1,18 @@
-import { CheckCircle2, Clock3, Receipt } from "lucide-react";
-import { notFound } from "next/navigation";
+import { CheckCircle2, Clock3, ExternalLink, Receipt } from "lucide-react";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import { acknowledgeCheckoutAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { StoreHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
+import { MandateCard } from "@/components/mandate-card";
 import { MoneyBar } from "@/components/money-bar";
 import { Timeline } from "@/components/timeline";
-import { Badge, Card, Eyebrow, Notice } from "@/components/ui";
+import { Badge, ButtonAnchor, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
+import { returnFromPayPal } from "@/lib/rentals/service";
 import { STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
 import { SHOP } from "@/lib/shop";
@@ -17,13 +20,22 @@ import { SHOP } from "@/lib/shop";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your rental", robots: { index: false } };
 
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
 export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { token } = await props.params;
+  const query = await props.searchParams;
+  // PayPal sends the renter back here from its approval page; an approval is
+  // captured on the server, then the URL is cleaned so a reload does nothing.
+  const back = await returnFromPayPal(token, { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) });
+  if (back === "approved") redirect(`/r/${token}`);
+
   const view = await loadRentalView({ token });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;
   const status = STATUS[rental.status];
   const firstName = rental.customerName.split(" ")[0];
+  const byAssistant = view.mandate?.mandate.issuedTo.party === "assistant";
 
   return (
     <>
@@ -65,6 +77,44 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             )}
           </div>
         </Card>
+
+        {rental.status === "draft" && (
+          <Card className="p-6">
+            <h2 className="font-semibold">Approve the booking in PayPal</h2>
+            {back === "cancelled" && (
+              <div className="mt-3">
+                <Notice title="You left PayPal without paying">Nothing was charged. The booking waits here until you approve it.</Notice>
+              </div>
+            )}
+            {typeof back === "object" && (
+              <div className="mt-3">
+                <Notice tone="charged" title="PayPal did not complete the payment">
+                  {back.error}
+                </Notice>
+              </div>
+            )}
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {byAssistant ? "Your assistant started this booking for you, but only you can pay for it. " : ""}
+              In PayPal you pay the {formatUsd(rental.feeCents)} rental fee and let PayPal save your account, so the shop can hold the{" "}
+              {formatUsd(rental.depositCents)} deposit at pickup on the terms below. Nothing is paid until you approve.
+            </p>
+            {rental.approveUrl ? (
+              <ButtonAnchor href={rental.approveUrl} variant="brand" size="lg" className="mt-4">
+                Review and pay {formatUsd(rental.feeCents)} in PayPal <ExternalLink className="h-4 w-4" aria-hidden />
+              </ButtonAnchor>
+            ) : (
+              <p className="mt-3 text-sm">
+                This booking has no PayPal approval link.{" "}
+                <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
+                  Book the {item.name.toLowerCase()} again
+                </Link>
+                .
+              </p>
+            )}
+          </Card>
+        )}
+
+        {rental.status === "draft" && view.mandate && <MandateCard {...view.mandate} />}
 
         {rental.status === "booked" && (
           <Card className="p-6">
@@ -159,6 +209,8 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             </p>
           </Card>
         )}
+
+        {rental.status !== "draft" && view.mandate && <MandateCard {...view.mandate} folded />}
 
         <details className="rounded-[var(--radius-card)] border border-line bg-card p-5">
           <summary className="cursor-pointer font-semibold">Everything that happened, step by step</summary>
