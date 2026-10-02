@@ -1,5 +1,6 @@
 // End-to-end rental scenarios in demo mode: the PayPal stand-in, an
 // in-memory database, and recorded Gemini replies for the sample photos.
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 process.env.DEMO_MODE = "true";
@@ -8,7 +9,7 @@ delete process.env.PAYPAL_CLIENT_ID;
 
 const { getDb } = await import("@/lib/db/client");
 const { addDaysIso, todayIso } = await import("@/lib/dates");
-const { firstBrokenLink } = await import("./audit");
+const { canonicalJson, firstBrokenLink } = await import("./audit");
 const { openMandate, sealMandate } = await import("./mandate");
 type DepositMandate = import("./mandate").DepositMandate;
 const repo = await import("./repo");
@@ -147,19 +148,22 @@ describe("rental flow (demo mode)", () => {
 
 describe("deposit mandate", () => {
   /**
-   * Replaces the stored mandate with a re-sealed one. With `asIssued`, the
-   * audit entry from booking is changed to match too, which stands for a
-   * mandate genuinely issued on other terms; without it, the row was edited
-   * after the fact.
+   * Replaces the stored mandate with a re-sealed one on other terms. `audit`
+   * is how far the forger also goes in the audit chain: nowhere, editing the
+   * hash recorded in the booking's entry, or editing it and re-hashing that
+   * entry too (the entries after it still point at the old hash).
    */
-  async function replaceMandate(rentalId: string, change: (m: DepositMandate) => DepositMandate, asIssued = false) {
+  async function replaceMandate(rentalId: string, change: (m: DepositMandate) => DepositMandate, audit: "none" | "edit" | "rehash" = "none") {
     const r = await rental(rentalId);
     const { json, sha256 } = sealMandate(change(openMandate(r.mandateJson!, r.mandateSha256!)!.mandate));
     const db = await getDb();
     await db.query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [rentalId, json, sha256]);
-    if (asIssued) {
-      await db.query("update events set data = jsonb_set(data, '{sha256}', to_jsonb($2::text)) where rental_id = $1 and type = 'mandate.issued'", [rentalId, sha256]);
-    }
+    if (audit === "none") return;
+    const issued = (await repo.eventsFor(db, rentalId)).find((e) => e.type === "mandate.issued")!;
+    const data = { ...issued.data, sha256 };
+    const { rentalId: id, at, actor, type, prevHash } = issued;
+    const hash = audit === "rehash" ? createHash("sha256").update(canonicalJson({ rentalId: id, at, actor, type, data, prevHash })).digest("hex") : issued.hash;
+    await db.query("update events set data = $2::jsonb, hash = $3 where seq = $1", [issued.seq, JSON.stringify(data), hash]);
   }
 
   /** A rental whose renter has accepted the $35 missing-hood charge, ready to settle. */
@@ -206,33 +210,40 @@ describe("deposit mandate", () => {
     ]);
   });
 
-  it("blocks a charge priced differently from the mandate the renter approved", async () => {
+  it("blocks a charge whose amount no longer matches the mandate the renter approved", async () => {
     const rentalId = await acceptedHood();
-    // The renter approved a $20 hood; the price list now says $35.
-    await replaceMandate(rentalId, (m) => ({ ...m, priceList: m.priceList.map((p) => (p.id === "missing-hood" ? { ...p, cents: 2000 } : p)) }), true);
-    await expect(svc.settle(rentalId)).rejects.toThrow(/Replace lens hood at \$35\.00 is not on the price list the renter agreed to/);
+    // The accepted $35 hood is edited to $50 in the database before settling.
+    const a = await assessment(rentalId);
+    const edited = a.findings.map((f) => (f.price?.id === "missing-hood" ? { ...f, price: { ...f.price, cents: 5000 } } : f));
+    await (await getDb()).query("update assessments set findings = $2::jsonb where id = $1", [a.id, JSON.stringify(edited)]);
+    await expect(svc.settle(rentalId)).rejects.toThrow(/Replace lens hood at \$50\.00 is not on the price list the renter agreed to/);
     expect(await rental(rentalId)).toMatchObject({ status: "responded", settlementCaptureId: null });
     expect((await repo.eventsFor(await getDb(), rentalId)).at(-1)).toMatchObject({ type: "mandate.refused", data: { step: "settle the deposit" } });
   });
 
   it("charges nothing when the mandate was edited, re-sealed, swapped or removed after booking", async () => {
     const db = await getDb();
-    const tamperings: [string, (rentalId: string) => Promise<void>][] = [
-      ["edited without re-hashing", async (id) => {
+    const notRecorded = /not the one recorded when the booking started/;
+    const chainChanged = /audit log was changed after the fact \(entry \d+ no longer matches\)/;
+    const raise = (m: DepositMandate) => ({ ...m, hold: { ...m.hold, maxCents: 99900 } });
+    const tamperings: [string, RegExp, (rentalId: string) => Promise<void>][] = [
+      ["edited without re-hashing", notRecorded, async (id) => {
         const r = await rental(id);
         await db.query("update rentals set mandate_json = $2 where id = $1", [id, r.mandateJson!.replace('"cents":3500', '"cents":350')]);
       }],
-      ["re-sealed with new terms", (id) => replaceMandate(id, (m) => ({ ...m, hold: { ...m.hold, maxCents: 99900 } }))],
-      ["swapped for another rental's", async (id) => {
+      ["re-sealed with new terms", notRecorded, (id) => replaceMandate(id, raise)],
+      ["re-sealed, with the hash in the booking's audit entry edited to match", chainChanged, (id) => replaceMandate(id, raise, "edit")],
+      ["re-sealed, with that audit entry edited and re-hashed", chainChanged, (id) => replaceMandate(id, raise, "rehash")],
+      ["swapped for another rental's", notRecorded, async (id) => {
         const other = await rental((await bookedRental()).rentalId);
         await db.query("update rentals set mandate_json = $2, mandate_sha256 = $3 where id = $1", [id, other.mandateJson, other.mandateSha256]);
       }],
-      ["removed", (id) => db.query("update rentals set mandate_json = null, mandate_sha256 = null where id = $1", [id]).then(() => {})],
+      ["removed", notRecorded, (id) => db.query("update rentals set mandate_json = null, mandate_sha256 = null where id = $1", [id]).then(() => {})],
     ];
-    for (const [what, tamper] of tamperings) {
+    for (const [what, why, tamper] of tamperings) {
       const rentalId = await acceptedHood();
       await tamper(rentalId);
-      await expect(svc.settle(rentalId), what).rejects.toThrow(/not the one recorded when the booking started/);
+      await expect(svc.settle(rentalId), what).rejects.toThrow(why);
       expect(await rental(rentalId), what).toMatchObject({ status: "responded", settlementCaptureId: null });
     }
   });
@@ -249,8 +260,14 @@ describe("deposit mandate", () => {
   it("will not hold a deposit once the mandate has ended", async () => {
     const { rentalId } = await bookedRental();
     await svc.addPhoto(rentalId, "checkout", { sample: "camera-kit/before" });
-    await replaceMandate(rentalId, (m) => ({ ...m, expiresAt: new Date(Date.now() - 1000).toISOString() }), true);
-    await expect(svc.holdDeposit(rentalId)).rejects.toThrow(/mandate ended/);
+    // The renter turns up a month late: the mandate ended 29 days after the booked pickup.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 30 * 86_400_000);
+    try {
+      await expect(svc.holdDeposit(rentalId)).rejects.toThrow(/mandate ended/);
+    } finally {
+      vi.useRealTimers();
+    }
     expect((await rental(rentalId)).status).toBe("booked");
   });
 });

@@ -13,9 +13,9 @@ import { formatUsd, type Cents } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
 import { loadPhoto, storePhoto } from "@/lib/photos";
 import { appUrl, SHOP } from "@/lib/shop";
-import { appendEvent } from "./audit";
+import { appendEvent, firstBrokenLink } from "./audit";
 import { buildMandate, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
-import { inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
+import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
 import { awaitingCustomer, awaitingResolution, isCharged, planSettlement } from "./settlement";
 import { UserError, type AuditEvent, type Phase, type Rental, type ReviewedFinding } from "./types";
 
@@ -80,23 +80,26 @@ function expectStatus(rental: Rental, allowed: Rental["status"][], action: strin
  * The deterministic check in front of every hold and charge: what the shop is
  * about to do must fit the deposit mandate the renter approved. The stored
  * mandate must hash to the value the audit chain recorded when the booking
- * started, so re-sealing, swapping or clearing it after the fact stops the
- * money instead of changing the terms. A refusal is written to the audit log.
- * Rentals booked before mandates existed have neither and are not checked.
+ * started, and the chain itself must still be intact, so re-sealing, swapping
+ * or clearing the mandate after the fact stops the money instead of changing
+ * the terms; so does editing the recorded hash short of rewriting every entry
+ * after it. A refusal is written to the audit log. Rentals booked before
+ * mandates existed have neither and are not checked.
  */
 async function assertWithinMandate(rental: Rental, step: string, act: { holdCents?: Cents; charges?: MandatedCharge[] }) {
   const db = await getDb();
-  const issued = await db.query<{ sha256: string | null }>(
-    "select data->>'sha256' as sha256 from events where rental_id = $1 and type = 'mandate.issued' order by seq limit 1",
-    [rental.id],
-  );
-  const recorded = issued[0]?.sha256 ?? null;
+  const events = await eventsFor(db, rental.id);
+  const issued = events.find((e) => e.type === "mandate.issued");
+  const recorded = typeof issued?.data.sha256 === "string" ? issued.data.sha256 : null;
   if (!recorded && !rental.mandateJson && !rental.mandateSha256) return;
   const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
+  const broken = firstBrokenLink(events);
   const problems =
-    opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id
-      ? mandateViolations(opened.mandate, { at: new Date(), ...act })
-      : ["The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it."];
+    broken !== null
+      ? [`The rental's audit log was changed after the fact (entry ${broken} no longer matches), so the mandate it recorded cannot be trusted.`]
+      : opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id
+        ? mandateViolations(opened.mandate, { at: new Date(), ...act })
+        : ["The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it."];
   if (problems.length === 0) return;
   await appendEvent(db, rental.id, "system", "mandate.refused", { step, problems });
   publish(rental.id, "mandate.refused");
