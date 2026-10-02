@@ -79,6 +79,21 @@ test("a damaged return makes the agent suggest a move, and one click moves the b
   await expect(counter.getByText("Moved to another unit of the same item")).toBeVisible();
   await expect(counter.getByText("projector-a → projector-b · agent's suggestion, approved")).toBeVisible();
   await expect(counter.getByText(/Audit chain intact/)).toBeVisible();
+
+  // 6. At pickup the counter is told which unit to give Priya: Projector B, not the one in repair.
+  await expect(counter.getByTestId("handover")).toContainText("Hand over Projector B");
+  await expect(counter.getByText(/Check before handing over/)).toHaveCount(0);
+
+  // Diego is still on Projector A, which is in repair on his first day; the rentals list and his rental both say so.
+  await counter.getByRole("navigation", { name: "Counter" }).getByRole("link", { name: "Rentals" }).click();
+  const diego = counter.getByRole("link", { name: /Diego Alvarez/ });
+  await expect(diego).toContainText("hand over Projector A");
+  await expect(diego).toContainText("Projector A is in repair");
+  await diego.click();
+  await expect(counter.getByTestId("handover")).toContainText("Hand over Projector A");
+  await expect(counter.getByText("Check before handing over Projector A")).toBeVisible();
+  await expect(counter.getByText(/Projector A is in repair .* \(Replace projector lens\)\. Move this booking/)).toBeVisible();
+  await shot(counter, "s06-handover-warning");
 });
 
 test("a typed command is read, checked, and only applied after a click", async ({ browser }) => {
