@@ -40,6 +40,7 @@ export async function runInspection(rentalId: string, runner: TaskRunner | null 
 
   const outcome = await waitForRun<InspectionJobResult>(runner, taskRunId, INSPECTION_WAIT_MS);
   if (outcome.kind === "done") {
+    console.log(`${TASKS.inspectReturn} ${rentalId}: ${outcome.result?.status} (Render Workflows run ${taskRunId})`);
     if (outcome.result?.status === "refused") throw new UserError(outcome.result.message);
     publish(rentalId, "inspection.completed");
     return;
