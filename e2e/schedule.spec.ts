@@ -7,6 +7,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const SHOTS = process.env.E2E_SCREENSHOTS;
 const shot = async (page: Page, name: string) => {
   if (!SHOTS) return;
+  // Bryntum fades the bars in one after another when the timeline first loads.
+  await expect(page.locator(".b-scheduler.b-initial-fade-in")).toHaveCount(0);
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
 };
