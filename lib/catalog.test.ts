@@ -5,6 +5,7 @@ process.env.DATABASE_URL = "memory";
 const { CATALOG, catalogItem } = await import("./catalog");
 const { getDb } = await import("./db/client");
 const { listUnits } = await import("./schedule/repo");
+const { REPAIR_DAYS } = await import("./schedule/repair-days");
 
 describe("catalog", () => {
   it("gives every item a unique id and every price a unique id, a whole number of cents and a kind", () => {
@@ -17,6 +18,12 @@ describe("catalog", () => {
         // The policy charges a missing-* entry once per missing piece, and anything else once per return.
         expect(p.id.startsWith("missing-"), `${item.id}/${p.id}`).toBe(p.kind === "missing");
       }
+    }
+  });
+
+  it("says how long every repair or replacement keeps a unit off the schedule", () => {
+    for (const item of CATALOG) {
+      for (const p of item.prices.filter((p) => p.kind !== "dirt")) expect(REPAIR_DAYS[p.id], `${item.id}/${p.id}`).toBeGreaterThan(0);
     }
   });
 
