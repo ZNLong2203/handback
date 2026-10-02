@@ -5,10 +5,9 @@
  * exact file versions below (checked by sha1 and license), and writes
  * eval/real/CREDITS.md from this list.
  */
+import type { Box } from "./composite";
 import type { Change } from "./make-pairs";
 
-/** [ymin, xmin, ymax, xmax] on a 0-1000 grid, the same convention as the app's boxes. */
-export type Box = [number, number, number, number];
 export type AspectRatio = "1:1" | "4:3" | "3:2" | "16:9" | "21:9";
 
 export type RealPhoto = {
@@ -257,17 +256,27 @@ export const REAL_EDITS: RealEdit[] = [
   {
     id: "sigma-150-600__missing-hood",
     photo: "sigma-150-600",
-    instruction: "Remove the large lens hood from the front of the lens, so the front end of the lens barrel is visible instead.",
-    region: [100, 30, 720, 440],
+    instruction:
+      "Remove the wide black lens hood mounted on the front (left end) of the lens. The lens should now end at its narrower front barrel, just left of the zoom ring, with the plain white background where the hood was.",
+    region: [100, 0, 720, 440],
     changes: [{ kind: "missing", item: "lens hood", detail: "hood removed", match: ["hood"], price: "missing-hood" }],
     session: "light",
   },
   {
     id: "sigma-150-600__broken-foot",
     photo: "sigma-150-600",
-    instruction: "Break off the front end of the long black tripod foot plate under the lens, leaving a jagged, cracked edge.",
-    region: [720, 380, 920, 820],
-    changes: [{ kind: "damage", item: "tripod foot", detail: "front end broken off", match: ["tripod", "foot", "plate", "collar"], price: "tripod-foot" }],
+    instruction:
+      "Snap off the left third of the long black tripod foot plate under the lens. The plate must now end abruptly about a third of the way in from its left end, at a rough broken edge; the broken-off part is gone, and the white background and the tripod head show where it was.",
+    region: [700, 320, 930, 820],
+    changes: [
+      {
+        kind: "damage",
+        item: "tripod foot",
+        detail: "left end of the foot plate chipped and jagged, bare metal showing (the model would not shorten the plate)",
+        match: ["tripod", "foot", "plate", "collar"],
+        price: "tripod-foot",
+      },
+    ],
     session: "pose",
   },
   {
@@ -290,10 +299,12 @@ export const REAL_EDITS: RealEdit[] = [
     id: "sony-action-cam__missing-housing",
     photo: "sony-action-cam",
     instruction:
-      "Remove the clear plastic waterproof housing on the left, but keep the black mount it stands on. Fill the empty space with the plain white background.",
-    region: [20, 0, 700, 540],
+      "Remove the clear plastic waterproof housing on the left, including the black latch on its side. Keep the black mount it stands on exactly as it is, with the same shape and position. Fill the empty space with the plain white background.",
+    region: [20, 0, 680, 560],
     changes: [{ kind: "missing", item: "waterproof housing", detail: "housing removed", match: ["housing", "case"], price: "missing-housing" }],
     session: "light",
+    // The top of the mount was redrawn along with the housing, and a stub of the latch is left.
+    incidental: ["mount", "latch", "buckle", "clip", "tab"],
   },
   {
     id: "sony-action-cam__cracked-lens",
@@ -306,8 +317,9 @@ export const REAL_EDITS: RealEdit[] = [
   {
     id: "jbl-boombox__cracked-handle",
     photo: "jbl-boombox",
-    instruction: "Add a deep crack through the dark green carry handle on top, with a small piece broken out of it.",
-    region: [0, 250, 260, 750],
+    instruction:
+      "Break the dark green carry handle that arches over the top of the speaker: add a deep, clearly visible crack right through the handle's top bar near its middle, with a chunk of the plastic broken away.",
+    region: [0, 250, 230, 750],
     changes: [{ kind: "damage", item: "carry handle", detail: "cracked handle", match: ["handle"], price: "handle" }],
     session: "light",
   },
@@ -331,9 +343,18 @@ export const REAL_EDITS: RealEdit[] = [
   {
     id: "lg-projector__cracked-housing",
     photo: "lg-projector",
-    instruction: "Add a clearly visible crack in the white plastic housing at the front left corner, running down from the top edge.",
-    region: [270, 80, 720, 330],
-    changes: [{ kind: "damage", item: "projector housing", detail: "cracked housing", match: ["housing", "case", "casing", "body", "shell", "corner"], price: "housing" }],
+    instruction:
+      "Add a long, clearly visible, dark crack in the white plastic casing on the left front side, running from the top edge down past the 'LED Projector' text, with small chips along the crack.",
+    region: [300, 250, 830, 465],
+    changes: [
+      {
+        kind: "damage",
+        item: "projector housing",
+        detail: "crack down the front of the casing, left of the lens (the model put it there, not by the text)",
+        match: ["housing", "case", "casing", "body", "shell", "corner", "panel", "plastic"],
+        price: "housing",
+      },
+    ],
     session: "pose",
   },
   {
@@ -356,8 +377,8 @@ export const REAL_EDITS: RealEdit[] = [
     id: "bike-rack__bent-mudguard",
     photo: "bike-rack",
     instruction: "Make the rear end of the white mudguard (on the right) visibly bent outward and cracked.",
-    region: [420, 780, 860, 1000],
-    changes: [{ kind: "damage", item: "rear mudguard", detail: "bent and cracked", match: ["mudguard", "fender"], price: "mudguard" }],
+    region: [400, 700, 860, 1000],
+    changes: [{ kind: "damage", item: "rear mudguard", detail: "cracked near the rear end (the edit shows no bend)", match: ["mudguard", "fender"], price: "mudguard" }],
     session: "light",
   },
   {
@@ -379,7 +400,7 @@ export const REAL_EDITS: RealEdit[] = [
   {
     id: "sony-a7r-kit__missing-strap",
     photo: "sony-a7r-kit",
-    instruction: "Remove the folded camera strap on the left. Fill its place with the plain white background.",
+    instruction: "Remove the folded camera strap on the left. Fill its place with the plain white background, with no shadow or mark left behind.",
     region: [400, 10, 860, 350],
     changes: [{ kind: "missing", item: "neck strap", detail: "strap removed", match: ["strap"], price: "missing-strap" }],
     session: "pose",

@@ -14,20 +14,25 @@
  *
  * With --set real, the base photos are instead freely licensed photographs
  * from Wikimedia Commons (scripts/eval/real-photos.ts), and only the area
- * around each requested change is taken from the image model's edit: the
- * rest of the check-in photo stays the original pixels.
+ * around each requested change is taken from the image model's edit, lined
+ * up with the original first (scripts/eval/composite.ts): the rest of the
+ * check-in photo stays the original pixels.
  *
  *   npm run eval:pairs                     # create anything missing
  *   npm run eval:pairs -- --force          # regenerate everything
  *   npm run eval:pairs -- --set real       # the real-photo set in eval/real
  *   npm run eval:pairs -- --set real --redo <id>  # re-composite matching edits from the saved model output
+ *
+ * To ask the image model again for one real-photo edit, delete its file in
+ * eval/real/.raw/ and run with --redo <id>.
  */
 import { GoogleGenAI, Modality } from "@google/genai";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { REAL_EDITS, REAL_PHOTOS, type Box, type RealPhoto } from "./real-photos";
+import { pasteBack } from "./composite";
+import { REAL_EDITS, REAL_PHOTOS, type RealPhoto } from "./real-photos";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -292,11 +297,12 @@ async function shiftSession(input: Buffer, shift: SessionShift | Negative, seed:
   const img = sharp(input);
   const { width = 1280, height = 960 } = await img.metadata();
   if (shift === "light") {
-    return img
-      .modulate({ brightness: 0.86 + (seed % 3) * 0.02, saturation: 0.95 })
-      .tint({ r: 255, g: 244, b: 228 })
-      .jpeg({ quality: 86 })
-      .toBuffer();
+    const dimmer = img.modulate({ brightness: 0.86 + (seed % 3) * 0.02, saturation: 0.95 });
+    // tint() keeps only the luminance and replaces every colour with the tint:
+    // harmless on the grey synthetic scenes, but it would turn a real photo of
+    // a red bike on green grass sepia. Real photos get a warmer white balance.
+    const warmer = realBackground ? dimmer.linear([1, 0.95, 0.85], [0, 0, 0]) : dimmer.tint({ r: 255, g: 244, b: 228 });
+    return warmer.jpeg({ quality: 86 }).toBuffer();
   }
   if (shift === "pose") {
     const { angle, keep } = realBackground ? fittedTurn(seed, width, height) : { angle: seed % 2 === 0 ? 4 : -5, keep: 0.92 };
@@ -449,61 +455,6 @@ async function cutToAspect(original: Buffer, photo: RealPhoto): Promise<Buffer> 
     .toBuffer();
 }
 
-/**
- * Takes only `region` from the image model's edit and lays it over the
- * original photo with a soft edge, so the rest of the check-in photo is the
- * real photograph and not the model's redrawing of it. The edit's colour is
- * matched to the original just around the region so the seam does not show.
- * Also reports how much the model changed inside and outside the region.
- */
-export async function pasteBack(before: Buffer, edited: Buffer, region: Box) {
-  const { data: base, info } = await sharp(before).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width: W, height: H } = info;
-  const edit = await sharp(edited).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
-  const [y0, x0, y1, x1] = [(region[0] * H) / 1000, (region[1] * W) / 1000, (region[2] * H) / 1000, (region[3] * W) / 1000];
-  const feather = Math.max(4, Math.round(Math.min(W, H) * 0.02));
-  const ring = feather * 3;
-  const distance = new Float32Array(W * H);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) distance[y * W + x] = Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1));
-  }
-
-  const sums = [0, 0, 0];
-  let ringPixels = 0;
-  for (let p = 0; p < W * H; p++) {
-    if (distance[p] <= feather || distance[p] > ring) continue;
-    for (let c = 0; c < 3; c++) sums[c] += base[p * 3 + c] - edit[p * 3 + c];
-    ringPixels++;
-  }
-  const offset = sums.map((s) => Math.max(-25, Math.min(25, ringPixels ? s / ringPixels : 0)));
-
-  const out = Buffer.from(base);
-  const diff = { inside: 0, insidePixels: 0, outside: 0, outsidePixels: 0 };
-  for (let p = 0; p < W * H; p++) {
-    const d = distance[p];
-    const alpha = d === 0 ? 1 : d >= feather ? 0 : 0.5 * (1 + Math.cos((Math.PI * d) / feather));
-    let delta = 0;
-    for (let c = 0; c < 3; c++) {
-      const i = p * 3 + c;
-      const e = Math.max(0, Math.min(255, edit[i] + offset[c]));
-      delta += Math.abs(e - base[i]) / 3;
-      if (alpha > 0) out[i] = Math.round(base[i] * (1 - alpha) + e * alpha);
-    }
-    if (d === 0) {
-      diff.inside += delta;
-      diff.insidePixels++;
-    } else if (d > ring) {
-      diff.outside += delta;
-      diff.outsidePixels++;
-    }
-  }
-  return {
-    image: await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(),
-    inside: diff.inside / Math.max(1, diff.insidePixels),
-    outside: diff.outside / Math.max(1, diff.outsidePixels),
-  };
-}
-
 async function pool<T>(items: T[], size: number, fn: (item: T, index: number) => Promise<void>) {
   let next = 0;
   await Promise.all(
@@ -552,8 +503,9 @@ async function buildReal(ai: GoogleGenAI): Promise<Pair[]> {
           await writeFile(rawPath, await generate(ai, editRequest(before, edit.instruction), { aspectRatio: photo.aspect, imageSize: "2K" }));
           console.log(`edited ${edit.id}`);
         }
-        const { image, inside, outside } = await pasteBack(before, await readFile(rawPath), edit.region);
-        console.log(`${edit.id}: mean pixel change ${inside.toFixed(1)} inside the region, ${outside.toFixed(1)} elsewhere (discarded)`);
+        const { image, inside, transform, misfit } = await pasteBack(before, await readFile(rawPath), edit.region);
+        const moved = `zoom ${transform.scale.toFixed(3)}, shift ${(transform.dx * 100).toFixed(1)}% / ${(transform.dy * 100).toFixed(1)}%`;
+        console.log(`${edit.id}: lined up (${moved}; mismatch outside ${misfit.before.toFixed(1)} -> ${misfit.after.toFixed(1)}), mean change inside ${inside.toFixed(1)}`);
         await writeFile(file, await shiftSession(image, edit.session, s + 3, true));
       }
       pairs.push({
@@ -582,7 +534,7 @@ Every check-out photo in \`images/*/before.jpg\` is a photograph from Wikimedia 
 Every check-in photo (\`images/*/after__*.jpg\`) is an adaptation of the check-out photo in the same folder:
 
 - \`after__same-light.jpg\`, \`after__same-pose.jpg\` and \`after__same-dust-glare.jpg\` were changed in code only: warmer and darker light; a 3° turn with a crop; or dust specks and a glare spot.
-- Every other \`after__*.jpg\` shows damage or a missing accessory. A Gemini image model (\`${IMAGE_MODEL}\`) edited the photo, only a box around the requested change was pasted back onto the original photo, and then the light or the framing was shifted in code.
+- Every other \`after__*.jpg\` shows damage or a missing accessory. A Gemini image model (\`${IMAGE_MODEL}\`) edited the photo; the edit was lined up with the original, only a box around the requested change was pasted back onto the original photo, and then the light or the framing was shifted in code.
 
 Each adaptation is released under the same license as the photo it was made from: adaptations of CC BY-SA photos are CC BY-SA in the same version, adaptations of CC BY photos are CC BY in the same version with the credit below, and adaptations of the CC0 photo are CC0. The MIT license of this repository does not cover these images. Product names and logos visible in the photos are trademarks of their owners, who have no connection with this project.
 
