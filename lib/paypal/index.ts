@@ -1,16 +1,33 @@
 import "server-only";
+import { getDb } from "@/lib/db/client";
 import { paypalConfig } from "./config";
-import { DemoDepositGateway } from "./demo-gateway";
+import { DemoDepositGateway, type DemoState, type DemoStore } from "./demo-gateway";
 import type { DepositGateway } from "./gateway";
 import { PayPalDepositGateway } from "./paypal-gateway";
 
 const globalForGateway = globalThis as unknown as { depositGateway?: DepositGateway };
 
-/** The real PayPal gateway, or the in-memory one in demo mode. One per process. */
+/** Keeps the demo stand-in's state in the database so demo mode survives restarts. */
+const dbStore: DemoStore = {
+  async load() {
+    const db = await getDb();
+    const rows = await db.query<{ state: DemoState }>("select state from demo_paypal where k = 'gateway'");
+    return rows[0]?.state ?? null;
+  },
+  async save(state) {
+    const db = await getDb();
+    await db.query(
+      "insert into demo_paypal (k, state) values ('gateway', $1::jsonb) on conflict (k) do update set state = excluded.state",
+      [JSON.stringify(state)],
+    );
+  },
+};
+
+/** The real PayPal gateway, or the stand-in in demo mode. One per process. */
 export function depositGateway(): DepositGateway {
   if (globalForGateway.depositGateway) return globalForGateway.depositGateway;
   const { mode } = paypalConfig();
-  const gateway = mode === "demo" ? new DemoDepositGateway() : new PayPalDepositGateway(mode);
+  const gateway = mode === "demo" ? new DemoDepositGateway(() => new Date(), dbStore) : new PayPalDepositGateway(mode);
   globalForGateway.depositGateway = gateway;
   return gateway;
 }

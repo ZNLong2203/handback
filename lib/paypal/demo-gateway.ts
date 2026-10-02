@@ -4,52 +4,88 @@ import {
   AUTHORIZATION_VALID_DAYS,
   REAUTHORIZE_FROM_DAY,
   type Authorization,
+  type BookingCapture,
+  type BookingOrderRequest,
   type DepositGateway,
   type Hold,
   type HoldRequest,
   type RefundRequest,
   type RefundResult,
+  type SavedWalletRequest,
   type SettleRequest,
   type Settlement,
 } from "./gateway";
 
 const DAY_MS = 86_400_000;
 
-type DemoOrder = { id: string; totalCents: number; savePayPal: boolean; authorizationId?: string };
+type DemoOrder = {
+  id: string;
+  intent: "CAPTURE" | "AUTHORIZE";
+  totalCents: number;
+  savePayPal: boolean;
+  authorizationId?: string;
+  captureId?: string;
+};
 type DemoAuth = Authorization & { capturedCents: number; reauthorized: boolean };
 type DemoCapture = { id: string; amountCents: number; refundedCents: number };
 
+export type DemoState = {
+  seq: number;
+  orders: Record<string, DemoOrder>;
+  auths: Record<string, DemoAuth>;
+  captures: Record<string, DemoCapture>;
+  vaults: Record<string, string>;
+  replies: Record<string, unknown>;
+};
+
+/** Where the stand-in keeps its state; the app persists it, tests keep it in memory. */
+export interface DemoStore {
+  load(): Promise<DemoState | null>;
+  save(state: DemoState): Promise<void>;
+}
+
+const memoryStore = (): DemoStore => ({ load: async () => null, save: async () => {} });
+
 /**
- * An in-memory stand-in for PayPal that enforces the rules we verified in the
- * sandbox (docs/paypal-sandbox-notes.md), so DEMO_MODE behaves like the real
- * thing: no over-capture, one reauthorization between day 4 and day 29, no
- * void after a final capture, and the same PayPal-Request-Id returns the
- * first result instead of acting twice.
+ * A stand-in for PayPal that enforces the rules we verified in the sandbox
+ * (docs/paypal-sandbox-notes.md), so DEMO_MODE behaves like the real thing:
+ * no over-capture, one reauthorization between day 4 and day 29, no void
+ * after a final capture, and a repeated PayPal-Request-Id returns the first
+ * result instead of acting twice.
  */
 export class DemoDepositGateway implements DepositGateway {
   readonly mode = "demo" as const;
-  private orders = new Map<string, DemoOrder>();
-  private auths = new Map<string, DemoAuth>();
-  private captures = new Map<string, DemoCapture>();
-  private replies = new Map<string, unknown>();
-  private seq = 0;
+  private state: DemoState = { seq: 0, orders: {}, auths: {}, captures: {}, vaults: {}, replies: {} };
+  private loaded: Promise<void> | undefined;
 
-  constructor(private readonly now: () => Date = () => new Date()) {}
+  constructor(
+    private readonly now: () => Date = () => new Date(),
+    private readonly store: DemoStore = memoryStore(),
+  ) {}
 
-  private id(prefix: string): string {
-    this.seq += 1;
-    return `${prefix}-${this.seq.toString().padStart(6, "0")}`;
+  private async ready() {
+    this.loaded ??= this.store.load().then((s) => {
+      if (s) this.state = s;
+    });
+    await this.loaded;
   }
 
-  private once<T>(requestId: string, action: () => T): T {
-    if (this.replies.has(requestId)) return this.replies.get(requestId) as T;
+  private id(prefix: string): string {
+    this.state.seq += 1;
+    return `${prefix}-${this.state.seq.toString().padStart(6, "0")}`;
+  }
+
+  private async once<T>(requestId: string, action: () => T): Promise<T> {
+    await this.ready();
+    if (requestId in this.state.replies) return this.state.replies[requestId] as T;
     const result = action();
-    this.replies.set(requestId, result);
+    this.state.replies[requestId] = result;
+    await this.store.save(this.state);
     return result;
   }
 
   private auth(authorizationId: string): DemoAuth {
-    const auth = this.auths.get(authorizationId);
+    const auth = this.state.auths[authorizationId];
     if (!auth) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Authorization not found.");
     return auth;
   }
@@ -59,45 +95,102 @@ export class DemoDepositGateway implements DepositGateway {
     return { ...rest };
   }
 
-  async createHold(req: HoldRequest, requestId: string): Promise<Hold> {
+  private newAuth(totalCents: number, vaultId?: string): DemoAuth {
+    const created = this.now();
+    const auth: DemoAuth = {
+      authorizationId: this.id("DEMO-AUTH"),
+      status: "CREATED",
+      amountCents: totalCents,
+      createdAt: created.toISOString(),
+      expiresAt: new Date(created.getTime() + AUTHORIZATION_VALID_DAYS * DAY_MS).toISOString(),
+      vaultId,
+      payerEmail: "renter@example.com",
+      capturedCents: 0,
+      reauthorized: false,
+    };
+    this.state.auths[auth.authorizationId] = auth;
+    return auth;
+  }
+
+  private newCapture(amountCents: number): DemoCapture {
+    const capture: DemoCapture = { id: this.id("DEMO-CAPTURE"), amountCents, refundedCents: 0 };
+    this.state.captures[capture.id] = capture;
+    return capture;
+  }
+
+  private vault(vaultId: string) {
+    if (!this.state.vaults[vaultId]) throw fail(422, "UNPROCESSABLE_ENTITY", "INVALID_PAYMENT_TOKEN", "Payment token not found.");
+  }
+
+  async createBookingOrder(req: BookingOrderRequest, requestId: string): Promise<Hold> {
     return this.once(requestId, () => {
-      const order: DemoOrder = {
-        id: this.id("DEMO-ORDER"),
-        totalCents: req.feeCents + req.depositCents,
-        savePayPal: req.savePayPal,
-      };
-      this.orders.set(order.id, order);
+      const order: DemoOrder = { id: this.id("DEMO-ORDER"), intent: "CAPTURE", totalCents: req.feeCents, savePayPal: true };
+      this.state.orders[order.id] = order;
       return { orderId: order.id, status: "PAYER_ACTION_REQUIRED" };
     });
   }
 
   /** In demo mode the buyer's approval is implied. */
+  async captureBookingOrder(orderId: string, requestId: string): Promise<BookingCapture> {
+    return this.once(requestId, () => {
+      const order = this.state.orders[orderId];
+      if (!order) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Order not found.");
+      if (order.captureId) throw fail(422, "UNPROCESSABLE_ENTITY", "ORDER_ALREADY_CAPTURED", "Order already captured.");
+      const capture = this.newCapture(order.totalCents);
+      order.captureId = capture.id;
+      const vaultId = this.id("DEMO-VAULT");
+      this.state.vaults[vaultId] = "renter@example.com";
+      return { captureId: capture.id, status: "COMPLETED", capturedCents: order.totalCents, vaultId, payerEmail: "renter@example.com" };
+    });
+  }
+
+  async holdWithSavedWallet(req: SavedWalletRequest, requestId: string): Promise<Authorization> {
+    return this.once(requestId, () => {
+      this.vault(req.vaultId);
+      return this.view(this.newAuth(req.amountCents, req.vaultId));
+    });
+  }
+
+  async chargeSavedWallet(req: SavedWalletRequest, requestId: string): Promise<{ captureId: string; status: string }> {
+    return this.once(requestId, () => {
+      this.vault(req.vaultId);
+      return { captureId: this.newCapture(req.amountCents).id, status: "COMPLETED" };
+    });
+  }
+
+  async createHold(req: HoldRequest, requestId: string): Promise<Hold> {
+    return this.once(requestId, () => {
+      const order: DemoOrder = {
+        id: this.id("DEMO-ORDER"),
+        intent: "AUTHORIZE",
+        totalCents: req.feeCents + req.depositCents,
+        savePayPal: req.savePayPal,
+      };
+      this.state.orders[order.id] = order;
+      return { orderId: order.id, status: "PAYER_ACTION_REQUIRED" };
+    });
+  }
+
   async authorizeHold(orderId: string, requestId: string): Promise<Authorization> {
     return this.once(requestId, () => {
-      const order = this.orders.get(orderId);
+      const order = this.state.orders[orderId];
       if (!order) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Order not found.");
       if (order.authorizationId) {
         throw fail(422, "UNPROCESSABLE_ENTITY", "ORDER_ALREADY_AUTHORIZED", "Order already authorized.");
       }
-      const created = this.now();
-      const auth: DemoAuth = {
-        authorizationId: this.id("DEMO-AUTH"),
-        status: "CREATED",
-        amountCents: order.totalCents,
-        createdAt: created.toISOString(),
-        expiresAt: new Date(created.getTime() + AUTHORIZATION_VALID_DAYS * DAY_MS).toISOString(),
-        vaultId: order.savePayPal ? this.id("DEMO-VAULT") : undefined,
-        payerEmail: "renter@example.com",
-        capturedCents: 0,
-        reauthorized: false,
-      };
+      let vaultId: string | undefined;
+      if (order.savePayPal) {
+        vaultId = this.id("DEMO-VAULT");
+        this.state.vaults[vaultId] = "renter@example.com";
+      }
+      const auth = this.newAuth(order.totalCents, vaultId);
       order.authorizationId = auth.authorizationId;
-      this.auths.set(auth.authorizationId, auth);
       return this.view(auth);
     });
   }
 
   async getAuthorization(authorizationId: string): Promise<Authorization> {
+    await this.ready();
     return this.view(this.auth(authorizationId));
   }
 
@@ -111,8 +204,7 @@ export class DemoDepositGateway implements DepositGateway {
       if (req.amountCents > auth.amountCents - auth.capturedCents) {
         throw fail(422, "UNPROCESSABLE_ENTITY", "MAX_CAPTURE_AMOUNT_EXCEEDED", "Capture amount exceeds allowable limit.");
       }
-      const capture: DemoCapture = { id: this.id("DEMO-CAPTURE"), amountCents: req.amountCents, refundedCents: 0 };
-      this.captures.set(capture.id, capture);
+      const capture = this.newCapture(req.amountCents);
       auth.capturedCents += req.amountCents;
       auth.status = "CAPTURED";
       return {
@@ -125,7 +217,7 @@ export class DemoDepositGateway implements DepositGateway {
   }
 
   async release(authorizationId: string, requestId: string): Promise<void> {
-    this.once(requestId, () => {
+    await this.once(requestId, () => {
       const auth = this.auth(authorizationId);
       if (auth.status === "CAPTURED") {
         throw fail(422, "UNPROCESSABLE_ENTITY", "PREVIOUSLY_CAPTURED", "A fully captured authorization cannot be voided.");
@@ -157,24 +249,16 @@ export class DemoDepositGateway implements DepositGateway {
         throw fail(422, "UNPROCESSABLE_ENTITY", "MAX_AUTHORIZATION_AMOUNT_EXCEEDED", "Reauthorization exceeds the allowed amount.");
       }
       auth.reauthorized = true;
-      const created = this.now();
-      const fresh: DemoAuth = {
-        ...auth,
-        authorizationId: this.id("DEMO-AUTH"),
-        amountCents,
-        createdAt: created.toISOString(),
-        capturedCents: 0,
-        reauthorized: true,
-      };
+      const fresh = this.newAuth(amountCents, auth.vaultId);
+      fresh.reauthorized = true;
       auth.status = "VOIDED";
-      this.auths.set(fresh.authorizationId, fresh);
       return this.view(fresh);
     });
   }
 
   async refund(req: RefundRequest, requestId: string): Promise<RefundResult> {
     return this.once(requestId, () => {
-      const capture = this.captures.get(req.captureId);
+      const capture = this.state.captures[req.captureId];
       if (!capture) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Capture not found.");
       if (req.amountCents <= 0 || req.amountCents > capture.amountCents - capture.refundedCents) {
         throw fail(422, "UNPROCESSABLE_ENTITY", "REFUND_AMOUNT_EXCEEDED", "Refund amount exceeds the refundable amount.");

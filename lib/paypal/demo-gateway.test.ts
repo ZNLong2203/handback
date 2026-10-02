@@ -100,3 +100,58 @@ describe("DemoDepositGateway", () => {
     expect(await issueOf(gateway.refund({ captureId: s.captureId, amountCents: 12000, noteToPayer: "" }, "r2"))).toBe("REFUND_AMOUNT_EXCEEDED");
   });
 });
+
+describe("DemoDepositGateway booking flow", () => {
+  const booking = {
+    rentalId: "R-TEST01",
+    itemName: "Mirrorless camera kit",
+    rentalDays: 3,
+    feeCents: 8700,
+    depositCents: 30000,
+    shopName: "Kestrel Camera Rentals",
+    returnUrl: "http://localhost:3000/r/x",
+    cancelUrl: "http://localhost:3000/rent/camera-kit",
+  };
+
+  it("captures the fee at booking and returns a saved-wallet token", async () => {
+    const { gateway } = setup();
+    const { orderId } = await gateway.createBookingOrder(booking, "book-1");
+    const paid = await gateway.captureBookingOrder(orderId, "book-capture-1");
+    expect(paid).toMatchObject({ status: "COMPLETED", capturedCents: 8700 });
+    expect(paid.vaultId).toBeDefined();
+  });
+
+  it("holds the deposit on the saved wallet at pickup and settles part of it", async () => {
+    const { gateway } = setup();
+    const { orderId } = await gateway.createBookingOrder(booking, "book-2");
+    const { vaultId } = await gateway.captureBookingOrder(orderId, "book-capture-2");
+    const hold = await gateway.holdWithSavedWallet(
+      { vaultId: vaultId!, rentalId: "R-TEST01", amountCents: 30000, description: "Refundable deposit" },
+      "hold-1",
+    );
+    expect(hold).toMatchObject({ status: "CREATED", amountCents: 30000 });
+    const s = await gateway.settle(
+      { authorizationId: hold.authorizationId, amountCents: 3500, authorizedCents: 30000, invoiceId: "R-TEST01-damage", noteToPayer: "Lens hood" },
+      "settle-b1",
+    );
+    expect(s.releasedCents).toBe(26500);
+  });
+
+  it("refuses a hold or charge on an unknown wallet token", async () => {
+    const { gateway } = setup();
+    expect(
+      await issueOf(gateway.holdWithSavedWallet({ vaultId: "nope", rentalId: "R", amountCents: 100, description: "" }, "h")),
+    ).toBe("INVALID_PAYMENT_TOKEN");
+  });
+
+  it("keeps state through its store, like a restart would", async () => {
+    let saved: unknown = null;
+    const store = { load: async () => saved as never, save: async (s: unknown) => void (saved = structuredClone(s)) };
+    const first = new DemoDepositGateway(() => new Date(), store);
+    const { orderId } = await first.createBookingOrder(booking, "book-3");
+    const { vaultId } = await first.captureBookingOrder(orderId, "book-capture-3");
+    const second = new DemoDepositGateway(() => new Date(), store);
+    const hold = await second.holdWithSavedWallet({ vaultId: vaultId!, rentalId: "R", amountCents: 100, description: "" }, "hold-3");
+    expect(hold.status).toBe("CREATED");
+  });
+});
