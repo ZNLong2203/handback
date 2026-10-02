@@ -1,0 +1,2540 @@
+{
+  "metrics": {
+    "set": "synthetic",
+    "prompt": 2,
+    "model": "gemini-3.8-flash",
+    "thinking": "low",
+    "passes": 2,
+    "pairs": 36,
+    "realChanges": 14,
+    "caughtAny": 14,
+    "caughtCharged": 14,
+    "pricedRight": 14,
+    "unchangedPairs": 24,
+    "unchangedWithFalseCharge": 0,
+    "falseChargesOnChangedPairs": 0,
+    "errors": 0,
+    "repaired": 0,
+    "networkRetries": 1,
+    "p50ms": 4762,
+    "p95ms": 8295,
+    "inputTokensPerPair": 5715,
+    "outputTokensPerPair": 827
+  },
+  "results": [
+    {
+      "id": "action-cam-kit__missing-housing",
+      "changed": true,
+      "ms": 6775,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1623
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: waterproof housing",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 3500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "waterproof housing",
+            "description": "The waterproof housing is missing from the return.",
+            "evidence": "The waterproof housing shown on the left side of the check-out photo is absent in the check-in photo.",
+            "box_before": [
+              239,
+              144,
+              528,
+              368
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-housing"
+          }
+        ],
+        "summary": "The waterproof housing was not returned with the kit."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "waterproof housing",
+              "description": "The waterproof housing is missing from the return.",
+              "evidence": "The waterproof housing shown on the left side of the check-out photo is absent in the check-in photo.",
+              "box_before": [
+                239,
+                144,
+                528,
+                368
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-housing"
+            }
+          ],
+          "summary": "The waterproof housing was not returned with the kit."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "waterproof housing",
+              "description": "The waterproof housing was not returned with the kit.",
+              "evidence": "The waterproof housing shown on the upper left in the check-out photo is absent from the check-in photo.",
+              "box_before": [
+                239,
+                142,
+                530,
+                369
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-housing"
+            }
+          ],
+          "summary": "The waterproof housing is missing from the returned action camera kit."
+        }
+      ]
+    },
+    {
+      "id": "action-cam-kit__same-dust-glare",
+      "changed": false,
+      "ms": 5645,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1192
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All kit items have been returned in the same condition as check-out with no missing parts or new damage."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items have been returned in the same condition as check-out with no missing parts or new damage."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items were returned in the same condition as at check-out with no damage or missing accessories."
+        }
+      ]
+    },
+    {
+      "id": "action-cam-kit__same-light",
+      "changed": false,
+      "ms": 5816,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1097
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All items returned complete and in original condition with no damage or missing components."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All items returned complete and in original condition with no damage or missing components."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items were returned complete and in the same condition as check-out."
+        }
+      ]
+    },
+    {
+      "id": "action-cam-kit__same-pose",
+      "changed": false,
+      "ms": 7653,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1357
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 1,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The action camera kit was returned complete with all accessories present and undamaged."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The action camera kit was returned complete with all accessories present and undamaged."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "pre_existing",
+              "item": "action camera",
+              "description": "Light surface scratches are visible on the camera's rear screen.",
+              "evidence": "The fine scratches on the display appear identical in pattern and location in both photos.",
+              "box_before": [
+                251,
+                435,
+                432,
+                621
+              ],
+              "box_after": [
+                221,
+                415,
+                432,
+                623
+              ],
+              "confidence": "medium",
+              "price_item_id": null
+            }
+          ],
+          "summary": "The action camera kit was returned complete with all accessories and has no new damage."
+        }
+      ]
+    },
+    {
+      "id": "camera-body__grip-scuff",
+      "changed": true,
+      "ms": 3283,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 442
+      },
+      "retries": 1,
+      "caught": [
+        {
+          "change": "damage: handgrip rubber",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 4500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "camera grip rubber",
+            "description": "The rubber grip at the lower front of the camera body is torn and peeling off.",
+            "evidence": "In Photo A the rubber grip is intact and smooth, whereas in Photo B it is torn and frayed at the bottom corner.",
+            "box_before": [
+              496,
+              266,
+              719,
+              423
+            ],
+            "box_after": [
+              587,
+              301,
+              735,
+              417
+            ],
+            "confidence": "high",
+            "price_item_id": "grip-rubber"
+          }
+        ],
+        "summary": "The camera grip rubber was returned torn and peeling at the bottom front corner."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "camera grip rubber",
+              "description": "The rubber grip at the lower front of the camera body is torn and peeling off.",
+              "evidence": "In Photo A the rubber grip is intact and smooth, whereas in Photo B it is torn and frayed at the bottom corner.",
+              "box_before": [
+                496,
+                266,
+                719,
+                423
+              ],
+              "box_after": [
+                587,
+                301,
+                735,
+                417
+              ],
+              "confidence": "high",
+              "price_item_id": "grip-rubber"
+            }
+          ],
+          "summary": "The camera grip rubber was returned torn and peeling at the bottom front corner."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "camera body grip",
+              "description": "The rubber grip at the lower front of the camera body is torn and peeling off.",
+              "evidence": "In photo A the rubber grip coating is completely intact and flush, whereas in photo B there is prominent tearing and fraying rubber extending outward at the base of the grip.",
+              "box_before": [
+                558,
+                281,
+                718,
+                427
+              ],
+              "box_after": [
+                588,
+                298,
+                736,
+                421
+              ],
+              "confidence": "high",
+              "price_item_id": "grip-rubber"
+            }
+          ],
+          "summary": "The camera was returned with the rubber grip torn and peeling at the bottom front."
+        }
+      ]
+    },
+    {
+      "id": "camera-body__same-dust-glare",
+      "changed": false,
+      "ms": 4337,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 767
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The camera and lens were returned in the same condition as check-out with no visible damage or missing components."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera and lens were returned in the same condition as check-out with no visible damage or missing components."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera and lens returned in the same condition as checked out, with no missing items or new damage."
+        }
+      ]
+    },
+    {
+      "id": "camera-body__same-light",
+      "changed": false,
+      "ms": 2684,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 129
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The camera body and lens were returned in the same condition as check-out, with no new damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera body and lens were returned in the same condition as check-out, with no new damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera and lens returned in the same condition as checked out, with no missing accessories or new damage."
+        }
+      ]
+    },
+    {
+      "id": "camera-body__same-pose",
+      "changed": false,
+      "ms": 7273,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1854
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The camera and lens were returned in the same condition as at check-out with no new damage, missing accessories, or excessive dirt."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera and lens were returned in the same condition as at check-out with no new damage, missing accessories, or excessive dirt."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The camera and lens returned in the same condition as check-out with no visible damage or missing accessories."
+        }
+      ]
+    },
+    {
+      "id": "camera-body__top-scratch",
+      "changed": true,
+      "ms": 5927,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5736,
+        "outputTokens": 1282
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: camera top plate",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 6000,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "top plate",
+            "description": "Deep scuffs and scratches exposing bare metal are visible across the viewfinder housing.",
+            "evidence": "Severe white gouges and scrapes appear across the prism housing in photo B that are completely absent in photo A.",
+            "box_before": [
+              200,
+              435,
+              342,
+              570
+            ],
+            "box_after": [
+              203,
+              440,
+              340,
+              563
+            ],
+            "confidence": "high",
+            "price_item_id": "top-plate"
+          }
+        ],
+        "summary": "Camera returned with heavy scratches and finish wear on the viewfinder housing."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "top plate",
+              "description": "Deep scuffs and scratches exposing bare metal are visible across the viewfinder housing.",
+              "evidence": "Severe white gouges and scrapes appear across the prism housing in photo B that are completely absent in photo A.",
+              "box_before": [
+                200,
+                435,
+                342,
+                570
+              ],
+              "box_after": [
+                203,
+                440,
+                340,
+                563
+              ],
+              "confidence": "high",
+              "price_item_id": "top-plate"
+            }
+          ],
+          "summary": "Camera returned with heavy scratches and finish wear on the viewfinder housing."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "top plate",
+              "description": "Deep scratch and scrape marks with paint loss are present on the right side of the viewfinder housing and top plate.",
+              "evidence": "Bright bare metal scratches across the viewfinder housing face and edge in Photo B that are completely absent on the clean surface in Photo A.",
+              "box_before": [
+                146,
+                350,
+                338,
+                572
+              ],
+              "box_after": [
+                146,
+                350,
+                338,
+                572
+              ],
+              "confidence": "high",
+              "price_item_id": "top-plate"
+            }
+          ],
+          "summary": "Severe scrape damage and paint loss were found on the viewfinder housing and top plate."
+        }
+      ]
+    },
+    {
+      "id": "camera-kit__missing-battery-charger",
+      "changed": true,
+      "ms": 6152,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5870,
+        "outputTokens": 1736
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: battery",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        },
+        {
+          "change": "missing: charger",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 9800,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "battery",
+            "description": "The camera battery was not returned with the kit.",
+            "evidence": "The battery present between the rear lens cap and charger in Photo A is missing from Photo B.",
+            "box_before": [
+              493,
+              439,
+              618,
+              505
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-battery"
+          },
+          {
+            "kind": "missing",
+            "item": "battery charger with cable",
+            "description": "The battery charger and its power cable are missing from the returned kit.",
+            "evidence": "The charger unit and bundled cable seen in Photo A are completely absent in Photo B.",
+            "box_before": [
+              401,
+              582,
+              654,
+              782
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-charger"
+          }
+        ],
+        "summary": "The camera kit was returned missing the battery as well as the battery charger and cable."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "battery",
+              "description": "The camera battery was not returned with the kit.",
+              "evidence": "The battery present between the rear lens cap and charger in Photo A is missing from Photo B.",
+              "box_before": [
+                493,
+                439,
+                618,
+                505
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-battery"
+            },
+            {
+              "kind": "missing",
+              "item": "battery charger with cable",
+              "description": "The battery charger and its power cable are missing from the returned kit.",
+              "evidence": "The charger unit and bundled cable seen in Photo A are completely absent in Photo B.",
+              "box_before": [
+                401,
+                582,
+                654,
+                782
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-charger"
+            }
+          ],
+          "summary": "The camera kit was returned missing the battery as well as the battery charger and cable."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "battery",
+              "description": "The camera battery is missing from the returned kit.",
+              "evidence": "The battery is present in check-out photo A between the rear cap and charger, but absent from check-in photo B.",
+              "box_before": [
+                494,
+                439,
+                617,
+                506
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-battery"
+            },
+            {
+              "kind": "missing",
+              "item": "battery charger with cable",
+              "description": "The battery charger and its power cable are missing from the returned kit.",
+              "evidence": "Both the charger unit and the bundled cable visible in photo A are absent in photo B.",
+              "box_before": [
+                402,
+                582,
+                654,
+                779
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-charger"
+            }
+          ],
+          "summary": "The camera kit was returned missing both the battery and the battery charger with cable."
+        }
+      ]
+    },
+    {
+      "id": "camera-kit__missing-hood",
+      "changed": true,
+      "ms": 3701,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5870,
+        "outputTokens": 360
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: lens hood",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 3500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "lens hood",
+            "description": "The lens hood is missing from the returned kit.",
+            "evidence": "The lens hood is visible on the left side in the check-out photo but completely absent in the check-in photo.",
+            "box_before": [
+              369,
+              45,
+              613,
+              235
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-hood"
+          }
+        ],
+        "summary": "The lens hood was not returned with the kit."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "lens hood",
+              "description": "The lens hood is missing from the returned kit.",
+              "evidence": "The lens hood is visible on the left side in the check-out photo but completely absent in the check-in photo.",
+              "box_before": [
+                369,
+                45,
+                613,
+                235
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-hood"
+            }
+          ],
+          "summary": "The lens hood was not returned with the kit."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "lens hood",
+              "description": "The lens hood is missing from the returned kit.",
+              "evidence": "The lens hood present to the left of the rear lens cap in Photo A is absent in Photo B.",
+              "box_before": [
+                369,
+                44,
+                613,
+                237
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-hood"
+            }
+          ],
+          "summary": "The lens hood is missing from the returned kit."
+        }
+      ]
+    },
+    {
+      "id": "camera-kit__same-dust-glare",
+      "changed": false,
+      "ms": 3065,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5870,
+        "outputTokens": 121
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All items from the mirrorless camera kit are returned in the same condition with no new damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All items from the mirrorless camera kit are returned in the same condition with no new damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items are returned in good condition with no damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "camera-kit__same-light",
+      "changed": false,
+      "ms": 13618,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5870,
+        "outputTokens": 3575
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All kit items are present and in good condition with no missing accessories or damage."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items are present and in good condition with no missing accessories or damage."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All items returned in original condition with no damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "camera-kit__same-pose",
+      "changed": false,
+      "ms": 4956,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5870,
+        "outputTokens": 546
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All kit items were returned complete and in good condition with no missing accessories or visible damage."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items were returned complete and in good condition with no missing accessories or visible damage."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All items from the mirrorless camera kit are returned in matching condition with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "drone-kit__broken-propeller",
+      "changed": true,
+      "ms": 4578,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5744,
+        "outputTokens": 436
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: drone propeller",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 1400,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "propeller",
+            "description": "The front-right propeller blade tip is chipped and broken.",
+            "evidence": "In photo A the propeller blade is fully intact and rounded, but in photo B both ends of that propeller assembly appear chipped or snapped.",
+            "box_before": [
+              73,
+              447,
+              258,
+              622
+            ],
+            "box_after": [
+              119,
+              488,
+              245,
+              594
+            ],
+            "confidence": "high",
+            "price_item_id": "propeller-damage"
+          }
+        ],
+        "summary": "The front-right propeller on the drone returned damaged with broken blade tips."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "propeller",
+              "description": "The front-right propeller blade tip is chipped and broken.",
+              "evidence": "In photo A the propeller blade is fully intact and rounded, but in photo B both ends of that propeller assembly appear chipped or snapped.",
+              "box_before": [
+                73,
+                447,
+                258,
+                622
+              ],
+              "box_after": [
+                119,
+                488,
+                245,
+                594
+              ],
+              "confidence": "high",
+              "price_item_id": "propeller-damage"
+            }
+          ],
+          "summary": "The front-right propeller on the drone returned damaged with broken blade tips."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "drone",
+              "description": "The front-right propeller blade tip is broken and chipped off.",
+              "evidence": "In photo A both blades of the front-right propeller are completely intact with smooth rounded edges, whereas in photo B the outer tip of one blade is clearly broken and missing a chunk.",
+              "box_before": [
+                73,
+                447,
+                255,
+                621
+              ],
+              "box_after": [
+                119,
+                488,
+                245,
+                595
+              ],
+              "confidence": "high",
+              "price_item_id": "propeller-damage"
+            }
+          ],
+          "summary": "The front-right propeller on the drone has a broken tip and requires replacement."
+        }
+      ]
+    },
+    {
+      "id": "drone-kit__missing-battery",
+      "changed": true,
+      "ms": 4323,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5744,
+        "outputTokens": 372
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: flight battery",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 8900,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "flight battery",
+            "description": "One of the two spare flight batteries is missing from the return.",
+            "evidence": "Photo A shows two standalone flight batteries at the bottom left, whereas Photo B shows only one battery.",
+            "box_before": [
+              634,
+              313,
+              856,
+              411
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-battery"
+          }
+        ],
+        "summary": "One of the two flight batteries included in the kit was not returned."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "flight battery",
+              "description": "One of the two spare flight batteries is missing from the return.",
+              "evidence": "Photo A shows two standalone flight batteries at the bottom left, whereas Photo B shows only one battery.",
+              "box_before": [
+                634,
+                313,
+                856,
+                411
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-battery"
+            }
+          ],
+          "summary": "One of the two flight batteries included in the kit was not returned."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "flight battery",
+              "description": "One of the two flight batteries included in the kit is missing.",
+              "evidence": "Two flight batteries are clearly present side-by-side in photo A, but only one battery is present in photo B.",
+              "box_before": [
+                635,
+                314,
+                856,
+                412
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-battery"
+            }
+          ],
+          "summary": "The drone kit was returned missing one flight battery."
+        }
+      ]
+    },
+    {
+      "id": "drone-kit__same-dust-glare",
+      "changed": false,
+      "ms": 3302,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5744,
+        "outputTokens": 120
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The folding camera drone kit was returned in complete and matching condition with no new damage or missing accessories."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The folding camera drone kit was returned in complete and matching condition with no new damage or missing accessories."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All items from the folding camera drone kit are present and returned in unchanged condition."
+        }
+      ]
+    },
+    {
+      "id": "drone-kit__same-light",
+      "changed": false,
+      "ms": 6913,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5744,
+        "outputTokens": 711
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All kit items are returned in good condition with no missing parts or new damage detected."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items are returned in good condition with no missing parts or new damage detected."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items are returned in the same condition as check-out with no missing parts or damage detected."
+        }
+      ]
+    },
+    {
+      "id": "drone-kit__same-pose",
+      "changed": false,
+      "ms": 3778,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5744,
+        "outputTokens": 119
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "All kit items are returned in good condition with no new damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "All kit items are returned in good condition with no new damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The folding camera drone kit was returned complete and in good condition with no damage or missing accessories."
+        }
+      ]
+    },
+    {
+      "id": "ebike-rear__bent-fender-mud",
+      "changed": true,
+      "ms": 6439,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5676,
+        "outputTokens": 1441
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: rear mudguard",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        },
+        {
+          "change": "dirt: rear rack",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 6500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "dirt",
+            "item": "rear mudguard and rack",
+            "description": "Heavy dried mud is caked across the rear rack, rear mudguard, and support stays.",
+            "evidence": "Thick, textured mud deposits cover the rack and mudguard in Photo B where the surfaces were clean in Photo A.",
+            "box_before": [
+              128,
+              158,
+              480,
+              608
+            ],
+            "box_after": [
+              127,
+              137,
+              563,
+              613
+            ],
+            "confidence": "high",
+            "price_item_id": "heavy-cleaning"
+          },
+          {
+            "kind": "new_damage",
+            "item": "rear mudguard",
+            "description": "The lower rear edge of the mudguard is torn and broken into jagged fragments.",
+            "evidence": "In Photo A the mudguard has an intact, smooth contour, whereas Photo B shows torn sections hanging from the lower rear end.",
+            "box_before": [
+              366,
+              155,
+              480,
+              208
+            ],
+            "box_after": [
+              440,
+              107,
+              606,
+              267
+            ],
+            "confidence": "high",
+            "price_item_id": "mudguard"
+          }
+        ],
+        "summary": "The e-bike was returned with heavy mud buildup across the rear rack and fender, and the lower rear mudguard is torn and damaged."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "dirt",
+              "item": "rear mudguard and rack",
+              "description": "Heavy dried mud is caked across the rear rack, rear mudguard, and support stays.",
+              "evidence": "Thick, textured mud deposits cover the rack and mudguard in Photo B where the surfaces were clean in Photo A.",
+              "box_before": [
+                128,
+                158,
+                480,
+                608
+              ],
+              "box_after": [
+                127,
+                137,
+                563,
+                613
+              ],
+              "confidence": "high",
+              "price_item_id": "heavy-cleaning"
+            },
+            {
+              "kind": "new_damage",
+              "item": "rear mudguard",
+              "description": "The lower rear edge of the mudguard is torn and broken into jagged fragments.",
+              "evidence": "In Photo A the mudguard has an intact, smooth contour, whereas Photo B shows torn sections hanging from the lower rear end.",
+              "box_before": [
+                366,
+                155,
+                480,
+                208
+              ],
+              "box_after": [
+                440,
+                107,
+                606,
+                267
+              ],
+              "confidence": "high",
+              "price_item_id": "mudguard"
+            }
+          ],
+          "summary": "The e-bike was returned with heavy mud buildup across the rear rack and fender, and the lower rear mudguard is torn and damaged."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "dirt",
+              "item": "rear mudguard and rack",
+              "description": "The rear mudguard, luggage rack, and rack stays are covered in thick dried mud.",
+              "evidence": "Heavy clumps of dried mud and dirt are clearly encrusted on the mudguard, rear stays, and luggage rack in photo B, which were clean in photo A.",
+              "box_before": [
+                128,
+                155,
+                477,
+                597
+              ],
+              "box_after": [
+                132,
+                114,
+                599,
+                608
+              ],
+              "confidence": "high",
+              "price_item_id": "heavy-cleaning"
+            },
+            {
+              "kind": "new_damage",
+              "item": "rear mudguard flap",
+              "description": "The rear mudguard flap is torn, cracked, and heavily damaged at the lower end.",
+              "evidence": "In photo A the rear mudguard extends smoothly down with an intact profile; in photo B the plastic/rubber flap at the lower rear end is torn and jaggedly broken into hanging pieces.",
+              "box_before": [
+                372,
+                155,
+                480,
+                206
+              ],
+              "box_after": [
+                419,
+                107,
+                607,
+                269
+              ],
+              "confidence": "high",
+              "price_item_id": "mudguard"
+            }
+          ],
+          "summary": "The e-bike was returned with significant mud encrustation across the rear rack and mudguard, as well as a torn and damaged rear mudguard flap."
+        }
+      ]
+    },
+    {
+      "id": "ebike-rear__same-dust-glare",
+      "changed": false,
+      "ms": 3893,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5676,
+        "outputTokens": 385
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The e-bike was returned in the same condition as at check-out, with no new damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition as at check-out, with no new damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "ebike-rear__same-light",
+      "changed": false,
+      "ms": 8295,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5676,
+        "outputTokens": 1865
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The e-bike was returned in the same condition as at check-out, with no missing parts or new damage detected."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition as at check-out, with no missing parts or new damage detected."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition as check-out with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "ebike-rear__same-pose",
+      "changed": false,
+      "ms": 5365,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5676,
+        "outputTokens": 470
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The e-bike was returned in the same condition as check-out with no new damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition as check-out with no new damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The e-bike was returned in the same condition as check-out with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "pa-speaker__grille-dent",
+      "changed": true,
+      "ms": 4534,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5614,
+        "outputTokens": 1048
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: speaker grille",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 5500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "speaker grille",
+            "description": "There is a prominent dent in the front speaker grille.",
+            "evidence": "A deep indentation with shadow and deformed mesh pattern is visible in the lower-middle portion of the grille in photo B, whereas photo A shows the grille completely flat and intact.",
+            "box_before": [
+              492,
+              312,
+              756,
+              465
+            ],
+            "box_after": [
+              501,
+              317,
+              756,
+              462
+            ],
+            "confidence": "high",
+            "price_item_id": "grille"
+          }
+        ],
+        "summary": "The portable PA speaker was returned with a large new dent on the front speaker grille."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "speaker grille",
+              "description": "There is a prominent dent in the front speaker grille.",
+              "evidence": "A deep indentation with shadow and deformed mesh pattern is visible in the lower-middle portion of the grille in photo B, whereas photo A shows the grille completely flat and intact.",
+              "box_before": [
+                492,
+                312,
+                756,
+                465
+              ],
+              "box_after": [
+                501,
+                317,
+                756,
+                462
+              ],
+              "confidence": "high",
+              "price_item_id": "grille"
+            }
+          ],
+          "summary": "The portable PA speaker was returned with a large new dent on the front speaker grille."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "speaker grille",
+              "description": "There is a noticeable dent pushed inward on the front speaker grille.",
+              "evidence": "The check-out photo shows a smooth, flat mesh grille, whereas the check-in photo reveals a distinct dent and deformation in the mesh.",
+              "box_before": [
+                490,
+                320,
+                750,
+                480
+              ],
+              "box_after": [
+                490,
+                315,
+                750,
+                480
+              ],
+              "confidence": "high",
+              "price_item_id": "grille"
+            }
+          ],
+          "summary": "The portable PA speaker was returned with a large dent in the front grille."
+        }
+      ]
+    },
+    {
+      "id": "pa-speaker__same-dust-glare",
+      "changed": false,
+      "ms": 3726,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5614,
+        "outputTokens": 479
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The portable PA speaker was returned in the same condition as check-out."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as check-out."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as check-out with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "pa-speaker__same-light",
+      "changed": false,
+      "ms": 4168,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5614,
+        "outputTokens": 307
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The portable PA speaker was returned in the same condition as at check-out with no damage or missing components."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as at check-out with no damage or missing components."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as check-out, with only a slight camera colour temperature difference between photos."
+        }
+      ]
+    },
+    {
+      "id": "pa-speaker__same-pose",
+      "changed": false,
+      "ms": 5068,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5614,
+        "outputTokens": 617
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The portable PA speaker was returned in the same condition as at check-out with no visible damage or missing parts."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as at check-out with no visible damage or missing parts."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable PA speaker was returned in the same condition as at check-out with no damage or missing components."
+        }
+      ]
+    },
+    {
+      "id": "projector__cracked-lens",
+      "changed": true,
+      "ms": 4819,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5620,
+        "outputTokens": 650
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: projector lens",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 16000,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "lens",
+            "description": "The front projector lens is visibly cracked with distinct fracture lines radiating across the glass.",
+            "evidence": "Radial cracks appearing across the glass element in Photo B that are completely absent in the clear lens in Photo A.",
+            "box_before": [
+              355,
+              381,
+              526,
+              508
+            ],
+            "box_after": [
+              342,
+              381,
+              523,
+              510
+            ],
+            "confidence": "high",
+            "price_item_id": "lens-crack"
+          }
+        ],
+        "summary": "The portable projector was returned with a cracked front lens element."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "lens",
+              "description": "The front projector lens is visibly cracked with distinct fracture lines radiating across the glass.",
+              "evidence": "Radial cracks appearing across the glass element in Photo B that are completely absent in the clear lens in Photo A.",
+              "box_before": [
+                355,
+                381,
+                526,
+                508
+              ],
+              "box_after": [
+                342,
+                381,
+                523,
+                510
+              ],
+              "confidence": "high",
+              "price_item_id": "lens-crack"
+            }
+          ],
+          "summary": "The portable projector was returned with a cracked front lens element."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "projector lens",
+              "description": "The front glass lens of the projector is cracked.",
+              "evidence": "Spiderweb-pattern fracture lines are clearly visible across the front lens element in photo B that were absent in photo A.",
+              "box_before": [
+                359,
+                386,
+                521,
+                506
+              ],
+              "box_after": [
+                340,
+                382,
+                520,
+                508
+              ],
+              "confidence": "high",
+              "price_item_id": "lens-crack"
+            }
+          ],
+          "summary": "The portable projector was returned with a cracked front lens."
+        }
+      ]
+    },
+    {
+      "id": "projector__missing-remote",
+      "changed": true,
+      "ms": 3706,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5620,
+        "outputTokens": 364
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: remote control",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 2500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "remote control",
+            "description": "The remote control is missing from the return photo.",
+            "evidence": "The remote control present to the right of the projector in photo A is completely absent in photo B.",
+            "box_before": [
+              394,
+              597,
+              509,
+              785
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-remote"
+          }
+        ],
+        "summary": "The portable projector was returned without the remote control."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "remote control",
+              "description": "The remote control is missing from the return photo.",
+              "evidence": "The remote control present to the right of the projector in photo A is completely absent in photo B.",
+              "box_before": [
+                394,
+                597,
+                509,
+                785
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-remote"
+            }
+          ],
+          "summary": "The portable projector was returned without the remote control."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "remote control",
+              "description": "The remote control is missing from the returned kit.",
+              "evidence": "The remote control present to the right of the projector in check-out Photo A is not present in check-in Photo B.",
+              "box_before": [
+                393,
+                597,
+                509,
+                785
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-remote"
+            }
+          ],
+          "summary": "The remote control is missing from the returned portable projector kit."
+        }
+      ]
+    },
+    {
+      "id": "projector__same-dust-glare",
+      "changed": false,
+      "ms": 4762,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5620,
+        "outputTokens": 594
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The portable projector and remote control have been returned in the same condition with no new damage or missing items."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable projector and remote control have been returned in the same condition with no new damage or missing items."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable projector and remote control were returned in the same condition as check-out."
+        }
+      ]
+    },
+    {
+      "id": "projector__same-light",
+      "changed": false,
+      "ms": 3840,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5620,
+        "outputTokens": 391
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The projector and remote were returned in the same condition as checked out, with no missing accessories or damage."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The projector and remote were returned in the same condition as checked out, with no missing accessories or damage."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable projector and remote control returned in identical condition with no missing accessories or damage."
+        }
+      ]
+    },
+    {
+      "id": "projector__same-pose",
+      "changed": false,
+      "ms": 3561,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5620,
+        "outputTokens": 125
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The portable projector and remote control were returned in the same condition as when checked out, with no visible damage or missing components."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The portable projector and remote control were returned in the same condition as when checked out, with no visible damage or missing components."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "Projector and remote control returned in identical condition with no missing parts or damage."
+        }
+      ]
+    },
+    {
+      "id": "tele-lens__dent",
+      "changed": true,
+      "ms": 3875,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5692,
+        "outputTokens": 455
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: lens barrel",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 14000,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "telephoto lens",
+            "description": "There is noticeable denting and chipped paint on the lens barrel near the tripod collar mount.",
+            "evidence": "In Photo B, significant impact damage with paint peeling and a metal dent is visible on the barrel segment above the tripod collar, whereas in Photo A that area is smooth and undamaged.",
+            "box_before": [
+              418,
+              237,
+              563,
+              344
+            ],
+            "box_after": [
+              418,
+              243,
+              562,
+              343
+            ],
+            "confidence": "high",
+            "price_item_id": "barrel-dent"
+          }
+        ],
+        "summary": "Returned with new denting and severe paint chipping on the lens barrel near the tripod collar."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "telephoto lens",
+              "description": "There is noticeable denting and chipped paint on the lens barrel near the tripod collar mount.",
+              "evidence": "In Photo B, significant impact damage with paint peeling and a metal dent is visible on the barrel segment above the tripod collar, whereas in Photo A that area is smooth and undamaged.",
+              "box_before": [
+                418,
+                237,
+                563,
+                344
+              ],
+              "box_after": [
+                418,
+                243,
+                562,
+                343
+              ],
+              "confidence": "high",
+              "price_item_id": "barrel-dent"
+            }
+          ],
+          "summary": "Returned with new denting and severe paint chipping on the lens barrel near the tripod collar."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "telephoto lens",
+              "description": "There is a significant dent with chipped paint on the lens barrel near the tripod mount collar.",
+              "evidence": "A distinct dent with extensive chipped paint is visible on the barrel segment just above the tripod mount collar in Photo B, which is entirely absent in Photo A.",
+              "box_before": [
+                413,
+                271,
+                563,
+                349
+              ],
+              "box_after": [
+                419,
+                276,
+                560,
+                348
+              ],
+              "confidence": "high",
+              "price_item_id": "barrel-dent"
+            }
+          ],
+          "summary": "New dent with paint chipping detected on the lens barrel near the tripod mount collar."
+        }
+      ]
+    },
+    {
+      "id": "tele-lens__same-dust-glare",
+      "changed": false,
+      "ms": 5840,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5692,
+        "outputTokens": 1257
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 1,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "pre_existing",
+            "item": "lens hood",
+            "description": "Surface scratches and scuffs are present on the exterior of the lens hood in both photos.",
+            "evidence": "The scuff marks and scratches on the hood appear identically positioned in both check-out and check-in photos.",
+            "box_before": [
+              318,
+              679,
+              532,
+              856
+            ],
+            "box_after": [
+              318,
+              679,
+              532,
+              856
+            ],
+            "confidence": "high",
+            "price_item_id": null
+          }
+        ],
+        "summary": "The lens was returned in the same condition as check-out, with pre-existing scuffs on the lens hood and no new damage."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "pre_existing",
+              "item": "lens hood",
+              "description": "Surface scratches and scuffs are present on the exterior of the lens hood in both photos.",
+              "evidence": "The scuff marks and scratches on the hood appear identically positioned in both check-out and check-in photos.",
+              "box_before": [
+                318,
+                679,
+                532,
+                856
+              ],
+              "box_after": [
+                318,
+                679,
+                532,
+                856
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            }
+          ],
+          "summary": "The lens was returned in the same condition as check-out, with pre-existing scuffs on the lens hood and no new damage."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The lens and accessories were returned in the same condition as checked out with no new damage."
+        }
+      ]
+    },
+    {
+      "id": "tele-lens__same-light",
+      "changed": false,
+      "ms": 4491,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5692,
+        "outputTokens": 404
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 2,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "pre_existing",
+            "item": "lens hood",
+            "description": "Pre-existing scratches and scuffs are visible across the surface of the lens hood.",
+            "evidence": "The exact same scuffs and scratch marks appear in both Photo A and Photo B.",
+            "box_before": [
+              297,
+              608,
+              664,
+              911
+            ],
+            "box_after": [
+              297,
+              608,
+              664,
+              911
+            ],
+            "confidence": "high",
+            "price_item_id": null
+          },
+          {
+            "kind": "pre_existing",
+            "item": "telephoto lens",
+            "description": "Pre-existing scuffs and paint wear on the rear barrel section and tripod mount area.",
+            "evidence": "Marks and edge wear are present identically in both images.",
+            "box_before": [
+              357,
+              219,
+              715,
+              436
+            ],
+            "box_after": [
+              357,
+              219,
+              715,
+              436
+            ],
+            "confidence": "high",
+            "price_item_id": null
+          }
+        ],
+        "summary": "The lens returned in the same condition with pre-existing cosmetic wear and no new damage or missing accessories."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "pre_existing",
+              "item": "lens hood",
+              "description": "Pre-existing scratches and scuffs are visible across the surface of the lens hood.",
+              "evidence": "The exact same scuffs and scratch marks appear in both Photo A and Photo B.",
+              "box_before": [
+                297,
+                608,
+                664,
+                911
+              ],
+              "box_after": [
+                297,
+                608,
+                664,
+                911
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            },
+            {
+              "kind": "pre_existing",
+              "item": "telephoto lens",
+              "description": "Pre-existing scuffs and paint wear on the rear barrel section and tripod mount area.",
+              "evidence": "Marks and edge wear are present identically in both images.",
+              "box_before": [
+                357,
+                219,
+                715,
+                436
+              ],
+              "box_after": [
+                357,
+                219,
+                715,
+                436
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            }
+          ],
+          "summary": "The lens returned in the same condition with pre-existing cosmetic wear and no new damage or missing accessories."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The 100-400mm telephoto lens was returned in the same condition as check-out with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "tele-lens__same-pose",
+      "changed": false,
+      "ms": 5422,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5692,
+        "outputTokens": 1063
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 2,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "pre_existing",
+            "item": "lens hood",
+            "description": "Scratches and scuffs are present along the exterior of the lens hood.",
+            "evidence": "The scuff marks and light scratches on the surface of the hood are clearly visible in both the check-out and check-in photos.",
+            "box_before": [
+              297,
+              607,
+              666,
+              912
+            ],
+            "box_after": [
+              239,
+              609,
+              657,
+              947
+            ],
+            "confidence": "high",
+            "price_item_id": null
+          }
+        ],
+        "summary": "The lens and accessories were returned in the same condition as check-out with only pre-existing cosmetic wear."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "pre_existing",
+              "item": "lens hood",
+              "description": "Scratches and scuffs are present along the exterior of the lens hood.",
+              "evidence": "The scuff marks and light scratches on the surface of the hood are clearly visible in both the check-out and check-in photos.",
+              "box_before": [
+                297,
+                607,
+                666,
+                912
+              ],
+              "box_after": [
+                239,
+                609,
+                657,
+                947
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            }
+          ],
+          "summary": "The lens and accessories were returned in the same condition as check-out with only pre-existing cosmetic wear."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "pre_existing",
+              "item": "lens hood",
+              "description": "Pre-existing scuffs and scratches are visible on the exterior of the lens hood.",
+              "evidence": "The scuffs and scratches on the lens hood appear in the exact same positions and patterns in both photos.",
+              "box_before": [
+                297,
+                608,
+                665,
+                915
+              ],
+              "box_after": [
+                239,
+                606,
+                656,
+                946
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            },
+            {
+              "kind": "pre_existing",
+              "item": "telephoto lens",
+              "description": "Pre-existing scuffs and wear marks on the lens barrel near the tripod mount.",
+              "evidence": "Dark scuff marks and wear on the white barrel are identical between check-out and check-in photos.",
+              "box_before": [
+                363,
+                196,
+                642,
+                298
+              ],
+              "box_after": [
+                376,
+                171,
+                674,
+                269
+              ],
+              "confidence": "high",
+              "price_item_id": null
+            }
+          ],
+          "summary": "The lens and hood were returned in the same condition as checked out, with only pre-existing wear."
+        }
+      ]
+    }
+  ]
+}
