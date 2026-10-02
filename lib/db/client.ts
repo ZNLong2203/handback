@@ -21,14 +21,23 @@ const SCHEMA = readFileSync(path.join(process.cwd(), "lib/db/schema.sql"), "utf8
  */
 export const jsonParam = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
 
+/**
+ * postgres.js options. Its `json` type covers json (114) and jsonb (3802)
+ * parameters and columns; postgres.js serializes a parameter by the type the
+ * server reports for it, so both OIDs go through jsonParam.
+ */
+export function postgresOptions(url: string) {
+  return {
+    max: 5,
+    ssl: url.includes("localhost") ? (false as const) : ("require" as const),
+    onnotice: () => {},
+    types: { json: { to: 114, from: [114, 3802], serialize: jsonParam, parse: (raw: string) => JSON.parse(raw) as unknown } },
+  };
+}
+
 async function postgresDb(url: string): Promise<Db> {
   const { default: postgres } = await import("postgres");
-  const sql = postgres(url, {
-    max: 5,
-    ssl: url.includes("localhost") ? false : "require",
-    onnotice: () => {},
-    types: { json: { to: 114, from: [114, 3802], serialize: jsonParam, parse: (raw: string) => JSON.parse(raw) } },
-  });
+  const sql = postgres(url, postgresOptions(url));
   const query = async <T,>(text: string, params: unknown[] = []) =>
     (await sql.unsafe(text, params as never[])) as unknown as T[];
   return {
