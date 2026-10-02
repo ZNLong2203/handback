@@ -102,8 +102,10 @@ export function BookingForm(props: Props) {
 
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-released" aria-hidden />
-        By paying you let the shop hold the deposit on this PayPal account at pickup and charge only damage you have seen and
-        not questioned, priced from the list on this page. Everything else is released when you return the item.
+        By paying you agree to the deposit mandate: at pickup the shop may hold up to the deposit on this PayPal account, and it can charge only
+        prices from the list on this page, after showing you each charge with the photos. You accept or question each one; a person at the shop
+        decides the ones you question. Anything above the deposit is charged to the same account, and the rest is released when the shop settles.
+        Your rental page shows the full mandate.
       </p>
     </div>
   );

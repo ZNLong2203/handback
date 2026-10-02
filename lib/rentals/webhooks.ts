@@ -31,7 +31,9 @@ async function rentalByCapture(captureId: string): Promise<Rental | null> {
 /**
  * Applies one verified PayPal webhook. Deliveries are deduplicated on the
  * event id (PayPal retries for up to three days), and every event that
- * touches a rental lands in that rental's audit trail.
+ * touches a rental lands in that rental's audit trail. A booking whose fee
+ * capture PayPal left PENDING is booked when that capture completes, and
+ * cancelled when PayPal denies it.
  */
 export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"duplicate" | "applied" | "ignored"> {
   const db = await getDb();
@@ -57,6 +59,11 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
   }
   if (!rental) return "ignored";
 
+  // Only a fee capture that confirmBooking recorded as pending. Matching on the
+  // order id instead could let an early webhook book the rental before
+  // confirmBooking has stored the saved-wallet token.
+  const pendingFee = rental.status === "draft" && rental.feeCaptureId !== null && rental.feeCaptureId === r.id;
+  let moved: string | null = null;
   await db.tx(async (tx) => {
     if (event.event_type === "CUSTOMER.DISPUTE.CREATED") {
       await updateRental(tx, rental!.id, { status: "disputed", dispute_id: r.dispute_id ?? null });
@@ -68,8 +75,15 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
         status: r.status ?? null,
         webhookEventId: event.id,
       });
+      if (pendingFee && event.event_type === "PAYMENT.CAPTURE.COMPLETED" && (await updateRental(tx, rental!.id, { status: "booked" }, "draft"))) {
+        await appendEvent(tx, rental!.id, "paypal", "booking.paid", { captureId: r.id, feeCents: rental!.feeCents, savedWallet: Boolean(rental!.vaultId) });
+        moved = "booking.paid";
+      } else if (pendingFee && event.event_type === "PAYMENT.CAPTURE.DENIED" && (await updateRental(tx, rental!.id, { status: "cancelled" }, "draft"))) {
+        await appendEvent(tx, rental!.id, "paypal", "booking.declined", { captureId: r.id, status: "DENIED" });
+        moved = "booking.declined";
+      }
     }
   });
-  publish(rental.id, event.event_type);
+  publish(rental.id, moved ?? event.event_type);
   return "applied";
 }

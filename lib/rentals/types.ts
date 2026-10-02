@@ -42,6 +42,13 @@ export type Rental = {
   extraCents: Cents | null;
   settledAt: string | null;
   disputeId: string | null;
+  /** PayPal's payer-action link for approving the booking by redirect. */
+  approveUrl: string | null;
+  /** Canonical JSON of the deposit mandate and its SHA-256 (see mandate.ts). Null on rentals booked before mandates. */
+  mandateJson: string | null;
+  mandateSha256: string | null;
+  /** Read-only token for the assistant that booked (get_rental_status); null for web bookings. */
+  statusToken: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -96,7 +103,7 @@ export type AuditEvent = {
   seq: number;
   rentalId: string;
   at: string;
-  actor: "customer" | "staff" | "system" | "paypal" | "ai";
+  actor: "customer" | "assistant" | "staff" | "system" | "paypal" | "ai";
   type: string;
   data: Record<string, unknown>;
   prevHash: string | null;

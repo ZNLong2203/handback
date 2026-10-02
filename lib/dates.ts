@@ -1,9 +1,16 @@
 const DAY_MS = 86_400_000;
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** True for a real calendar day written YYYY-MM-DD. Date.parse would quietly turn 2026-02-31 into March 3. */
+export function isIsoDay(value: string): boolean {
+  if (!ISO_DAY.test(value)) return false;
+  const t = Date.parse(`${value}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === value;
+}
+
 /** Whole days between pickup and return dates (YYYY-MM-DD); a same-day rental counts as one. */
 export function rentalDays(startDate: string, endDate: string): number {
-  if (!ISO_DAY.test(startDate) || !ISO_DAY.test(endDate)) throw new RangeError("dates must be YYYY-MM-DD");
+  if (!isIsoDay(startDate) || !isIsoDay(endDate)) throw new RangeError("dates must be real days, YYYY-MM-DD");
   const diff = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / DAY_MS;
   if (!Number.isInteger(diff) || diff < 0) throw new RangeError("the return date must be on or after the pickup date");
   return Math.max(1, diff);

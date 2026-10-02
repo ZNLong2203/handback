@@ -1,29 +1,48 @@
 import { CheckCircle2, Clock3, Receipt } from "lucide-react";
-import { notFound } from "next/navigation";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import { acknowledgeCheckoutAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { ApproveBooking } from "@/components/approve-booking";
 import { StoreHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
+import { MandateCard } from "@/components/mandate-card";
 import { MoneyBar } from "@/components/money-bar";
 import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
-import { STATUS } from "@/lib/rentals/status";
+import { captureRefusal, returnFromPayPal } from "@/lib/rentals/service";
+import { feePending, STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
 import { SHOP } from "@/lib/shop";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your rental", robots: { index: false } };
 
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
 export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { token } = await props.params;
+  const query = await props.searchParams;
+  // PayPal sends the renter back here after they approve. The capture runs
+  // once, on the server, and the page then moves off PayPal's URL either way,
+  // so neither a reload nor a live update can run it again.
+  const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID) };
+  const back = fromPayPal.token ? await returnFromPayPal(token, fromPayPal) : "none";
+  if (back === "approved" || back === "pending") redirect(`/r/${token}`);
+  if (back === "failed") redirect(`/r/${token}?paypal=failed`);
+
   const view = await loadRentalView({ token });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;
   const status = STATUS[rental.status];
   const firstName = rental.customerName.split(" ")[0];
+  const byAssistant = view.mandate?.mandate.issuedTo.party === "assistant";
+  const processing = feePending(rental);
+  const refused =
+    one(query.paypal) === "failed" && rental.status === "draft" && !processing ? (captureRefusal(view.events) ?? "Approve the booking in PayPal again.") : null;
 
   return (
     <>
@@ -41,30 +60,70 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <Badge tone={status.tone}>{status.customerLabel ?? status.label}</Badge>
+              <Badge tone={processing ? "held" : status.tone}>{processing ? "Payment processing" : (status.customerLabel ?? status.label)}</Badge>
               <LiveRefresh channel={rental.id} />
             </div>
           </div>
-          <p className="mt-4 text-ink-soft">{status.customer}</p>
-          <div className="mt-5">
-            {rental.status === "settled" ? (
-              <MoneyBar
-                state="settled"
-                size="lg"
-                authorizedCents={rental.authorizedCents ?? 0}
-                capturedCents={rental.capturedCents ?? 0}
-                releasedCents={rental.releasedCents ?? 0}
-                extraCents={rental.extraCents ?? 0}
-              />
-            ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
-              <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
-            ) : rental.authorizedCents ? (
-              <MoneyBar state="held" size="lg" authorizedCents={rental.authorizedCents} />
-            ) : (
-              <MoneyBar state="none" size="lg" depositCents={rental.depositCents} />
-            )}
-          </div>
+          <p className="mt-4 text-ink-soft">{processing ? "Your booking is confirmed when PayPal finishes processing the payment." : status.customer}</p>
+          {rental.status !== "cancelled" && (
+            <div className="mt-5">
+              {rental.status === "settled" ? (
+                <MoneyBar
+                  state="settled"
+                  size="lg"
+                  authorizedCents={rental.authorizedCents ?? 0}
+                  capturedCents={rental.capturedCents ?? 0}
+                  releasedCents={rental.releasedCents ?? 0}
+                  extraCents={rental.extraCents ?? 0}
+                />
+              ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
+                <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
+              ) : rental.authorizedCents ? (
+                <MoneyBar state="held" size="lg" authorizedCents={rental.authorizedCents} />
+              ) : (
+                <MoneyBar state="none" size="lg" depositCents={rental.depositCents} />
+              )}
+            </div>
+          )}
         </Card>
+
+        {processing && (
+          <Card className="p-6">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Clock3 className="h-5 w-5 text-held" aria-hidden /> PayPal is still processing your payment
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              You approved the {formatUsd(rental.feeCents)} rental fee and PayPal accepted it, but has not finished processing it. There is nothing to pay
+              again. The booking is confirmed when PayPal confirms the payment, and this page updates by itself. If PayPal declines it, nothing is charged
+              and this page says so.
+            </p>
+          </Card>
+        )}
+
+        {rental.status === "draft" && !processing && (
+          <ApproveBooking rental={rental} item={item} byAssistant={byAssistant}>
+            {refused && (
+              <Notice tone="charged" title="PayPal did not complete the payment">
+                {refused}
+              </Notice>
+            )}
+          </ApproveBooking>
+        )}
+
+        {rental.status === "cancelled" && (
+          <Card className="p-6">
+            <h2 className="font-semibold">This booking was not paid</h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {captureRefusal(view.events) ?? "Nothing was charged."}{" "}
+              <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
+                Book the {item.name.toLowerCase()} again
+              </Link>
+              .
+            </p>
+          </Card>
+        )}
+
+        {rental.status === "draft" && view.mandate && <MandateCard {...view.mandate} />}
 
         {rental.status === "booked" && (
           <Card className="p-6">
@@ -159,6 +218,8 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             </p>
           </Card>
         )}
+
+        {rental.status !== "draft" && view.mandate && <MandateCard {...view.mandate} folded />}
 
         <details className="rounded-[var(--radius-card)] border border-line bg-card p-5">
           <summary className="cursor-pointer font-semibold">Everything that happened, step by step</summary>

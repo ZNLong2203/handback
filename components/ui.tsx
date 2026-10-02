@@ -54,6 +54,11 @@ export function ButtonLink({ variant = "primary", size = "md", className, ...res
   return <Link className={cx(buttonBase, buttonVariant[variant], buttonSize[size], className)} {...rest} />;
 }
 
+/** A plain link styled as a button: a full page load that is never prefetched. For PayPal approval and its returns. */
+export function ButtonAnchor({ variant = "primary", size = "md", className, ...rest }: ComponentProps<"a"> & ButtonStyle) {
+  return <a className={cx(buttonBase, buttonVariant[variant], buttonSize[size], className)} {...rest} />;
+}
+
 export function Money({ cents, className }: { cents: number; className?: string }) {
   return <span className={cx("tabular", className)}>{formatUsd(cents)}</span>;
 }

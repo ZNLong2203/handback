@@ -1,10 +1,11 @@
-import { Bot, CreditCard, Link2, ShieldCheck, ShieldX, Store, User } from "lucide-react";
+import { Bot, BotMessageSquare, CreditCard, Link2, ShieldCheck, ShieldX, Store, User } from "lucide-react";
 import { eventLabel } from "@/lib/rentals/status";
 import type { AuditEvent } from "@/lib/rentals/types";
 import { cx } from "./ui";
 
 const ACTOR = {
   customer: { icon: User, label: "Customer", tone: "bg-brand-soft text-brand-ink" },
+  assistant: { icon: BotMessageSquare, label: "Customer's assistant", tone: "bg-brand-soft text-brand-ink" },
   staff: { icon: Store, label: "Counter", tone: "bg-line/70 text-ink-soft" },
   system: { icon: Link2, label: "System", tone: "bg-line/70 text-ink-soft" },
   paypal: { icon: CreditCard, label: "PayPal", tone: "bg-held-soft text-held" },
@@ -19,6 +20,8 @@ function detail(e: AuditEvent): string | null {
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);
   if (e.type === "inspection.completed") ids.push(`${d.source} · ${d.model} · ${d.looks} looks · ${Math.round(Number(d.ms) / 100) / 10}s`);
   if (d.worker === "render-workflows") ids.push(typeof d.taskRunId === "string" ? `Render Workflows run ${d.taskRunId}` : "Render Workflows");
+  if (e.type === "mandate.issued") ids.push(d.issuedTo === "assistant" ? "issued to an assistant acting for the renter" : "issued to the renter");
+  if (Array.isArray(d.problems)) ids.push(...d.problems.map(String));
   return ids.length ? ids.join(" · ") : null;
 }
 
