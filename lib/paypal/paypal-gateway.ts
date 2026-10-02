@@ -191,7 +191,7 @@ export class PayPalDepositGateway implements DepositGateway {
             {
               referenceId: req.rentalId,
               customId: req.rentalId,
-              invoiceId: `${req.rentalId}-extra`,
+              invoiceId: req.invoiceId ?? `${req.rentalId}-extra`,
               description: req.description,
               amount: usd(req.amountCents),
             },

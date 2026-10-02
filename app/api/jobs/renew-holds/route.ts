@@ -1,16 +1,35 @@
-import { renewDueHolds } from "@/lib/rentals/jobs";
+import { runRenewals } from "@/lib/workflows/dispatch";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Renews deposit holds that are due (see renewalDueAt). Called by a scheduled
- * job with `Authorization: Bearer $CRON_SECRET`; idempotent, so running it
- * hourly or daily is equally safe.
+ * Renews deposit holds that are due (see renewalDueAt). Called by the Render
+ * cron job (scripts/cron/renew-holds.mjs) with `Authorization: Bearer
+ * $CRON_SECRET`. The sweep runs as a Render Workflows task when the
+ * deployment is set up for it, in this process otherwise. Idempotent, so
+ * running it hourly or daily is equally safe. `warning` is set when the task
+ * skipped the sweep because the workflow's PayPal settings differ from this
+ * service's; the sweep then ran here, and the cron job reports the warning.
  */
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return Response.json({ error: "CRON_SECRET is not set" }, { status: 503 });
   if (req.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "unauthorized" }, { status: 401 });
-  const results = await renewDueHolds();
-  return Response.json({ ok: true, renewed: results.filter((r) => r.outcome === "renewed").length, results });
+  try {
+    const run = await runRenewals();
+    const count = (outcome: string) => run.results.filter((r) => r.outcome === outcome).length;
+    return Response.json({
+      ok: true,
+      ranOn: run.ranOn,
+      taskRunId: run.taskRunId ?? null,
+      pending: run.pending ?? false,
+      warning: run.warning ?? null,
+      renewed: count("renewed"),
+      failed: count("failed"),
+      results: run.results,
+    });
+  } catch (err) {
+    console.error(err);
+    return Response.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+  }
 }

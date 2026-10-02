@@ -24,7 +24,8 @@ const codespace = codespaceHosts();
 
 const nextConfig: NextConfig = {
   // PGlite ships WASM and data files that must be loaded from node_modules at runtime.
-  serverExternalPackages: ["@electric-sql/pglite"],
+  // The Render SDK pulls in redis and eventsource for features this app does not use.
+  serverExternalPackages: ["@electric-sql/pglite", "@renderinc/sdk"],
   allowedDevOrigins: codespace ? [codespace.forwarded] : [],
   experimental: {
     serverActions: {

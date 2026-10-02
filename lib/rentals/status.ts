@@ -35,6 +35,7 @@ const EVENT_LABEL: Record<string, string> = {
   "deposit.held": "Deposit held on PayPal",
   "checkout.acknowledged": "Customer confirmed the pickup photos",
   "inspection.completed": "Two AI looks compared the photos",
+  "inspection.failed": "Photo comparison failed; nothing was saved",
   "finding.kept": "Counter kept a finding",
   "finding.waived": "Counter waived a finding",
   "review.sent": "Findings sent to the customer",

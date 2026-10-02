@@ -72,6 +72,8 @@ export type SavedWalletRequest = {
   rentalId: string;
   amountCents: Cents;
   description: string;
+  /** PayPal invoice id for a saved-wallet charge; defaults to `<rentalId>-extra`. */
+  invoiceId?: string;
 };
 
 export type Hold = {

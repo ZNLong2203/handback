@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+#
+# Handback on Render. One Blueprint creates:
+#   handback                Next.js web service (counter, customer pages, PayPal webhooks)
+#   handback-db             Render Postgres (rentals, photos, audit log)
+#   handback-workflows      Render Workflows: the two-look photo inspection and the
+#                           hold-renewal sweep, each run on its own instance with retries
+#   handback-renew-holds    hourly cron job that asks the web service to renew holds
+#
+# Paid plans on purpose: a free web service sleeps after 15 idle minutes and a
+# free database expires 30 days after creation, both before judging ends on
+# Dec 15. Steps, costs and the post-deploy checklist: docs/deploy.md.
+
+databases:
+  - name: handback-db
+    databaseName: handback
+    user: handback
+    plan: 0.1c-256mb # "Basic 256 MB", $6/month
+    diskSizeGB: 1
+    region: oregon
+    postgresMajorVersion: "18"
+    # Reachable only from Render services in this region, over the private network.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: handback
+    runtime: node
+    region: oregon
+    plan: 0.5c-512mb # "Starter", $7/month; does not sleep
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    # Once, after the first successful deploy. In demo mode it seeds a lived-in
+    # counter; in sandbox mode it needs SEED_VAULT_ID and otherwise does nothing.
+    initialDeployHook: npm run seed:demo
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: handback-db
+          property: connectionString
+      - key: PAYPAL_ENVIRONMENT
+        value: sandbox
+      # Leave the PayPal and Gemini values empty to run the demo stand-in and
+      # the recorded Gemini replies instead.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      # Empty at first: register the webhook after the first deploy (docs/deploy.md).
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Only for a custom domain; the onrender.com URL is used otherwise.
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      # Render Workflows: the slug comes from the workflow service below. Jobs run
+      # in the web process until a Render API key is added.
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: handback-workflows
+          property: slug
+      - key: RENDER_API_KEY
+        sync: false
+
+  - type: workflow
+    name: handback-workflows
+    runtime: node
+    region: oregon
+    # tsx (a devDependency) runs the TypeScript entry; Render sets NODE_ENV only at runtime.
+    buildCommand: npm ci
+    startCommand: npm run workflows
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: handback-db
+          property: connectionString
+      # The same PayPal and Gemini values as the web service: the tasks renew
+      # holds on PayPal and ask Gemini. Each run carries the web service's
+      # modes; a task whose own mode differs does nothing, and the web service
+      # does the work itself and reports it (docs/deploy.md).
+      - key: PAYPAL_ENVIRONMENT
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: cron
+    name: handback-renew-holds
+    runtime: node
+    region: oregon
+    plan: 0.5c-512mb # billed per second of run time; $1/month minimum
+    schedule: "17 * * * *" # hourly, UTC
+    # A dependency-free Node script: nothing to build.
+    buildCommand: "true"
+    startCommand: node scripts/cron/renew-holds.mjs
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - scripts/cron/**
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HANDBACK_HOSTPORT
+        fromService:
+          type: web
+          name: handback
+          property: hostport
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: handback
+          envVarKey: CRON_SECRET
