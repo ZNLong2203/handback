@@ -222,7 +222,8 @@ export function parseCommand(text: string, ctx: CommandContext): CommandCall {
 
 export type CommandOutcome =
   | { ok: true; via: "gemini" | "parser"; proposal: repo.Proposal }
-  | { ok: false; via: "gemini" | "parser"; message: string };
+  /** `question`: the request was unclear and this asks back; otherwise it was understood but cannot be done. */
+  | { ok: false; via: "gemini" | "parser"; message: string; question?: boolean };
 
 export type Interpreter = (prompt: string) => Promise<ToolCall | null>;
 const geminiInterpreter: Interpreter = (prompt) => callOneTool(prompt, COMMAND_TOOLS);
@@ -259,7 +260,7 @@ export async function interpretCommand(
 
 async function proposeFromCall(call: CommandCall, command: string, ctx: CommandContext, now: Date, via: "gemini" | "parser"): Promise<CommandOutcome> {
   const fail = (message: string): CommandOutcome => ({ ok: false, via, message });
-  if (call.tool === "ask_staff") return fail(call.args.question);
+  if (call.tool === "ask_staff") return { ok: false, via, message: call.args.question, question: true };
   const db = await getDb();
 
   if (call.tool === "reassign_booking") {

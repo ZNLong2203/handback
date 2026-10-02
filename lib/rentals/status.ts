@@ -47,6 +47,11 @@ const EVENT_LABEL: Record<string, string> = {
   "webhook.received": "PayPal confirmed by webhook",
   "deposit.reauthorized": "Deposit hold renewed",
   "dispute.opened": "Customer opened a PayPal dispute",
+  "repair.blocked": "Unit taken off the schedule for the repair",
+  "schedule.proposed": "Schedule agent suggested a change",
+  "schedule.moved": "Moved to another unit of the same item",
+  "schedule.rescheduled": "Moved to new dates",
+  "schedule.rejected": "Counter turned down a schedule change",
 };
 
 export function eventLabel(type: string): string {

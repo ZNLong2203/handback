@@ -1,4 +1,4 @@
-import { ArrowUpRight, Plus } from "lucide-react";
+import { ArrowUpRight, CalendarRange, Plus } from "lucide-react";
 import Link from "next/link";
 import { ShopHeader } from "@/components/headers";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -71,9 +71,14 @@ export default async function Counter() {
             <Eyebrow>Counter</Eyebrow>
             <h1 className="mt-1 font-display text-4xl font-bold tracking-tight">Today at the counter</h1>
           </div>
-          <ButtonLink href="/rent" variant="outline" target="_blank">
-            <Plus className="h-4 w-4" aria-hidden /> New booking (customer view)
-          </ButtonLink>
+          <div className="flex flex-wrap gap-2">
+            <ButtonLink href="/shop/schedule" variant="primary">
+              <CalendarRange className="h-4 w-4" aria-hidden /> Schedule
+            </ButtonLink>
+            <ButtonLink href="/rent" variant="outline" target="_blank">
+              <Plus className="h-4 w-4" aria-hidden /> New booking (customer view)
+            </ButtonLink>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

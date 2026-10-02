@@ -7,7 +7,9 @@ import { paypalConfig } from "@/lib/paypal/config";
 import { toRental } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
+import { runScheduleAgent } from "./agent";
 import * as repo from "./repo";
+import { seedDemoSchedule } from "./seed";
 import { displaySpan, holdSpan, overlaps, spanLabel, type Span } from "./spans";
 
 // Everything the schedule page shows, as plain data the browser can take.
@@ -33,11 +35,17 @@ export type ScheduleResource = {
   name: string;
   itemId: string;
   itemName: string;
+  /** "Camera body": the unit label without its letter. */
+  itemShort: string;
   category: string;
   /** Catalog order, so groups keep the shop's order rather than A to Z. */
   itemOrder: number;
   position: number;
   dailyCents: number;
+  /** Where the unit is today. */
+  status: "shelf" | "out" | "repair" | "blocked";
+  /** "back Oct 4", "until Oct 7", or null on the shelf. */
+  statusNote: string | null;
 };
 
 export type ScheduleEvent = {
@@ -99,6 +107,9 @@ export type ScheduleProposal = {
   toUnitId: string | null;
   dates: string | null;
   newDates: string | null;
+  /** Where the booking (or block) would go, both days included. */
+  targetStart: string | null;
+  targetEnd: string | null;
   cause: string | null;
   command: string | null;
   createdAt: string;
@@ -149,6 +160,8 @@ function proposalView(p: repo.Proposal, rentals: Map<string, Rental>, labels: Ma
     toUnitId: p.toUnitId,
     dates: p.kind === "block" ? spanLabel({ start: p.startDate!, end: p.endDate! }) : span ? spanLabel(span) : null,
     newDates: p.kind === "reschedule" ? spanLabel({ start: p.startDate!, end: p.endDate! }) : null,
+    targetStart: p.kind === "reassign" ? (span?.start ?? null) : p.startDate,
+    targetEnd: p.kind === "reassign" ? (span?.end ?? null) : p.endDate,
     cause,
     command: p.command,
     createdAt: p.createdAt,
@@ -235,16 +248,22 @@ export async function loadScheduleView(now = new Date()): Promise<ScheduleView> 
     window,
     resources: units.map((u) => {
       const item = catalogItem(u.itemId);
+      const block = blocks.find((b) => b.unitId === u.id && b.startDate <= today && b.endDate >= today);
+      const out = rentals.find((r) => r.unitId === u.id && r.status === "out");
+      const status = block ? (block.kind === "repair" ? "repair" : "blocked") : out ? "out" : "shelf";
       return {
         id: u.id,
         name: u.label,
         itemId: u.itemId,
         itemName: item.name,
+        itemShort: u.label.replace(/\s+[A-Z]$/, ""),
         category: item.category,
         itemOrder: CATALOG.findIndex((i) => i.id === u.itemId),
         position: u.position,
         dailyCents: item.dailyCents,
-      };
+        status,
+        statusNote: block ? `until ${spanLabel({ start: block.endDate, end: block.endDate })}` : out ? `due ${spanLabel({ start: out.endDate, end: out.endDate })}` : null,
+      } satisfies ScheduleResource;
     }),
     events,
     blocks: blocks
@@ -267,4 +286,14 @@ export async function loadScheduleView(now = new Date()): Promise<ScheduleView> 
     ai: aiConfigured(),
     demo: paypalConfig().mode === "demo",
   };
+}
+
+/**
+ * Before the page renders: in demo mode, two weeks of bookings the first
+ * time; then one pass of the agent, so a settlement that happened while the
+ * server was busy or restarting is never left unplanned.
+ */
+export async function prepareSchedule(now = new Date()): Promise<void> {
+  await seedDemoSchedule(now);
+  await runScheduleAgent(now);
 }
