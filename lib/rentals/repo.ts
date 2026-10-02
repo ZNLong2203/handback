@@ -30,6 +30,11 @@ export async function rentalByToken(db: Query, token: string): Promise<Rental | 
   return rows[0] ? toRental(rows[0]) : null;
 }
 
+export async function rentalByStatusToken(db: Query, statusToken: string): Promise<Rental | null> {
+  const rows = await db.query<Row>("select * from rentals where status_token = $1", [statusToken]);
+  return rows[0] ? toRental(rows[0]) : null;
+}
+
 export async function rentalByOrder(db: Query, orderId: string): Promise<Rental | null> {
   const rows = await db.query<Row>("select * from rentals where booking_order_id = $1", [orderId]);
   return rows[0] ? toRental(rows[0]) : null;

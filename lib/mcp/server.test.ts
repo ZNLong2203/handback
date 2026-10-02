@@ -100,7 +100,7 @@ describe("MCP tools", () => {
     const out = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam, assistant: "Claude" });
     expect(out.status).toBe("awaiting_renter_approval");
     expect(out.approveUrl).toMatch(/\/demo\/paypal\?token=DEMO-ORDER-/);
-    expect(out.rentalPageUrl).toMatch(/\/r\/[A-Za-z0-9_-]{24}$/);
+    expect(out.statusToken).toMatch(/^st_[A-Za-z0-9_-]{24}$/);
     expect(out.mandate).toMatchObject({
       rentalId: out.rentalId,
       issuedTo: { party: "assistant", assistant: "Claude", actingFor: "Sam Rivera <sam@example.com>" },
@@ -111,19 +111,28 @@ describe("MCP tools", () => {
 
     const rental = (await repo.rentalById(await getDb(), out.rentalId))!;
     expect(rental).toMatchObject({ status: "draft", feeCaptureId: null, authorizationId: null, mandateSha256: out.mandateSha256 });
+    // The renter's page token, which can answer charges, never reaches the assistant.
+    expect(JSON.stringify(out)).not.toContain(rental.token);
+    expect(JSON.stringify(out)).not.toContain("/r/");
   });
 
-  it("follows the rental to settlement, while only the renter answers the charges", async () => {
+  it("follows the rental to settlement with the status token, while the renter answers the charges on their page", async () => {
     const booking = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam });
-    const token = booking.rentalPageUrl.split("/r/")[1];
+    // The renter's own token: PayPal hands it to them after approval; the assistant never sees it.
+    const token = (await repo.rentalById(await getDb(), booking.rentalId))!.token;
+    const check = async () => {
+      const out = await call(client, "get_rental_status", { statusToken: booking.statusToken });
+      expect(JSON.stringify(out)).not.toContain(token);
+      return out;
+    };
 
-    let status = await call(client, "get_rental_status", { token: booking.rentalPageUrl });
+    let status = await check();
     expect(status).toMatchObject({ status: "draft", approveUrl: booking.approveUrl, amounts: { feePaid: false, heldNow: null } });
 
     // The renter approves in PayPal and is sent back to their page.
     expect(await svc.returnFromPayPal(token, { token: booking.approveUrl.split("token=")[1], PayerID: "DEMOPAYER" })).toBe("approved");
-    status = await call(client, "get_rental_status", { token });
-    expect(status).toMatchObject({ status: "booked", approveUrl: null, amounts: { feePaid: true } });
+    status = await check();
+    expect(status).toMatchObject({ status: "booked", approveUrl: null, amounts: { feePaid: true, feePending: false } });
 
     // Pickup and return at the counter: the second flight battery is missing.
     await svc.addPhoto(booking.rentalId, "checkout", { sample: "drone-kit/before" });
@@ -132,10 +141,10 @@ describe("MCP tools", () => {
     await svc.inspect(booking.rentalId);
     await svc.sendToCustomer(booking.rentalId);
 
-    status = await call(client, "get_rental_status", { token });
+    status = await check();
     expect(status).toMatchObject({ status: "customer_review", amounts: { heldNow: { usd: "$300.00" } } });
     expect(status.waitingForRenter.map((f) => f.charge)).toEqual(["Replace flight battery"]);
-    expect(status.nextStep).toContain(booking.rentalPageUrl);
+    expect(status.nextStep).toMatch(/on their own rental page.*No tool can answer for them/);
 
     // The renter answers on their own page; the counter settles.
     await svc.respondAsCustomer(
@@ -143,7 +152,7 @@ describe("MCP tools", () => {
       status.waitingForRenter.map((f) => ({ findingId: f.findingId, answer: "accept" as const })),
     );
     await svc.settle(booking.rentalId);
-    status = await call(client, "get_rental_status", { token });
+    status = await check();
     expect(status).toMatchObject({ status: "settled", amounts: { kept: { usd: "$89.00" }, released: { usd: "$211.00" }, heldNow: null } });
 
     // A PayPal dispute after settlement changes the status, not the money already moved.
@@ -153,13 +162,13 @@ describe("MCP tools", () => {
       event_type: "CUSTOMER.DISPUTE.CREATED",
       resource: { dispute_id: "PP-D-MCP", disputed_transactions: [{ seller_transaction_id: captureId! }] },
     });
-    status = await call(client, "get_rental_status", { token });
+    status = await check();
     expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: null, kept: { usd: "$89.00" }, released: { usd: "$211.00" } } });
   });
 
   it("still reports the deposit as held when a dispute comes before settlement", async () => {
     const booking = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam });
-    const token = booking.rentalPageUrl.split("/r/")[1];
+    const token = (await repo.rentalById(await getDb(), booking.rentalId))!.token;
     await svc.returnFromPayPal(token, { token: booking.approveUrl.split("token=")[1], PayerID: "DEMOPAYER" });
     await svc.addPhoto(booking.rentalId, "checkout", { sample: "drone-kit/before" });
     await svc.holdDeposit(booking.rentalId);
@@ -169,12 +178,16 @@ describe("MCP tools", () => {
       event_type: "CUSTOMER.DISPUTE.CREATED",
       resource: { dispute_id: "PP-D-FEE", disputed_transactions: [{ seller_transaction_id: feeCapture }] },
     });
-    const status = await call(client, "get_rental_status", { token });
+    const status = await call(client, "get_rental_status", { statusToken: booking.statusToken });
     expect(status).toMatchObject({ status: "disputed", amounts: { heldNow: { usd: "$300.00" }, kept: null, released: null } });
   });
 
-  it("does not find a rental without its token", async () => {
-    expect(await refusal(client, "get_rental_status", { token: "R-ABCDEF-guess" })).toMatch(/No rental has that token/);
+  it("reads a rental only with its status token, not with the renter's page token or a guess", async () => {
+    const booking = await call(client, "create_booking", { itemId: "drone-kit", ...weekend(), ...sam });
+    const renter = (await repo.rentalById(await getDb(), booking.rentalId))!.token;
+    for (const statusToken of ["R-ABCDEF-guess", renter, svc.rentalPageUrl(renter)]) {
+      expect(await refusal(client, "get_rental_status", { statusToken })).toMatch(/No rental has that status token/);
+    }
   });
 });
 

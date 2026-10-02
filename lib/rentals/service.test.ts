@@ -13,6 +13,8 @@ const { addDaysIso, todayIso } = await import("@/lib/dates");
 const { canonicalJson, firstBrokenLink } = await import("./audit");
 const { openMandate, sealMandate } = await import("./mandate");
 type DepositMandate = import("./mandate").DepositMandate;
+type DepositGateway = import("@/lib/paypal/gateway").DepositGateway;
+type BookingOrderRequest = import("@/lib/paypal/gateway").BookingOrderRequest;
 const repo = await import("./repo");
 const svc = await import("./service");
 const { applyPayPalWebhook } = await import("./webhooks");
@@ -181,6 +183,7 @@ describe("deposit mandate", () => {
   it("is issued with every web booking, stored as hashed canonical JSON and recorded in the audit chain", async () => {
     const { rentalId } = await bookedRental();
     const r = await rental(rentalId);
+    expect(r.statusToken).toBeNull();
     const opened = openMandate(r.mandateJson!, r.mandateSha256!);
     expect(opened?.intact).toBe(true);
     expect(opened?.mandate).toMatchObject({
@@ -201,9 +204,10 @@ describe("deposit mandate", () => {
       { party: "assistant", assistant: "Claude" },
     );
     expect(booking.mandate.issuedTo).toEqual({ party: "assistant", assistant: "Claude", actingFor: "Sam Rivera <sam@example.com>" });
+    expect(booking.statusToken).toMatch(/^st_/);
     expect(booking.approveUrl).toMatch(new RegExp(`/demo/paypal\\?token=${booking.orderId}$`));
     const r = await rental(booking.rentalId);
-    expect(r).toMatchObject({ status: "draft", approveUrl: booking.approveUrl, mandateSha256: booking.mandateSha256 });
+    expect(r).toMatchObject({ status: "draft", approveUrl: booking.approveUrl, mandateSha256: booking.mandateSha256, statusToken: booking.statusToken });
     const types = (await repo.eventsFor(await getDb(), booking.rentalId)).map((e) => [e.actor, e.type]);
     expect(types).toEqual([
       ["system", "mandate.issued"],
@@ -399,9 +403,25 @@ describe("approving by redirect", () => {
     expect(svc.captureRefusal(await repo.eventsFor(await getDb(), b.rentalId))).toBe("PayPal did not take the payment (capture DENIED), so nothing was charged.");
   });
 
-  it("reports a cancel, and ignores a return for some other order or without a payer", async () => {
-    const b = await draft();
-    expect(await svc.returnFromPayPal(b.token, { paypal: "cancelled", token: b.orderId })).toBe("cancelled");
+  it("gives PayPal a cancel URL without the renter's token, and ignores returns for other orders or without a payer", async () => {
+    // PayPal's cancel link works without logging in, so whoever holds the approval link could follow it.
+    const shared = globalThis as { depositGateway?: DepositGateway };
+    const real = shared.depositGateway!;
+    const sent: BookingOrderRequest[] = [];
+    shared.depositGateway = Object.assign(Object.create(real), {
+      createBookingOrder: (req: BookingOrderRequest, requestId: string) => (sent.push(req), real.createBookingOrder(req, requestId)),
+    });
+    let b: Awaited<ReturnType<typeof draft>>;
+    try {
+      b = await draft();
+    } finally {
+      shared.depositGateway = real;
+    }
+    expect(sent).toHaveLength(1);
+    expect(sent[0].returnUrl).toBe(svc.rentalPageUrl(b.token));
+    expect(sent[0].cancelUrl).toBe(svc.paypalCancelUrl());
+    expect(sent[0].cancelUrl).not.toContain(b.token);
+
     expect(await svc.returnFromPayPal(b.token, { token: "SOME-OTHER-ORDER", PayerID: "X" })).toBe("none");
     expect(await svc.returnFromPayPal(b.token, { token: b.orderId })).toBe("none");
     expect(await svc.returnFromPayPal("no-such-token", { token: b.orderId, PayerID: "X" })).toBe("none");

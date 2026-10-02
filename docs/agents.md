@@ -2,7 +2,7 @@
 
 Handback runs an MCP server at `/api/mcp`. A person can ask their assistant, in Claude Desktop, Claude Code or any other MCP client, to "rent a drone this weekend for Sam". The assistant finds the item, gets a quote and starts the booking. It ends by handing the person a PayPal approval link.
 
-The assistant never moves money. The person approves the rental fee in PayPal themselves. Every later step that touches money happens at the shop's counter: holding the deposit at pickup, and settling after the renter has answered each proposed charge on their own page.
+The assistant never moves money. The person approves the rental fee in PayPal themselves. Every later step that touches money happens at the shop's counter: holding the deposit at pickup, and settling after the renter has answered each proposed charge on their own page. The assistant is never given that page; it follows the rental with a status token that can only read.
 
 ## What an assistant can do
 
@@ -10,10 +10,10 @@ The assistant never moves money. The person approves the rental fee in PayPal th
 |---|---|---|
 | `list_items` | The rental items with daily rate, deposit hold and what comes in the box, plus today's date at the shop | No |
 | `quote_rental(itemId, startDate, endDate)` | The fee paid at booking, the deposit held at pickup, the repair price list, and the terms the renter will agree to. Amounts are computed by the server (`quoteRental` in `lib/rentals/service.ts`) | No |
-| `create_booking(itemId, startDate, endDate, name, email, assistant?)` | Creates an unpaid booking, its deposit mandate and a PayPal order for the fee. Returns `approveUrl` (PayPal's `payer-action` link), `rentalPageUrl` (the renter's private page), the mandate and its SHA-256 | Creates an unpaid draft. No money moves |
-| `get_rental_status(token)` | Status, what is paid, held, kept or released, and any proposed charges waiting for the renter. Takes the token from `rentalPageUrl`, or the whole URL | No |
+| `create_booking(itemId, startDate, endDate, name, email, assistant?)` | Creates an unpaid booking, its deposit mandate and a PayPal order for the fee. Returns the rental id, `approveUrl` (PayPal's `payer-action` link, for the renter), `statusToken` (for `get_rental_status`), the mandate and its SHA-256 | Creates an unpaid draft. No money moves |
+| `get_rental_status(statusToken)` | Status, what is paid, held, kept or released, and any proposed charges waiting for the renter. Takes the `statusToken` from `create_booking`; the renter's page token does not work here | No |
 
-There is no tool to approve a payment, hold a deposit, accept or question a charge, or settle. Tool annotations say the same thing to clients: the three read tools are `readOnlyHint: true`, and `create_booking` is `destructiveHint: false, idempotentHint: false` (each call creates a new booking).
+There is no tool to approve a payment, hold a deposit, accept or question a charge, or settle, and no reply contains the renter's page link: PayPal opens that page for the renter after they approve. Tool annotations say the same thing to clients: the three read tools are `readOnlyHint: true`, and `create_booking` is `destructiveHint: false, idempotentHint: false` (each call creates a new booking).
 
 ## Where money moves
 
@@ -33,7 +33,7 @@ sequenceDiagram
   A->>H: list_items, quote_rental
   A->>H: create_booking
   H->>PP: Create order: fee, save wallet, return_url = rental page
-  H-->>A: approveUrl, rentalPageUrl, mandate + sha256
+  H-->>A: approveUrl, statusToken, mandate + sha256
   A-->>P: Approve here: approveUrl
   P->>PP: Log in, Agree & Pay Now
   PP->>R: Redirect with ?token=<order id>&PayerID=…
@@ -112,7 +112,7 @@ Please approve your payment here:
 https://www.sandbox.paypal.com/checkoutnow?token=7PN16640LG248603E
 ```
 
-The script then prints the approval link, the renter's page and the full mandate. In this run the sandbox buyer approved the link afterwards and the fee was captured (capture `2XN89951BX6742945`; see `docs/paypal-sandbox-notes.md`).
+The script then prints the approval link, the status token and the full mandate. In this run the sandbox buyer approved the link afterwards and the fee was captured (capture `2XN89951BX6742945`; see `docs/paypal-sandbox-notes.md`).
 
 ## The deposit mandate
 
@@ -161,35 +161,37 @@ Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is s
 node -e 'const c=v=>Array.isArray(v)?`[${v.map(c)}]`:v&&typeof v=="object"?`{${Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+c(v[k]))}}`:JSON.stringify(v);process.stdout.write(c(JSON.parse(require("fs").readFileSync(0,"utf8"))))' < mandate.json | shasum -a 256
 ```
 
-**Where it shows up.** `create_booking` returns it to the assistant. The renter's page shows it in plain sentences, with the price list and the exact JSON with its hash: open before payment, folded away afterwards. The timeline records who it was issued to.
+**Where it shows up.** `create_booking` returns it to the assistant. The renter's page shows it in plain sentences, with the price list and the exact JSON with its hash: open before payment, folded away afterwards. The page PayPal's cancel link leads to shows it open, next to the way back to PayPal. The timeline records who it was issued to.
 
 **What enforces it.** `holdDeposit` and `settle` check it before calling PayPal (`mandateViolations` in `lib/rentals/mandate.ts`). They refuse a hold above `maxCents`, a charge whose price-list entry or amount differs from the mandate's, a charge the renter has not answered, and anything after `expiresAt`. They refuse everything when the stored mandate is not the one recorded in the audit chain at booking: edited, re-sealed with a new hash, swapped for another rental's, or removed. They also refuse when the rental's audit chain no longer verifies (`firstBrokenLink` in `lib/rentals/audit.ts`), so editing the hash recorded at booking does not help either, even with that entry re-hashed. A refusal is written to the audit log as `mandate.refused`. Giving a deposit back never needs the mandate.
 
 ## Approval by redirect
 
-An assistant's booking is approved on PayPal's site rather than with the JS SDK button, so the booking order sets `experience_context.return_url` to the renter's page, `/r/<token>`. Its `cancel_url` is the same page with `?paypal=cancelled`. In the sandbox, PayPal came back with:
+An assistant's booking is approved on PayPal's site rather than with the JS SDK button, so the booking order sets `experience_context.return_url` to the renter's page, `/r/<token>`, and `cancel_url` to `/paypal/cancelled`, which carries no rental token. PayPal's cancel link can be followed by anyone who opens the approval link, the assistant included, so the page it leads to shows the terms and the way back to PayPal and nothing that acts on the rental. Only approving the payment in PayPal leads to the renter's page. In the sandbox, PayPal came back with:
 
 - on approval: `/r/<token>?token=<order id>&PayerID=<payer id>&ba_token=<billing agreement token>`;
-- on cancel: `/r/<token>?paypal=cancelled&token=<order id>`.
+- on cancel: the cancel URL with `?token=<order id>` added (`&token=<order id>` when the URL already has a query).
 
-When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor rather than a Next.js `Link`, so the framework never prefetches it and triggers a capture. A cancel shows the renter that nothing was charged, with the PayPal button again. If PayPal refuses the capture, the rental stays unpaid and the page moves to `?paypal=failed`, where it explains the refusal from the audit log; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval. Either way the page leaves PayPal's URL, so neither a reload nor a live update runs the capture again; the renter retries through PayPal.
+When the `token` matches the rental's order, a `PayerID` is present and the rental is still unpaid, the page captures the booking on the server through `confirmBooking`, the same function the in-page button uses. It then redirects to the clean URL, so a reload changes nothing. `confirmBooking` moves a rental from unpaid to booked only once, even when two requests race. Every link that leads to the return URL is a plain anchor rather than a Next.js `Link`, so the framework never prefetches it and triggers a capture. A cancel lands on `/paypal/cancelled`, which finds the booking by its order id, says nothing was charged and offers the PayPal button again, with the mandate. If PayPal refuses the capture, the rental stays unpaid and the page moves to `?paypal=failed`, where it explains the refusal from the audit log; for example, PayPal answers `ORDER_NOT_APPROVED` when the return URL is opened before approval. Either way the page leaves PayPal's URL, so neither a reload nor a live update runs the capture again; the renter retries through PayPal.
 
 PayPal can accept a capture and leave it `PENDING`. The rental then keeps the capture id, records `booking.pending` and stays unpaid, and the page says PayPal is still processing the payment, with no pay button; a reload or the in-page button does not capture again. PayPal's `PAYMENT.CAPTURE.COMPLETED` webhook for that capture books the rental, and `PAYMENT.CAPTURE.DENIED` cancels it with nothing charged. This path is covered by tests with a stubbed gateway; we have not seen the sandbox return a pending booking capture.
 
 PayPal expects the payer to be sent to the approval link within 6 hours of creating the order (the default in the Orders v2 schema), so assistants should book when the person is ready to approve.
 
-In demo mode (no PayPal keys) the approval link opens `/demo/paypal`, a page labelled as a stand-in for PayPal. It sends the renter back the same way, so the same capture code runs.
+In demo mode (no PayPal keys) the approval link opens `/demo/paypal`, a page labelled as a stand-in for PayPal. It sends the renter back the same way, so the same capture code runs. Unlike PayPal it asks for no login, so in demo mode anyone with the approval link can approve and land on the renter's page.
 
 ## Tests and checks
 
-- `lib/mcp/server.test.ts`: the SDK client talks to the HTTP handler in demo mode. It covers the tool list and annotations, quotes, errors the assistant can act on, a booking that moves no money, status through to settlement, and the `Origin` check.
+- `lib/mcp/server.test.ts`: the SDK client talks to the HTTP handler in demo mode. It covers the tool list and annotations, quotes, errors the assistant can act on, a booking that moves no money, status through to settlement by status token, replies that never contain the renter's token, the renter's token refused as a status token, and the `Origin` check.
 - `lib/rentals/mandate.test.ts`: mandate contents, a pinned hash, key-order independence, tamper detection and the enforcement rules.
-- `lib/rentals/service.test.ts`: the mandate on web and assistant bookings, blocked charges, the redirect return (approve, reload, two returns at once, cancel, a PayPal refusal).
-- `e2e/agent-booking.spec.ts`: Playwright books over MCP, then a phone reads the mandate, cancels once, approves on the demo stand-in, and lands booked.
+- `lib/rentals/service.test.ts`: the mandate on web and assistant bookings, blocked charges, pricing from the mandate, the redirect return (approve, reload, two returns at once, a pending capture completed or denied by webhook, a cancel URL without the renter's token, a PayPal refusal).
+- `e2e/agent-booking.spec.ts`: Playwright books over MCP and checks that no reply leads to the renter's page. A phone leaves the demo stand-in once, reads the mandate on the cancel page, approves, and lands booked on its own page, whose token the status tool refuses.
 - `scripts/sandbox-agent-booking.ts`: the same against the real PayPal sandbox as the sandbox buyer. It can also run the rental through the counter to a final capture. Results are in `docs/paypal-sandbox-notes.md`.
 
 ## Limits
 
+- This build has no staff sign-in. The counter pages under `/shop` are open to whoever can reach them, and they show each rental's renter link and the buttons that hold, decide on and settle a deposit. A rental id, which `create_booking` returns and the renter's page shows, opens that rental there. A real shop has to keep `/shop` where only staff can reach it, for example behind its host's access control; the MCP endpoint, the booking pages and the renter pages are the parts meant for the public.
+- The renter's page is a bearer link: whoever has `/r/<token>` can do there what the renter can, including answering charges. PayPal opens it for whoever approves the payment, which takes the payer's PayPal login (in demo mode, no login).
 - The endpoint has no rate limit. Anyone can create unpaid drafts, as with the booking form.
 - The assistant's name in the mandate is whatever it says it is.
 - The mandate is hashed, and holds and charges are checked against the hash the audit chain recorded at booking and against the chain itself, but nothing is signed. Someone with write access to the database could still rewrite the mandate together with every audit entry from the booking on. A copy of the hash kept outside the database, such as the one the assistant received from `create_booking`, is what would show the change.

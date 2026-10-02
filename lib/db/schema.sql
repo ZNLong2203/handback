@@ -44,6 +44,10 @@ alter table rentals add column if not exists approve_url text;
 -- that was hashed, and its SHA-256, so the stored text can be re-verified.
 alter table rentals add column if not exists mandate_json text;
 alter table rentals add column if not exists mandate_sha256 text;
+-- Unguessable token an assistant that booked uses to read the rental's status
+-- (get_rental_status). Unlike `token`, it cannot act on the rental.
+alter table rentals add column if not exists status_token text;
+create unique index if not exists rentals_status_token on rentals (status_token);
 
 -- Content-addressed photo store: the key is the SHA-256 of the bytes, so the
 -- hash a customer acknowledged always points at exactly the same image.

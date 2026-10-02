@@ -13,11 +13,12 @@ function instructions(): string {
     "",
     "To book for the person you are helping:",
     "1. Call list_items to find the item, then quote_rental for their dates. Before booking, tell them the rental fee, the deposit hold and the terms.",
-    "2. Call create_booking with their name and email. It returns approveUrl (PayPal) and rentalPageUrl (their private page).",
-    "3. Give them approveUrl. They approve the fee in PayPal themselves; nothing is paid until they do.",
+    "2. Call create_booking with their name and email. It returns approveUrl (PayPal) and statusToken.",
+    "3. Give them approveUrl, and only them. They approve the fee in PayPal themselves; nothing is paid until they do. PayPal then opens their " +
+      "private rental page, which you do not get.",
     "",
     "You cannot pay, approve a payment, hold a deposit, accept or question a charge, or settle. Those steps belong to the renter (in PayPal and on " +
-      "their rental page) and to the shop's counter. get_rental_status shows where a rental stands.",
+      "their rental page) and to the shop's counter. get_rental_status with the statusToken shows where a rental stands.",
   ].join("\n");
 }
 
@@ -86,7 +87,8 @@ export function createMcpServer(): McpServer {
     {
       title: "Check a rental",
       description:
-        "Where a rental stands: status, what is paid, held, kept or released, and any proposed charges waiting for the renter. Only the renter can answer those, on their page.",
+        "Where a rental stands: status, what is paid, held, kept or released, and any proposed charges waiting for the renter. Takes the statusToken " +
+        "from create_booking. The renter answers charges on their own page; no tool can.",
       inputSchema: StatusArgs,
       outputSchema: StatusOut,
       annotations: readOnly,

@@ -14,8 +14,9 @@ export const metadata = { title: "Demo approval", robots: { index: false } };
 /**
  * Demo mode only: stands in for PayPal's approval page, so a booking made by
  * an assistant can be approved without PayPal keys. It sends the renter back
- * the way PayPal does (?token=<order id>&PayerID=… or the cancel URL), so the
- * rental page runs the same capture code as in the sandbox.
+ * the way PayPal does (the return URL with ?token=<order id>&PayerID=…, or
+ * the cancel URL), so the same capture code runs as in the sandbox. Unlike
+ * PayPal it asks for no login, so anyone with the link can approve.
  */
 export default async function DemoPayPalApproval(props: PageProps<"/demo/paypal">) {
   if (paypalConfig().mode !== "demo") notFound();
@@ -23,7 +24,8 @@ export default async function DemoPayPalApproval(props: PageProps<"/demo/paypal"
   const orderId = typeof token === "string" ? token : null;
   const rental = orderId ? await rentalByOrder(await getDb(), orderId) : null;
   if (!orderId || !rental) notFound();
-  if (rental.status !== "draft") redirect(`/r/${rental.token}`);
+  // Like PayPal, an order that is no longer waiting goes nowhere near the renter's page.
+  if (rental.status !== "draft" || rental.feeCaptureId) redirect(`/paypal/cancelled?token=${encodeURIComponent(orderId)}`);
   const item = catalogItem(rental.itemId);
   const back = `/r/${rental.token}`;
 
@@ -53,7 +55,7 @@ export default async function DemoPayPalApproval(props: PageProps<"/demo/paypal"
             <ButtonAnchor href={`${back}?token=${encodeURIComponent(orderId)}&PayerID=DEMOPAYER`} variant="brand" size="lg">
               Approve and pay {formatUsd(rental.feeCents)}
             </ButtonAnchor>
-            <ButtonAnchor href={`${back}?paypal=cancelled&token=${encodeURIComponent(orderId)}`} variant="ghost">
+            <ButtonAnchor href={`/paypal/cancelled?token=${encodeURIComponent(orderId)}`} variant="ghost">
               Cancel and go back
             </ButtonAnchor>
           </div>

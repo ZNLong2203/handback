@@ -47,6 +47,8 @@ export type Rental = {
   /** Canonical JSON of the deposit mandate and its SHA-256 (see mandate.ts). Null on rentals booked before mandates. */
   mandateJson: string | null;
   mandateSha256: string | null;
+  /** Read-only token for the assistant that booked (get_rental_status); null for web bookings. */
+  statusToken: string | null;
   createdAt: string;
   updatedAt: string;
 };

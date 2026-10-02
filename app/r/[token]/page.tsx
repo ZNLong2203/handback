@@ -1,15 +1,16 @@
-import { CheckCircle2, Clock3, ExternalLink, Receipt } from "lucide-react";
+import { CheckCircle2, Clock3, Receipt } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { acknowledgeCheckoutAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { ApproveBooking } from "@/components/approve-booking";
 import { StoreHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
 import { MandateCard } from "@/components/mandate-card";
 import { MoneyBar } from "@/components/money-bar";
 import { Timeline } from "@/components/timeline";
-import { Badge, ButtonAnchor, Card, Eyebrow, Notice } from "@/components/ui";
+import { Badge, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
 import { captureRefusal, returnFromPayPal } from "@/lib/rentals/service";
@@ -25,11 +26,11 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { token } = await props.params;
   const query = await props.searchParams;
-  // PayPal sends the renter back here from its approval page. The capture
-  // runs once, on the server, and the page then moves off PayPal's URL either
-  // way, so neither a reload nor a live update can run it again.
-  const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID), paypal: one(query.paypal) };
-  const back = fromPayPal.token || fromPayPal.paypal ? await returnFromPayPal(token, fromPayPal) : "none";
+  // PayPal sends the renter back here after they approve. The capture runs
+  // once, on the server, and the page then moves off PayPal's URL either way,
+  // so neither a reload nor a live update can run it again.
+  const fromPayPal = { token: one(query.token), PayerID: one(query.PayerID) };
+  const back = fromPayPal.token ? await returnFromPayPal(token, fromPayPal) : "none";
   if (back === "approved" || back === "pending") redirect(`/r/${token}`);
   if (back === "failed") redirect(`/r/${token}?paypal=failed`);
 
@@ -41,7 +42,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const byAssistant = view.mandate?.mandate.issuedTo.party === "assistant";
   const processing = feePending(rental);
   const refused =
-    fromPayPal.paypal === "failed" && rental.status === "draft" && !processing ? (captureRefusal(view.events) ?? "Approve the booking in PayPal again.") : null;
+    one(query.paypal) === "failed" && rental.status === "draft" && !processing ? (captureRefusal(view.events) ?? "Approve the booking in PayPal again.") : null;
 
   return (
     <>
@@ -100,39 +101,13 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
         )}
 
         {rental.status === "draft" && !processing && (
-          <Card className="p-6">
-            <h2 className="font-semibold">Approve the booking in PayPal</h2>
-            {back === "cancelled" && (
-              <div className="mt-3">
-                <Notice title="You left PayPal without paying">Nothing was charged. The booking waits here until you approve it.</Notice>
-              </div>
-            )}
+          <ApproveBooking rental={rental} item={item} byAssistant={byAssistant}>
             {refused && (
-              <div className="mt-3">
-                <Notice tone="charged" title="PayPal did not complete the payment">
-                  {refused}
-                </Notice>
-              </div>
+              <Notice tone="charged" title="PayPal did not complete the payment">
+                {refused}
+              </Notice>
             )}
-            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-              {byAssistant ? "Your assistant started this booking for you, but only you can pay for it. " : ""}
-              In PayPal you pay the {formatUsd(rental.feeCents)} rental fee and let PayPal save your account, so the shop can hold the{" "}
-              {formatUsd(rental.depositCents)} deposit at pickup on the terms below. Nothing is paid until you approve.
-            </p>
-            {rental.approveUrl ? (
-              <ButtonAnchor href={rental.approveUrl} variant="brand" size="lg" className="mt-4">
-                Review and pay {formatUsd(rental.feeCents)} in PayPal <ExternalLink className="h-4 w-4" aria-hidden />
-              </ButtonAnchor>
-            ) : (
-              <p className="mt-3 text-sm">
-                This booking has no PayPal approval link.{" "}
-                <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
-                  Book the {item.name.toLowerCase()} again
-                </Link>
-                .
-              </p>
-            )}
-          </Card>
+          </ApproveBooking>
         )}
 
         {rental.status === "cancelled" && (

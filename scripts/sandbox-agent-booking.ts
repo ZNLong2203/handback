@@ -6,11 +6,13 @@
  * sandbox mode with APP_URL pointing at it, and the sandbox buyer login in
  * .env.local.
  *
- *   npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts [--rental <url>] [--cancel-first] [--early-return] [--headed]
+ *   npx tsx --env-file-if-exists=.env.local scripts/sandbox-agent-booking.ts [--rental <statusToken>] [--cancel-first] [--early-return] [--headed]
  *
- * --rental <url>  approve a booking an assistant already made (its rentalPageUrl), e.g. from agent-books.ts
+ * --rental <tok>  approve a booking an assistant already made (its statusToken), e.g. from agent-books.ts
  * --cancel-first  leave PayPal once through its cancel link before approving
- * --early-return  open the return URL with a made-up PayerID before approving
+ * --early-return  open the return URL with a made-up PayerID before approving;
+ *                 the script reads the renter's page link off the counter,
+ *                 since the assistant is never given it
  * --settle        then run the rental to the end at the counter (drone kit only):
  *                 deposit hold, a return with a battery missing, live Gemini,
  *                 the renter's answer on their page, final capture
@@ -40,9 +42,9 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 async function book() {
   const existing = process.argv[process.argv.indexOf("--rental") + 1];
   if (flag("--rental") && existing) {
-    const status = await call("get_rental_status", { token: existing });
+    const status = await call("get_rental_status", { statusToken: existing });
     if (!status.approveUrl) throw new Error(`rental ${status.rentalId} is ${status.status}, not waiting for approval`);
-    return { rentalId: status.rentalId, approveUrl: status.approveUrl, rentalPageUrl: status.rentalPageUrl, payNow: status.amounts.fee };
+    return { rentalId: status.rentalId, approveUrl: status.approveUrl, statusToken: existing, payNow: status.amounts.fee };
   }
   const { shop } = await call("list_items");
   const day = (n: number) => new Date(Date.parse(`${shop.today}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -57,6 +59,7 @@ async function book() {
 }
 
 const booking = await book();
+const status = () => call("get_rental_status", { statusToken: booking.statusToken });
 const orderId = new URL(booking.approveUrl).searchParams.get("token");
 step(`${flag("--rental") ? "approving" : "booked"} ${booking.rentalId}: order ${orderId}, ${booking.payNow.usd} to approve`);
 step(`approve link: ${booking.approveUrl}`);
@@ -67,8 +70,20 @@ const page = await (await browser.newContext({ locale: "en-US", viewport: { widt
 // Every navigation PayPal makes back to the app, with the query it appended.
 const returns: string[] = [];
 page.on("request", (r) => {
-  if (r.isNavigationRequest() && r.url().startsWith(booking.rentalPageUrl)) returns.push(r.url());
+  if (r.isNavigationRequest() && r.url().startsWith(`${BASE}/`)) returns.push(r.url());
 });
+/** The renter's page: PayPal opens it after approval; before that only the counter shows its link. */
+let rentalPageUrl = "";
+
+/** Reads the renter's page link off the counter, as staff would show it to them. */
+async function renterPageFromCounter(): Promise<string> {
+  const counter = await page.context().newPage();
+  await counter.goto(`${BASE}/shop/rentals/${booking.rentalId}`);
+  const href = await counter.getByRole("link", { name: "Customer's page" }).getAttribute("href");
+  await counter.close();
+  if (!href) throw new Error("the counter shows no link to the renter's page");
+  return href;
+}
 
 /** The rest of the rental at the counter, with the renter answering on their own page. */
 async function settle() {
@@ -78,10 +93,10 @@ async function settle() {
   await counter.getByRole("button", { name: /Pickup photo/ }).click();
   await counter.getByRole("button", { name: /^Hold \$[\d,.]+ deposit$/ }).click();
   await counter.getByRole("heading", { name: "Return" }).waitFor({ timeout: 60_000 });
-  let status = await call("get_rental_status", { token: booking.rentalPageUrl });
-  step(`  over MCP: ${status.status}, held ${status.amounts.heldNow?.usd}`);
+  let now = await status();
+  step(`  over MCP: ${now.status}, held ${now.amounts.heldNow?.usd}`);
 
-  await page.goto(booking.rentalPageUrl);
+  await page.goto(rentalPageUrl);
   await page.getByRole("button", { name: "Yes, this is how I received it" }).click();
   await page.getByText(/You confirmed this photo/).waitFor();
   step("counter: return photo with one battery missing; two live Gemini looks");
@@ -92,9 +107,9 @@ async function settle() {
   if (await send.isVisible().catch(() => false)) {
     await send.click();
     await page.getByRole("heading", { name: "Please review what the shop found" }).waitFor({ timeout: 30_000 });
-    status = await call("get_rental_status", { token: booking.rentalPageUrl });
-    const waiting = status.waitingForRenter.map((f: { charge: string; price: { usd: string } }) => `${f.charge} ${f.price.usd}`);
-    step(`  over MCP: ${status.status}, waiting for the renter: ${waiting.join(", ")}`);
+    now = await status();
+    const waiting = now.waitingForRenter.map((f: { charge: string; price: { usd: string } }) => `${f.charge} ${f.price.usd}`);
+    step(`  over MCP: ${now.status}, waiting for the renter: ${waiting.join(", ")}`);
     for (const fair of await page.getByRole("button", { name: "That's fair" }).all()) await fair.click();
     await page.getByRole("button", { name: "Send my answers" }).click();
     await page.getByText("Thanks. The shop is reading your answers.").waitFor({ timeout: 30_000 });
@@ -105,8 +120,8 @@ async function settle() {
   }
   await counter.getByRole("heading", { name: "Settled" }).waitFor({ timeout: 60_000 });
   const ids = (await counter.locator("dl.font-mono").innerText()).replace(/\s+/g, " ");
-  status = await call("get_rental_status", { token: booking.rentalPageUrl });
-  step(`settled on PayPal (${ids}); over MCP: kept ${status.amounts.kept.usd}, released ${status.amounts.released.usd}`);
+  now = await status();
+  step(`settled on PayPal (${ids}); over MCP: kept ${now.amounts.kept.usd}, released ${now.amounts.released.usd}`);
   await shot(counter, "s1-counter-settled");
 }
 
@@ -132,10 +147,11 @@ async function logIn() {
 try {
   if (flag("--early-return")) {
     step("opening the return URL with a made-up PayerID, before any approval");
-    await page.goto(`${booking.rentalPageUrl}?token=${orderId}&PayerID=NOTAPPROVED1`);
+    const renterPage = await renterPageFromCounter();
+    await page.goto(`${renterPage}?token=${orderId}&PayerID=NOTAPPROVED1`);
     const notice = await page.getByText("PayPal did not complete the payment").locator("..").innerText();
     step(`  page says: ${notice.replace(/\s+/g, " ")}`);
-    step(`  status over MCP: ${(await call("get_rental_status", { token: booking.rentalPageUrl })).status}`);
+    step(`  status over MCP: ${(await status()).status}`);
   }
 
   if (flag("--cancel-first")) {
@@ -146,7 +162,7 @@ try {
     await cancel.waitFor({ timeout: 60_000 });
     await shot(page, "c1-paypal-review");
     await cancel.click();
-    await page.getByText("You left PayPal without paying").waitFor({ timeout: 60_000 });
+    await page.getByRole("heading", { name: "You left PayPal without paying" }).waitFor({ timeout: 60_000 });
     step(`  PayPal sent the buyer to ${returns.at(-1)}`);
     await shot(page, "c2-renter-cancelled");
   }
@@ -165,16 +181,17 @@ try {
   }
   await page.getByText(/Paid \$\d+\.\d\d with PayPal/).waitFor({ timeout: 90_000 });
   const approvedReturn = returns.filter((u) => u.includes("PayerID=")).at(-1);
+  rentalPageUrl = page.url();
   step(`  PayPal sent the buyer to ${approvedReturn}`);
-  step(`  landed on ${page.url()}`);
+  step(`  landed on ${rentalPageUrl}`);
   await shot(page, "p2-renter-booked");
 
   await page.getByText("Everything that happened, step by step").click();
   const timeline = await page.locator("ol").last().innerText();
   const capture = /capture ([A-Z0-9]{17})/.exec(timeline)?.[1];
   const refused = timeline.match(/PayPal refused a step[\s\S]*?debug_id \S+/g) ?? [];
-  const status = await call("get_rental_status", { token: booking.rentalPageUrl });
-  step(`booked: order ${orderId}, fee capture ${capture}, status over MCP "${status.status}", fee paid ${status.amounts.feePaid}`);
+  const booked = await status();
+  step(`booked: order ${orderId}, fee capture ${capture}, status over MCP "${booked.status}", fee paid ${booked.amounts.feePaid}`);
   for (const r of refused) step(`  audit log: ${r.replace(/\s+/g, " ")}`);
 
   if (flag("--settle")) await settle();

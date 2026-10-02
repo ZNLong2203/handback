@@ -101,7 +101,7 @@ console.log(`\n${reply.trim()}`);
 
 if (booking) {
   console.log(`\nPayPal approval link, for the person to open: ${booking.approveUrl}`);
-  console.log(`Their rental page: ${booking.rentalPageUrl}`);
+  console.log(`Status token, for get_rental_status (it can only read): ${booking.statusToken}`);
   console.log(`\nDeposit mandate (sha256 ${booking.mandateSha256}):`);
   console.log(JSON.stringify(booking.mandate, null, 2));
 } else {

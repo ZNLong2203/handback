@@ -22,6 +22,7 @@ import { UserError, type AuditEvent, type Phase, type Rental, type ReviewedFindi
 const ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const newRentalId = () => `R-${[...randomBytes(6)].map((b) => ID_ALPHABET[b % 32]).join("")}`;
 const newToken = () => randomBytes(18).toString("base64url");
+const newStatusToken = () => `st_${randomBytes(18).toString("base64url")}`;
 
 /**
  * Runs one PayPal step. A PayPal failure is written to the audit log with its
@@ -108,8 +109,16 @@ async function assertWithinMandate(rental: Rental, step: string, act: { holdCent
 
 // ─── Booking ────────────────────────────────────────────────
 
-/** The renter's private page. PayPal sends them back here after approving or cancelling. */
+/** The renter's private page. PayPal sends them here after they approve, and only then. */
 export const rentalPageUrl = (token: string) => `${appUrl()}/r/${token}`;
+
+/**
+ * Where PayPal sends someone who leaves its approval page without paying. It
+ * carries no rental token: PayPal's cancel link works without logging in, so
+ * anyone holding the approval link, such as the assistant that booked, could
+ * follow it. PayPal adds ?token=<order id>.
+ */
+export const paypalCancelUrl = () => `${appUrl()}/paypal/cancelled`;
 
 export type Quote = { item: RentalItem; startDate: string; endDate: string; days: number; feeCents: Cents; depositCents: Cents };
 
@@ -140,6 +149,8 @@ export const BookingInput = z.object({
 export type StartedBooking = {
   rentalId: string;
   token: string;
+  /** Read-only status token, only when an assistant booked. */
+  statusToken: string | null;
   orderId: string;
   /** PayPal's payer-action link, for approving by redirect instead of the in-page button. */
   approveUrl: string | null;
@@ -162,6 +173,7 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
   const db = await getDb();
   const id = newRentalId();
   const token = newToken();
+  const statusToken = issuer.party === "assistant" ? newStatusToken() : null;
   const mandate = buildMandate({
     rentalId: id,
     item,
@@ -177,9 +189,9 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
   const sealed = sealMandate(mandate);
   await db.tx(async (tx) => {
     await tx.query(
-      `insert into rentals (id, token, item_id, customer_name, customer_email, start_date, end_date, days, fee_cents, deposit_cents, status, mandate_json, mandate_sha256)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, $12)`,
-      [id, token, item.id, input.name, input.email, input.startDate, input.endDate, days, feeCents, item.depositCents, sealed.json, sealed.sha256],
+      `insert into rentals (id, token, item_id, customer_name, customer_email, start_date, end_date, days, fee_cents, deposit_cents, status, mandate_json, mandate_sha256, status_token)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, $12, $13)`,
+      [id, token, item.id, input.name, input.email, input.startDate, input.endDate, days, feeCents, item.depositCents, sealed.json, sealed.sha256, statusToken],
     );
     await appendEvent(tx, id, "system", "mandate.issued", {
       sha256: sealed.sha256,
@@ -199,7 +211,7 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
         depositCents: item.depositCents,
         shopName: SHOP.name,
         returnUrl: rentalPageUrl(token),
-        cancelUrl: `${rentalPageUrl(token)}?paypal=cancelled`,
+        cancelUrl: paypalCancelUrl(),
       },
       `booking:${id}`,
     ),
@@ -214,7 +226,7 @@ export async function startBooking(raw: z.input<typeof BookingInput>, issuer: Ma
       days,
     });
   });
-  return { rentalId: id, token, orderId: order.orderId, approveUrl, mandate, mandateSha256: sealed.sha256 };
+  return { rentalId: id, token, statusToken, orderId: order.orderId, approveUrl, mandate, mandateSha256: sealed.sha256 };
 }
 
 /**
@@ -274,18 +286,17 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
 
 const declinedMessage = (status: string) => `PayPal did not take the payment (capture ${status}), so nothing was charged.`;
 
-export type PayPalReturn = "none" | "approved" | "pending" | "cancelled" | "failed";
+export type PayPalReturn = "none" | "approved" | "pending" | "failed";
 
 /**
- * PayPal sends the renter back to their page after the approval step: with
- * ?token=<order id>&PayerID=… when they approved, or with ?paypal=cancelled
- * when they left. An approval is captured here, on the server, exactly as
- * the in-page button does; a reload of the same URL changes nothing.
+ * PayPal sends the renter back to their page after they approve, with
+ * ?token=<order id>&PayerID=…. The approval is captured here, on the server,
+ * exactly as the in-page button does; a reload of the same URL changes
+ * nothing. Leaving PayPal without paying goes to paypalCancelUrl instead.
  */
-export async function returnFromPayPal(rentalToken: string, query: { token?: string; PayerID?: string; paypal?: string }): Promise<PayPalReturn> {
+export async function returnFromPayPal(rentalToken: string, query: { token?: string; PayerID?: string }): Promise<PayPalReturn> {
   const rental = await rentalByToken(await getDb(), rentalToken);
   if (!rental) return "none";
-  if (query.paypal === "cancelled") return rental.status === "draft" && !rental.feeCaptureId ? "cancelled" : "none";
   if (!query.token || !query.PayerID || query.token !== rental.bookingOrderId) return "none";
   if (rental.status !== "draft") return "approved";
   try {
