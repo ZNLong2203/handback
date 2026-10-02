@@ -119,11 +119,16 @@ export async function seedDemoSchedule(now = new Date()): Promise<string[]> {
   if (claimed.length === 0) return [];
   const today = todayIso(now);
   const ids: string[] = [];
-  try {
-    for (const p of SEED_PLAN) ids.push(await seedOne(p, today));
-  } catch (err) {
-    // Keep the marker: a second, partial copy of the plan would be worse than a short one.
-    console.error("demo schedule seed stopped early", err);
+  for (const p of SEED_PLAN) {
+    // Visitors may have booked before the schedule first opened, so a unit the
+    // plan wants can be taken. Skip that one booking and keep the rest; the
+    // marker stays, because a second copy of the plan would be worse than a
+    // short one.
+    try {
+      ids.push(await seedOne(p, today));
+    } catch (err) {
+      console.error(`demo schedule seed skipped ${p.name} (${p.itemId})`, err);
+    }
   }
   return ids;
 }
