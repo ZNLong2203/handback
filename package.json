@@ -12,7 +12,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke:sandbox": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/sandbox-smoke.ts"
+    "smoke:sandbox": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/sandbox-smoke.ts",
+    "seed:aged-holds": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-aged-holds.ts"
   },
   "dependencies": {
     "@google/genai": "^2.26.0",
