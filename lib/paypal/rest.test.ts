@@ -82,6 +82,34 @@ describe("paypalRequest", () => {
     expect(err).toMatchObject({ status: 502, retryable: true });
   });
 
+  it("retries a response whose body stalls, and a token call that fails, as network failures", async () => {
+    let tokenCalls = 0;
+    let apiCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/v1/oauth2/token")) {
+          tokenCalls += 1;
+          if (tokenCalls === 1) throw new TypeError("fetch failed");
+          return Response.json({ access_token: "t", expires_in: 3600 });
+        }
+        apiCalls += 1;
+        if (apiCalls === 1) {
+          // Headers arrive, then reading the body times out.
+          const stalled = new ReadableStream({ pull: () => Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")) });
+          return new Response(stalled, { status: 200 });
+        }
+        return json(200, { dispute_id: "PP-D-6" });
+      }),
+    );
+    // A fresh module, so no token is cached from the tests above.
+    vi.resetModules();
+    const fresh = await import("./rest");
+    const res = await fresh.paypalRequest<{ dispute_id: string }>("GET", "/v1/customer/disputes/PP-D-6", { attempts: 3 });
+    expect(res.data.dispute_id).toBe("PP-D-6");
+    expect({ tokenCalls, apiCalls }).toEqual({ tokenCalls: 2, apiCalls: 2 });
+  });
+
   it("does not retry a 422 and keeps PayPal's issue and debug id", async () => {
     const { calls } = mockFetch([
       json(422, { name: "UNPROCESSABLE_ENTITY", debug_id: "dbg-9", details: [{ issue: "INVALID_EVIDENCE_FILE", description: "Bad file." }] }),

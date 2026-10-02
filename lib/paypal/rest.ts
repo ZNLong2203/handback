@@ -16,12 +16,20 @@ let token: { value: string; expiresAt: number } | undefined;
 async function accessToken(force = false): Promise<string> {
   if (!force && token && token.expiresAt > Date.now()) return token.value;
   const cfg = paypalConfig();
-  const res = await fetch(`${cfg.apiBase}/v1/oauth2/token`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}` },
-    body: "grant_type=client_credentials",
-  });
-  const body = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number };
+  let res: Response;
+  let body: { access_token?: string; expires_in?: number };
+  try {
+    res = await fetch(`${cfg.apiBase}/v1/oauth2/token`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}` },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(20_000),
+    });
+    body = (await res.json().catch(() => ({}))) as typeof body;
+  } catch (err) {
+    // Status 0 marks it as a network failure; paypalRequest retries those.
+    throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, `PayPal's token endpoint did not answer: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!res.ok || !body.access_token) throw paypalErrorFromBody(res.status, body, res.headers.get("paypal-debug-id"));
   token = { value: body.access_token, expiresAt: Date.now() + Math.max(60, (body.expires_in ?? 3600) - 60) * 1000 };
   return token.value;
@@ -49,15 +57,19 @@ export async function paypalRequest<T>(method: "GET" | "POST" | "PATCH" | "DELET
   const body = multipart ? multipart.body : opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
   let refreshed = false;
   for (let attempt = 1; ; attempt++) {
-    const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken()}`, Prefer: "return=representation" };
-    if (requestId) headers["PayPal-Request-Id"] = requestId;
-    if (multipart) headers["Content-Type"] = multipart.contentType;
-    else if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     let res: Response;
+    let text: string;
     try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken()}`, Prefer: "return=representation" };
+      if (requestId) headers["PayPal-Request-Id"] = requestId;
+      if (multipart) headers["Content-Type"] = multipart.contentType;
+      else if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+      // The timeout covers reading the body too: a stalled body is a network failure, retried like one.
       res = await fetch(`${cfg.apiBase}${path}`, { method, headers, body: body as BodyInit | undefined, signal: AbortSignal.timeout(20_000) });
+      text = await res.text();
     } catch (err) {
-      if (attempt >= attempts) throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
+      const network = !(err instanceof PayPalError) || err.status === 0;
+      if (!network || attempt >= attempts) throw err instanceof PayPalError ? err : new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
       await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       continue;
     }
@@ -68,7 +80,6 @@ export async function paypalRequest<T>(method: "GET" | "POST" | "PATCH" | "DELET
       continue;
     }
     const debugId = res.headers.get("paypal-debug-id");
-    const text = await res.text();
     let json: unknown = {};
     try {
       json = text ? JSON.parse(text) : {};
