@@ -17,6 +17,7 @@ import path from "node:path";
 import { catalogItem } from "@/lib/catalog";
 import { compareCondition, DEFAULT_VISION_MODEL, type Thinking } from "@/lib/inspection/compare";
 import { mergeLooks } from "@/lib/inspection/consensus";
+import { PROMPT_VERSION } from "@/lib/inspection/prompt";
 import { assess, type AssessedFinding } from "@/lib/inspection/policy";
 import type { ModelOutput } from "@/lib/inspection/schema";
 
@@ -189,6 +190,7 @@ async function main() {
 
   const metrics = {
     set,
+    prompt: PROMPT_VERSION,
     model,
     thinking,
     passes,
