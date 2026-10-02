@@ -20,6 +20,8 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@bryntum/scheduler": "npm:@bryntum/scheduler-trial@7.3.7",
+    "@bryntum/scheduler-react": "7.3.7",
     "@electric-sql/pglite": "^0.5.8",
     "@google/genai": "^2.26.0",
     "@paypal/paypal-server-sdk": "^2.5.0",
