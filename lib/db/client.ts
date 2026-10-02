@@ -14,9 +14,21 @@ export interface Db {
 
 const SCHEMA = readFileSync(path.join(process.cwd(), "lib/db/schema.sql"), "utf8");
 
+/**
+ * The app passes json/jsonb parameters as JSON text (`JSON.stringify(x)` with
+ * `$n::jsonb`), which PGlite stores as given. postgres.js would stringify the
+ * text again and store a JSON string, so text passes through here as well.
+ */
+export const jsonParam = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
+
 async function postgresDb(url: string): Promise<Db> {
   const { default: postgres } = await import("postgres");
-  const sql = postgres(url, { max: 5, ssl: url.includes("localhost") ? false : "require", onnotice: () => {} });
+  const sql = postgres(url, {
+    max: 5,
+    ssl: url.includes("localhost") ? false : "require",
+    onnotice: () => {},
+    types: { json: { to: 114, from: [114, 3802], serialize: jsonParam, parse: (raw: string) => JSON.parse(raw) } },
+  });
   const query = async <T,>(text: string, params: unknown[] = []) =>
     (await sql.unsafe(text, params as never[])) as unknown as T[];
   return {
