@@ -11,6 +11,8 @@ const ACTOR = {
   ai: { icon: Bot, label: "AI", tone: "bg-note-soft text-note" },
 } as const;
 
+const MOVED_VIA: Record<string, string> = { drag: "dragged on the schedule", agent: "agent's suggestion, approved", command: "typed request, confirmed" };
+
 function detail(e: AuditEvent): string | null {
   const d = e.data as Record<string, unknown>;
   const ids = ["orderId", "captureId", "authorizationId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
@@ -18,6 +20,8 @@ function detail(e: AuditEvent): string | null {
   if (typeof d.issue === "string") ids.push(String(d.issue));
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);
   if (e.type === "inspection.completed") ids.push(`${d.source} · ${d.model} · ${d.looks} looks · ${Math.round(Number(d.ms) / 100) / 10}s`);
+  if (e.type === "schedule.moved") ids.push(`${d.from} → ${d.to} · ${MOVED_VIA[String(d.via)] ?? String(d.via)}`);
+  if (e.type === "repair.blocked") ids.push(`${d.unitId} · ${d.startDate} to ${d.endDate}`);
   return ids.length ? ids.join(" · ") : null;
 }
 

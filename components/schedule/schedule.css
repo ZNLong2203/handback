@@ -3,27 +3,31 @@
  * structure; these variables map it onto the app's tokens (app/globals.css),
  * so the timeline reads like the rest of the counter. Money keeps its three
  * colours: amber while PayPal holds a deposit, green once it is settled,
- * coral where something is disputed or blocked. The trial watermark stays.
+ * coral where something is disputed or blocked.
+ *
+ * Rows are painted with see-through colours on purpose: the trial build draws
+ * its "Bryntum Trial Version" watermark behind them, and it has to stay
+ * visible.
  */
 
 .hb-scheduler {
   --b-primary: var(--color-brand);
   --b-panel-background: var(--color-card);
-  --b-grid-cell-background: var(--color-card);
+  --b-grid-cell-background: transparent;
   --b-grid-cell-color: var(--color-ink);
   --b-grid-cell-border-color: var(--color-line);
   --b-grid-row-border-color: var(--color-line);
-  --b-grid-cell-hover-background: color-mix(in oklab, var(--color-paper) 70%, var(--color-card));
+  --b-grid-cell-hover-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
   --b-grid-cell-selected-background: var(--color-brand-soft);
   --b-grid-cell-hover-selected-background: var(--color-brand-soft);
   --b-grid-header-background: var(--color-paper);
   --b-grid-header-color: var(--color-ink-soft);
   --b-grid-header-border-color: var(--color-line);
   --b-grid-header-font-weight: 600;
-  --b-group-header-background: color-mix(in oklab, var(--color-paper) 85%, var(--color-card));
-  --b-group-header-stripe-background: color-mix(in oklab, var(--color-paper) 85%, var(--color-card));
-  --b-stripe-odd-color: color-mix(in oklab, var(--color-paper) 35%, var(--color-card));
-  --b-stripe-even-color: var(--color-card);
+  --b-group-header-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
+  --b-group-header-stripe-background: color-mix(in oklab, var(--color-paper) 70%, transparent);
+  --b-stripe-odd-color: color-mix(in oklab, var(--color-paper) 30%, transparent);
+  --b-stripe-even-color: transparent;
   --b-sch-event-font-weight: 600;
   --b-sch-event-border-radius: 0.65rem;
   --b-sch-event-font-size: 0.82rem;

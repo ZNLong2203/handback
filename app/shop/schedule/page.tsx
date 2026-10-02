@@ -41,7 +41,8 @@ export default async function SchedulePage() {
         </div>
         <ScheduleBoard view={view} />
         <p className="text-xs text-muted">
-          Timeline by Bryntum Scheduler, running on its 45-day trial (hence the watermark). {view.demo ? "Demo mode: the bookings are sample data booked through the PayPal stand-in." : ""}
+          Timeline by Bryntum Scheduler on its 45-day trial package; the faint &ldquo;Bryntum Trial Version&rdquo; pattern behind the rows is the trial&rsquo;s watermark.
+          {view.demo ? " Demo mode: the bookings are sample data booked through the PayPal stand-in." : ""}
         </p>
       </main>
     </>

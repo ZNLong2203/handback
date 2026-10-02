@@ -11,8 +11,9 @@ import { BryntumScheduler } from "@bryntum/scheduler-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 import { moveRentalAction } from "@/app/shop/schedule/actions";
-import { addDaysIso, shortDate } from "@/lib/dates";
+import { addDaysIso } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
+import { spanLabel } from "@/lib/schedule/spans";
 import type { ScheduleEvent, ScheduleView } from "@/lib/schedule/view";
 
 // The Bryntum Scheduler: one row per physical unit, grouped by item. It is
@@ -29,7 +30,7 @@ export type TimelineProps = {
 };
 
 const get = <T,>(record: Model, field: string) => record.get(field) as T;
-const range = (start: string, end: string) => (start === end ? shortDate(start) : `${shortDate(start)}–${shortDate(end)}`);
+const range = (start: string, end: string) => spanLabel({ start, end });
 const holds = (record: Model) => ["booked", "held"].includes(get<string>(record, "money"));
 
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -181,7 +182,7 @@ export default function BryntumTimeline({ view, focus, onPick, onNotice }: Timel
     const s = scheduler();
     if (!s || !focus) return;
     const record = s.eventStore.getById(focus) as EventModel | undefined;
-    if (record) void s.scrollEventIntoView(record, { animate: true, block: "center", highlight: true });
+    if (record) void s.scrollEventIntoView(record, { animate: true, block: "nearest", inline: "nearest", edgeOffset: 24, highlight: true });
     for (const el of s.element.querySelectorAll(".b-sch-event-wrap.hb-focus")) el.classList.remove("hb-focus");
     s.element.querySelector(`.b-sch-event-wrap[data-event-id="${CSS.escape(focus)}"]`)?.classList.add("hb-focus");
   }, [focus, events]);
