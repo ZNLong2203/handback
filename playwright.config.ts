@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
  * On CI the run also writes an HTML report to playwright-report/.
  */
 const port = Number(process.env.E2E_PORT || 3200);
-if (!Number.isInteger(port) || port <= 0) throw new Error(`E2E_PORT must be a port number, got "${process.env.E2E_PORT}"`);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`E2E_PORT must be a port number, got "${process.env.E2E_PORT}"`);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${port}`;
 const ci = Boolean(process.env.CI);
 
