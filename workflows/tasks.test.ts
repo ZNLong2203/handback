@@ -58,6 +58,17 @@ describe("inspect-return task", () => {
     expect(await assessments(rentalId)).toBe(1);
   });
 
+  it("compares nothing when the web service expects a different AI mode", async () => {
+    const rentalId = await returnedRental();
+    // This process has no Gemini key, as when the key was only given to the web service.
+    const result = await inspectReturn.func(ctx("trn-keyless"), rentalId, { paypal: "demo", ai: "gemini" });
+    expect(result).toEqual({ status: "skipped", reason: expect.stringContaining("GEMINI_API_KEY") });
+    expect(await assessments(rentalId)).toBe(0);
+    expect((await repo.rentalById(await getDb(), rentalId))?.status).toBe("out");
+
+    expect((await inspectReturn.func(ctx("trn-same"), rentalId, { paypal: "demo", ai: "recorded-replies" })).status).toBe("inspected");
+  });
+
   it("refuses, without throwing, what a retry cannot fix", async () => {
     const rentalId = await returnedRental(null);
     expect(await inspectReturn.func(ctx("trn-early"), rentalId)).toEqual({
@@ -70,6 +81,11 @@ describe("inspect-return task", () => {
 describe("renew-holds task", () => {
   it("leaves demo-mode holds to the web process, where the stand-in's state lives", async () => {
     const result = await renewHolds.func(ctx("trn-renew"));
-    expect(result).toMatchObject({ status: "skipped" });
+    expect(result).toMatchObject({ status: "skipped", reason: expect.stringContaining("demo mode") });
+  });
+
+  it("skips when the web service holds deposits in another PayPal mode", async () => {
+    const result = await renewHolds.func(ctx("trn-renew"), { paypal: "sandbox", ai: "recorded-replies" });
+    expect(result).toEqual({ status: "skipped", reason: expect.stringContaining('PayPal mode "sandbox", but the workflow service runs in "demo"') });
   });
 });

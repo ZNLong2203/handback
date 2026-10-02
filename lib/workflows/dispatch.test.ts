@@ -18,21 +18,33 @@ const { getDb } = await import("@/lib/db/client");
 const { addDaysIso, todayIso } = await import("@/lib/dates");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
-const { renewalRunKey } = await import("./config");
+const { lastSkippedRun, renewalRunKey } = await import("./config");
 const { inspectReturnJob, renewHoldsJob } = await import("./jobs");
 const { runInspection, runRenewals } = await import("./dispatch");
 
-function fakeRender(opts: { failFirst?: boolean; unreachable?: boolean } = {}) {
+/** `workerEnv` is the workflow service's own settings, applied while a task body runs. */
+function fakeRender(opts: { failFirst?: boolean; unreachable?: boolean; workerEnv?: Record<string, string> } = {}) {
   const runs = new Map<string, RunSnapshot>();
   const byKey = new Map<string, string>();
   const keys: string[] = [];
+  const inputs: unknown[][] = [];
   let fail = opts.failFirst ?? false;
+  const asWorker = async <T,>(body: () => Promise<T>): Promise<T> => {
+    const saved = { ...process.env };
+    Object.assign(process.env, opts.workerEnv);
+    try {
+      return await body();
+    } finally {
+      process.env = saved;
+    }
+  };
   const runner: TaskRunner = {
     async start(task, input, key) {
       if (opts.unreachable) throw new Error("connect ECONNREFUSED 127.0.0.1:8120");
       keys.push(key);
       const existing = byKey.get(key);
       if (existing) return existing;
+      inputs.push(input);
       const id = `trn-${runs.size + 1}`;
       byKey.set(key, id);
       if (fail) {
@@ -40,7 +52,9 @@ function fakeRender(opts: { failFirst?: boolean; unreachable?: boolean } = {}) {
         runs.set(id, { id, status: "failed", error: "Gemini answered 503 UNAVAILABLE", retries: 2 });
         return id;
       }
-      const result = task === "inspect-return" ? await inspectReturnJob(String(input[0]), id) : await renewHoldsJob(clock);
+      const result = await asWorker<unknown>(() =>
+        task === "inspect-return" ? inspectReturnJob(String(input[0]), id, input[1]) : renewHoldsJob(clock, input[0]),
+      );
       runs.set(id, { id, status: "completed", results: [result], retries: 0 });
       return id;
     },
@@ -48,7 +62,7 @@ function fakeRender(opts: { failFirst?: boolean; unreachable?: boolean } = {}) {
       return runs.get(id)!;
     },
   };
-  return { runner, keys };
+  return { runner, keys, inputs };
 }
 
 async function heldRental(days = 3, returnSample: string | null = "camera-kit/after__missing-hood") {
@@ -76,6 +90,7 @@ describe("runInspection", () => {
     await runInspection(id, render.runner);
     expect((await rental(id)).status).toBe("inspecting");
     expect((await events(id)).find((e) => e.type === "inspection.completed")?.data.taskRunId).toBe("trn-1");
+    expect(render.inputs).toEqual([[id, { paypal: "demo", ai: "recorded-replies" }]]);
 
     await runInspection(id, render.runner);
     expect(render.keys).toEqual([`inspect-${id}-0`, `inspect-${id}-0`]);
@@ -104,6 +119,18 @@ describe("runInspection", () => {
     expect((await events(id)).find((e) => e.type === "inspection.completed")?.data).not.toHaveProperty("taskRunId");
   });
 
+  it("compares in the web process when the workflow runs in another AI mode", async () => {
+    const id = await heldRental();
+    // The workflow has a Gemini key this web service lacks; it must not answer for it.
+    const render = fakeRender({ workerEnv: { DEMO_MODE: "false", GEMINI_API_KEY: "worker-only-key" } });
+    await runInspection(id, render.runner);
+    expect((await rental(id)).status).toBe("inspecting");
+    const completed = (await events(id)).find((e) => e.type === "inspection.completed")!;
+    expect(completed.data).toMatchObject({ source: "replay" });
+    expect(completed.data).not.toHaveProperty("worker");
+    expect(lastSkippedRun()).toMatchObject({ task: "inspect-return", taskRunId: "trn-1", reason: expect.stringContaining("GEMINI_API_KEY") });
+  });
+
   it("shows staff why a task refused to compare", async () => {
     const id = await heldRental(3, null);
     await expect(runInspection(id, fakeRender().runner)).rejects.toThrow("Both a pickup photo and a return photo are needed.");
@@ -129,6 +156,23 @@ describe("runRenewals", () => {
       expect(run).toMatchObject({ ranOn: "render-workflows", taskRunId: "trn-1" });
       expect(run.results.find((r) => r.rentalId === id)?.outcome).toBe("renewed");
       expect(render.keys).toEqual([renewalRunKey(clock)]);
+      expect(render.inputs).toEqual([[{ paypal: "sandbox", ai: "recorded-replies" }]]);
+    } finally {
+      process.env = saved;
+    }
+  });
+
+  it("renews here, with a warning, when the workflow has no PayPal keys", async () => {
+    clock = new Date(clock.getTime() + 86_400_000);
+    const id = await heldRental(14, null);
+    clock = new Date(clock.getTime() + 13 * 86_400_000);
+    const saved = { ...process.env };
+    Object.assign(process.env, { DEMO_MODE: "false", PAYPAL_CLIENT_ID: "sandbox-client", PAYPAL_CLIENT_SECRET: "sandbox-secret" });
+    try {
+      const run = await runRenewals(clock, fakeRender({ workerEnv: { PAYPAL_CLIENT_ID: "", PAYPAL_CLIENT_SECRET: "" } }).runner);
+      expect(run).toMatchObject({ ranOn: "web", taskRunId: "trn-1", warning: expect.stringMatching(/^Render Workflows run trn-1 skipped the sweep: .*"demo"/) });
+      expect(run.results.find((r) => r.rentalId === id)?.outcome).toBe("renewed");
+      expect(lastSkippedRun()).toMatchObject({ task: "renew-holds", taskRunId: "trn-1" });
     } finally {
       process.env = saved;
     }

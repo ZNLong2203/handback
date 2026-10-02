@@ -4,8 +4,10 @@
 // process otherwise (Render Workflows has no scheduler of its own yet).
 //
 // Plain Node with no dependencies, so the cron service needs no build. It
-// exits non-zero when the sweep fails or PayPal refuses a renewal, which marks
-// the run failed in the dashboard and triggers Render's notification.
+// exits non-zero when the sweep fails, PayPal refuses a renewal, or the web
+// service had to renew in its own process because the workflow's PayPal
+// settings differ from its own. That marks the run failed in the dashboard
+// and triggers Render's notification.
 //
 //   HANDBACK_HOSTPORT  the web service on Render's private network (render.yaml), or
 //   HANDBACK_URL       any base URL, e.g. https://handback.onrender.com
@@ -25,4 +27,5 @@ const res = await fetch(`${base.replace(/\/$/, "")}/api/jobs/renew-holds`, {
 });
 const body = await res.json().catch(() => ({}));
 console.log(`HTTP ${res.status} ${JSON.stringify(body)}`);
-if (!res.ok || body.ok !== true || body.failed > 0) process.exit(1);
+if (body.warning) console.error(`The web service ran the sweep itself, but: ${body.warning}`);
+if (!res.ok || body.ok !== true || body.failed > 0 || body.warning) process.exit(1);

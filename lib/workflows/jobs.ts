@@ -1,20 +1,29 @@
 import "server-only";
 import { getDb } from "@/lib/db/client";
+import { aiConfigured } from "@/lib/inspection/run";
 import { paypalConfig } from "@/lib/paypal/config";
 import { renewDueHolds, type RenewalOutcome } from "@/lib/rentals/jobs";
 import { latestAssessment, rentalById } from "@/lib/rentals/repo";
 import { inspect } from "@/lib/rentals/service";
 import { UserError } from "@/lib/rentals/types";
+import { modeMismatch, type JobModes } from "./config";
 
 // The bodies of the Render Workflows tasks in workflows/tasks.ts. They only call
 // the rental service; the business rules stay in lib/rentals and lib/inspection.
 // Return values are plain JSON, because Render stores and returns them as JSON.
 
+/** This process's PayPal and AI modes. The web service sends its own with each run. */
+export function jobModes(): JobModes {
+  return { paypal: paypalConfig().mode, ai: aiConfigured() ? "gemini" : "recorded-replies" };
+}
+
 export type InspectionJobResult =
   | { status: "inspected"; assessmentId: string }
   | { status: "already-inspected"; assessmentId: string }
   /** The rental is not in a state to compare (no return photo, wrong step): retrying cannot help. */
-  | { status: "refused"; message: string };
+  | { status: "refused"; message: string }
+  /** This workflow's AI mode differs from the web service's, so nothing was compared. */
+  | { status: "skipped"; reason: string };
 
 /** The assessment written by an earlier attempt, if the comparison already went through. */
 async function finishedInspection(rentalId: string): Promise<string | null> {
@@ -30,9 +39,14 @@ async function finishedInspection(rentalId: string): Promise<string | null> {
  * already saved returns it instead of asking Gemini again. Problems a person
  * has to fix come back as `refused` rather than as an error, so Render does
  * not retry them. Anything else (Gemini down, a reply that failed validation
- * twice, the database unreachable) is thrown and retried.
+ * twice, the database unreachable) is thrown and retried. When the web
+ * service's AI mode (`web`) differs from this process's, the task compares
+ * nothing: a workflow without the Gemini key would quietly save recorded
+ * replies, or none, for photos the web service expects Gemini to look at.
  */
-export async function inspectReturnJob(rentalId: string, taskRunId: string | null): Promise<InspectionJobResult> {
+export async function inspectReturnJob(rentalId: string, taskRunId: string | null, web?: unknown): Promise<InspectionJobResult> {
+  const mismatch = modeMismatch(web, jobModes(), "ai");
+  if (mismatch) return { status: "skipped", reason: mismatch };
   const done = await finishedInspection(rentalId);
   if (done) return { status: "already-inspected", assessmentId: done };
   try {
@@ -55,8 +69,12 @@ export type RenewalJobResult = { status: "swept"; results: RenewalOutcome[] } | 
  * would not change PayPal's answer. Crashes and database errors are thrown so
  * Render retries; renewals that already went through are not repeated, since
  * a renewed hold is no longer due and the PayPal request id is per rental per day.
+ * The sweep is skipped when the web service's PayPal mode (`web`) differs
+ * from this process's, or when this process has only the demo stand-in.
  */
-export async function renewHoldsJob(now = new Date()): Promise<RenewalJobResult> {
+export async function renewHoldsJob(now = new Date(), web?: unknown): Promise<RenewalJobResult> {
+  const mismatch = modeMismatch(web, jobModes(), "paypal");
+  if (mismatch) return { status: "skipped", reason: mismatch };
   if (paypalConfig().mode === "demo") {
     return {
       status: "skipped",

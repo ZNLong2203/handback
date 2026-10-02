@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
  * cron job (scripts/cron/renew-holds.mjs) with `Authorization: Bearer
  * $CRON_SECRET`. The sweep runs as a Render Workflows task when the
  * deployment is set up for it, in this process otherwise. Idempotent, so
- * running it hourly or daily is equally safe.
+ * running it hourly or daily is equally safe. `warning` is set when the task
+ * skipped the sweep because the workflow's PayPal settings differ from this
+ * service's; the sweep then ran here, and the cron job reports the warning.
  */
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -21,6 +23,7 @@ export async function POST(req: Request) {
       ranOn: run.ranOn,
       taskRunId: run.taskRunId ?? null,
       pending: run.pending ?? false,
+      warning: run.warning ?? null,
       renewed: count("renewed"),
       failed: count("failed"),
       results: run.results,

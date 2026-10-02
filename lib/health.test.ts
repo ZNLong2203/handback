@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { checkHealth } from "./health";
+import { noteSkippedRun } from "./workflows/config";
 
 const saved = { ...process.env };
 afterEach(() => {
@@ -32,12 +33,25 @@ describe("checkHealth", () => {
       database: { ok: true, driver: "postgres" },
       paypal: { mode: "sandbox", webhookConfigured: true },
       ai: { mode: "gemini", model: "gemini-3.8-flash" },
-      jobs: { runner: "render-workflows", slug: "handback-workflows" },
+      jobs: { runner: "render-workflows", slug: "handback-workflows", lastSkippedRun: null },
       build: { commit: "0123456789abcdef0123456789abcdef01234567", branch: "main" },
     });
     const body = JSON.stringify(health);
     for (const value of Object.values(SECRETS)) expect(body).not.toContain(value);
     expect(body).not.toContain("db-password-value");
+  });
+
+  it("shows the latest run the workflow skipped because its modes differ from this service's", async () => {
+    Object.assign(process.env, SECRETS, { DEMO_MODE: "", RENDER_WORKFLOW_SLUG: "handback-workflows" });
+    const reason = 'The web service runs in AI mode "gemini", but the workflow service runs in "recorded-replies".';
+    noteSkippedRun({ task: "inspect-return", taskRunId: "trn-1", reason }, new Date("2026-11-20T09:17:00Z"));
+    const health = await checkHealth(async () => {});
+    expect(health).toMatchObject({ ok: true, ai: { mode: "gemini" } });
+    expect(health.jobs).toEqual({
+      runner: "render-workflows",
+      slug: "handback-workflows",
+      lastSkippedRun: { task: "inspect-return", taskRunId: "trn-1", reason, at: "2026-11-20T09:17:00.000Z" },
+    });
   });
 
   it("fails on an unreachable database with a code, not the driver's message", async () => {

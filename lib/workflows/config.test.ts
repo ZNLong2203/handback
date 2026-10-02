@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inspectionRunKey, renewalRunKey, runOutcome, taskIdentifier, workflowsConfig } from "./config";
+import { inspectionRunKey, lastSkippedRun, modeMismatch, noteSkippedRun, renewalRunKey, runOutcome, taskIdentifier, workflowsConfig } from "./config";
 
 describe("workflowsConfig", () => {
   it("runs inline until the Blueprint slug and an API key are both there", () => {
@@ -59,5 +59,33 @@ describe("runOutcome", () => {
     });
     expect(runOutcome({ id: "trn-3", status: "canceled" })).toMatchObject({ kind: "failed", error: "The run was canceled.", attempts: 1 });
     for (const status of ["pending", "running", "paused"]) expect(runOutcome({ id: "trn-4", status }).kind).toBe("running");
+  });
+});
+
+describe("modeMismatch", () => {
+  const worker = { paypal: "demo", ai: "recorded-replies" } as const;
+
+  it("names the setting to fix when the web service's mode differs", () => {
+    expect(modeMismatch({ paypal: "sandbox", ai: "gemini" }, worker, "paypal")).toBe(
+      'The web service runs in PayPal mode "sandbox", but the workflow service runs in "demo". Give the workflow service the same PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET and PAYPAL_ENVIRONMENT as the web service.',
+    );
+    expect(modeMismatch({ paypal: "sandbox", ai: "gemini" }, worker, "ai")).toMatch(/AI mode "gemini", but the workflow service runs in "recorded-replies"\. .*GEMINI_API_KEY/);
+  });
+
+  it("checks only the mode the task depends on", () => {
+    expect(modeMismatch({ paypal: "sandbox", ai: "recorded-replies" }, worker, "ai")).toBeNull();
+    expect(modeMismatch({ paypal: "demo", ai: "gemini" }, worker, "paypal")).toBeNull();
+  });
+
+  it("lets a run without modes through, as when it is started from the dashboard", () => {
+    for (const web of [undefined, null, "sandbox", [], {}, { paypal: 1 }]) expect(modeMismatch(web, worker, "paypal")).toBeNull();
+  });
+});
+
+describe("skipped runs", () => {
+  it("keeps the latest one for /api/health", () => {
+    noteSkippedRun({ task: "renew-holds", taskRunId: "trn-1", reason: "first" }, new Date("2026-11-20T09:17:00Z"));
+    noteSkippedRun({ task: "inspect-return", taskRunId: "trn-2", reason: "second" }, new Date("2026-11-20T10:02:00Z"));
+    expect(lastSkippedRun()).toEqual({ task: "inspect-return", taskRunId: "trn-2", reason: "second", at: "2026-11-20T10:02:00.000Z" });
   });
 });
