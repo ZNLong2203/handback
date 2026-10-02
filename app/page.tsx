@@ -2,6 +2,7 @@ import { ArrowRight, Camera, CreditCard, Eye, FileCheck2, Scale, ShieldCheck, St
 import { SiteHeader } from "@/components/headers";
 import { MoneyBar } from "@/components/money-bar";
 import { ButtonLink, Card, Eyebrow } from "@/components/ui";
+import headline from "@/eval/headline.json";
 
 const steps = [
   {
@@ -28,11 +29,14 @@ const fairness = [
   { icon: FileCheck2, title: "Evidence, not vibes", body: "Photos are stored under their SHA-256 hash, and every step is hash-chained with its PayPal ids." },
 ];
 
-/** From eval/README.md: two looks, prompt v2, three runs of each set. */
-const measured = [
-  { set: "36 AI-generated pairs", caught: "41/42", charged: "0/72" },
-  { set: "55 pairs built on real photos", caught: "63/66", charged: "0/99" },
-];
+const SET_NAMES: Record<string, string> = { synthetic: "AI-generated pairs", real: "pairs built on real photos" };
+
+/** Two looks with the prompt the app sends, written from the saved eval runs by `npm run eval:summary`. */
+const measured = headline.sets.map((s) => ({
+  set: `${s.pairs} ${SET_NAMES[s.id]}, ${s.runs} runs`,
+  caught: `${s.changesCharged}/${s.changes}`,
+  charged: `${s.unchangedCharged}/${s.unchanged}`,
+}));
 
 const paypal = [
   "Orders v2: fee capture with vault, deposit AUTHORIZE",
@@ -121,7 +125,7 @@ export default function Home() {
                 can only propose, uncertain findings are never charged, and nothing moves until the person paying has seen the evidence.
               </p>
               <div className="mt-6 rounded-2xl border border-line bg-card p-5">
-                <p className="text-sm font-semibold">Measured on labeled photo pairs, three runs of each set</p>
+                <p className="text-sm font-semibold">Measured on labeled photo pairs</p>
                 {measured.map((m) => (
                   <div key={m.set} className="mt-4 border-t border-line pt-3 first-of-type:border-t-0 first-of-type:pt-0">
                     <p className="text-xs font-semibold text-ink-soft">{m.set}</p>
