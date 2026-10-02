@@ -43,6 +43,9 @@ async function migrate(db: Db) {
     .map((s) => s.replace(/^--.*$/gm, "").trim())
     .filter(Boolean);
   await db.tx(async (tx) => {
+    // The web service, workflow task runs and scripts can all start on a fresh
+    // database at once; concurrent `create ... if not exists` can still collide.
+    await tx.query("select pg_advisory_xact_lock(724410)");
     for (const text of statements) await tx.query(text);
   });
 }

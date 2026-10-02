@@ -241,8 +241,11 @@ export async function acknowledgeCheckout(token: string): Promise<void> {
 
 // ─── Return ─────────────────────────────────────────────────
 
+/** Set when a Render Workflows task run did the comparison, so the audit log says which run. */
+export type InspectionWorker = { worker: "render-workflows"; taskRunId: string | null };
+
 /** Compares the latest pickup and return photos with two independent looks. */
-export async function inspect(rentalId: string): Promise<void> {
+export async function inspect(rentalId: string, ranBy?: InspectionWorker): Promise<void> {
   const rental = await mustRental(rentalId);
   expectStatus(rental, ["out"], "inspect the return");
   const db = await getDb();
@@ -265,6 +268,9 @@ export async function inspect(rentalId: string): Promise<void> {
   const charges = findings.filter((f) => f.staff === "keep").length;
 
   await db.tx(async (tx) => {
+    // Two comparisons can race (a double tap, a retried task run): only the first to commit counts.
+    const [current] = await tx.query<{ status: string }>("select status from rentals where id = $1 for update", [rentalId]);
+    if (current?.status !== "out") throw new UserError("These photos have already been compared.");
     await tx.query(
       `insert into assessments (id, rental_id, checkout_sha, checkin_sha, model, source, usable, issue, summary, looks, findings, proposed_cents, status)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, 'staff_review')`,
@@ -294,6 +300,7 @@ export async function inspect(rentalId: string): Promise<void> {
       proposedCents: run.assessment.proposedCents,
       checkoutSha: checkout.photoSha,
       checkinSha: checkin.photoSha,
+      ...ranBy,
     });
   });
   publish(rentalId, "inspection.completed");
