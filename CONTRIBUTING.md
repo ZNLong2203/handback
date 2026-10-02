@@ -30,14 +30,7 @@ Open http://localhost:3000. With no PayPal credentials the app uses a local stan
 
 Data goes to an in-process Postgres (PGlite) in `.data/pglite`, so it survives restarts. Delete `.data/` to start over, or set `DATABASE_URL=memory` for a database that disappears when the server stops. With any other `DATABASE_URL` the app connects to that Postgres. In every case the idempotent schema in `lib/db/schema.sql` is applied when the app first connects.
 
-To try a whole rental, keep two tabs open:
-
-1. Customer tab: **Rent something**, pick the mirrorless camera kit, enter a name and email, then press **Pay $87.00 (demo PayPal)**. You land on the renter's own page.
-2. Counter tab: open http://localhost:3000/shop and pick the rental. Choose the **Pickup photo** sample, then **Hold $300.00 deposit**.
-3. Customer tab: press **Yes, this is how I received it**.
-4. Counter tab: choose the **Hood removed** return sample, press **Compare the photos**, then **Send 1 item to** the renter.
-5. Customer tab: press **That's fair** (or **I question this** with a reason), then **Send my answers**.
-6. Counter tab: press **Keep $35.00, release $265.00**. Both pages update without a reload.
+To try a whole rental, follow the six steps under [Run it in two minutes](README.md#run-it-in-two-minutes) in the README, with one tab as the renter and one as the counter.
 
 ## Run it against the PayPal sandbox
 
