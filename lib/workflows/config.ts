@@ -6,7 +6,7 @@
  * the rental flow depends on Render.
  */
 
-/** Task names as registered by workflows/main.ts. Render task slugs are `<workflow slug>/<name>`. */
+/** Task names as registered in workflows/tasks.ts. Render task slugs are `<workflow slug>/<name>`. */
 export const TASKS = {
   inspectReturn: "inspect-return",
   renewHolds: "renew-holds",

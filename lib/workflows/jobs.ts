@@ -6,7 +6,7 @@ import { latestAssessment, rentalById } from "@/lib/rentals/repo";
 import { inspect } from "@/lib/rentals/service";
 import { UserError } from "@/lib/rentals/types";
 
-// The bodies of the Render Workflows tasks in workflows/main.ts. They only call
+// The bodies of the Render Workflows tasks in workflows/tasks.ts. They only call
 // the rental service; the business rules stay in lib/rentals and lib/inspection.
 // Return values are plain JSON, because Render stores and returns them as JSON.
 
