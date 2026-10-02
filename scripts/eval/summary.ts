@@ -13,6 +13,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROMPT_VERSION } from "@/lib/inspection/prompt";
+import { REAL_EDITS } from "./real-photos";
 
 export type Metrics = {
   set?: string;
@@ -216,6 +217,13 @@ export function misses(runs: Run[]) {
   return lines.join("\n");
 }
 
+/** How much of each real-photo check-in frame the pasted box of image-model output covers, largest first. */
+export function pastedShare() {
+  return REAL_EDITS.map((e) => ({ id: e.id, share: ((e.region[2] - e.region[0]) * (e.region[3] - e.region[1])) / 1e6 })).sort(
+    (a, b) => b.share - a.share || a.id.localeCompare(b.id),
+  );
+}
+
 function counts({ pairs }: EvalSet) {
   const changed = pairs.filter((p) => p.truth.changed);
   return {
@@ -251,6 +259,9 @@ export function headline(sets: Sets) {
 export function readme(sets: Sets) {
   const synthetic = counts(sets.synthetic);
   const real = counts(sets.real);
+  const pasted = pastedShare();
+  const overAThird = pasted.filter((p) => p.share > 1 / 3);
+  const percent = (share: number) => `${Math.round(share * 100)}%`;
 
   const oneLookReal = sets.real.runs.filter((r) => passes(r.metrics) === 1);
   const hoodCharged = oneLookReal.filter((run) => run.results.some((r) => r.id === "sigma-150-600__missing-hood" && r.caught.every((c) => c.charged))).length;
@@ -286,9 +297,10 @@ ${real.pairs} pairs built on ${real.scenes} real photographs from Wikimedia Comm
 
 - **Base photos.** Real photographs of gear like the demo shop rents: three camera bodies (one laid out as a kit), two telephoto lenses, a drone with its controller, an action camera with its housing, a portable speaker, a projector, and two bicycle rears. They have real lighting, reflections, texture, printed text and cluttered backgrounds (a wooden table, a railing with grass, paving), which the synthetic set lacks. Each pair is mapped to the catalog item whose kit list and price list fit it.
 - **Changed pairs.** The same Gemini image model edited each photo (a scratch, a dent, a crack, a torn grille, mud, or a removed accessory). The model redraws the whole photo and often shifts or zooms it a little, so its edit is first lined up with the original (\`scripts/eval/composite.ts\`), and only a box around the requested change is pasted back with a soft edge. Everything outside that box is the original photograph. Code then made the light warmer and dimmer or turned the photo by 3°. Every pair was reviewed by eye. Five prompts the model ignored were rewritten and run again, and labels say what the edit actually shows where it differs from what was asked (a chipped, not shortened, tripod foot; a cracked, not bent, mudguard).
+- **How much is drawn, and where it shows.** The pasted box (before its soft edge) covers ${percent(pasted[pasted.length - 1].share)} to ${percent(pasted[0].share)} of the frame. In ${overAThird.length} pairs it covers more than a third (${overAThird.map((p) => `\`${p.id}\` ${percent(p.share)}`).join(", ")}), so that much of the check-in photo is the image model's drawing, not the photograph. The box's colour is matched to the original with one average shift per colour channel, measured in a ring just outside it. Where the image model redrew a plain background in a slightly different tone, that leaves a faint step along part of the box edge: about 10 to 15 levels (of 255) on plain background in \`sony-action-cam__missing-housing\`, \`dji-mini4__missing-controller\` and \`sony-a7r-kit__missing-battery\`, less in the others. The step shows where the edit is, so the model may find these changes more easily than in a real check-in photo, and the share of changes caught on this set may be optimistic. Unchanged pairs have no pasted box. A better colour match would change these photos and void every saved run of the set, including the prompt v1 runs the comparison below rests on, so the photos were left as they are.
 - **Unchanged pairs.** A warmer, dimmer light that keeps the photo's colours, a 3° turn with the smallest crop that hides the corners, or dust specks and a glare spot, all in code.
 
-What this set does not show: the damage itself is still drawn by an image model, and the second photo is the first one shifted in code, not a second photo taken minutes later with a phone. Most base photos are well-lit product shots rather than counter photos taken by staff. A set of real before / after photos of real damage is still missing.
+What this set does not show: the damage itself is still drawn by an image model, sometimes over a large part of the frame and with a visible box edge, and the second photo is the first one shifted in code, not a second photo taken minutes later with a phone. Most base photos are well-lit product shots rather than counter photos taken by staff. A set of real before / after photos of real damage is still missing.
 
 ## Scoring
 

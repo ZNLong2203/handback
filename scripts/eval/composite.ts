@@ -5,7 +5,8 @@
  * that redrawing straight back would leave a seam where the box's edge no
  * longer meets the original (a doubled edge, a jump in a lens barrel), which
  * the condition check could fairly report as damage. So the edit is first
- * lined up with the original on everything outside the box.
+ * lined up with the original on everything outside the box. Its tone can
+ * still differ from the original's: see pasteBack.
  */
 import sharp from "sharp";
 
@@ -134,9 +135,12 @@ async function gray(input: Buffer, width: number, height: number): Promise<Gray>
 /**
  * Takes only `region` from the image model's edit, lined up with the original,
  * and lays it over the original photo with a soft edge, so the rest of the
- * check-in photo is the real photograph. The edit's colour is matched to the
- * original just around the region so the seam does not show. Also reports
- * how the edit had to be moved and how much it changed inside the region.
+ * check-in photo is the real photograph. The edit's colour is shifted to
+ * match the original in a ring just around the region, by one average offset
+ * per channel. That hides most seams, but where the image model redrew a
+ * plain background in a different tone across the box, a faint step stays
+ * along the box edge (eval/README.md says where). Also reports how the edit
+ * had to be moved and how much it changed inside the region.
  */
 export async function pasteBack(before: Buffer, edited: Buffer, region: Box) {
   const { data: base, info } = await sharp(before).removeAlpha().raw().toBuffer({ resolveWithObject: true });
