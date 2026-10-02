@@ -140,6 +140,25 @@ export class DisputeActionUnavailable extends Error {
   }
 }
 
+/**
+ * How many times the shop has filed evidence with exactly these document
+ * names. Compared before and after an unclear reply to tell whether PayPal
+ * filed a submission: the sandbox runs a repeated PayPal-Request-Id again
+ * instead of replaying its first answer, so a timeout followed by a retry
+ * can end in a 422 although the first request was filed.
+ */
+export function sellerSubmissions(d: Pick<Dispute, "evidences">, fileNames: string[]): number {
+  const want = [...fileNames].sort().join("\n");
+  return (d.evidences ?? []).filter(
+    (e) =>
+      e.source === "SUBMITTED_BY_SELLER" &&
+      (e.documents ?? [])
+        .map((doc) => doc.name ?? "")
+        .sort()
+        .join("\n") === want,
+  ).length;
+}
+
 /** Evidence types PayPal has asked the shop for, oldest request first. */
 export function requestedEvidence(d: Dispute): string[] {
   const types = (d.evidences ?? []).filter((e) => e.source === "REQUESTED_FROM_SELLER" && e.evidence_type).map((e) => e.evidence_type!);
@@ -238,8 +257,12 @@ export function usdCents(m: PayPalMoney | undefined): Cents | null {
 export type DisputeQuery = { disputedTransactionId?: string; updateTimeAfter?: string; pageSize?: number };
 export type AcceptClaim = { note: string; type?: "REFUND" | "PARTIAL_REFUND"; refundCents?: Cents };
 export type Offer = { note: string; type: "REFUND"; amountCents: Cents };
-/** What a successful action returned: PayPal's debug id is kept for the audit log. */
-export type ActionReceipt = { status: number; debugId: string | null };
+/**
+ * What a successful action returned: PayPal's debug id is kept for the audit
+ * log. `confirmedByRead` marks an action whose reply was lost or unclear and
+ * that a fresh read of the dispute showed PayPal had carried out.
+ */
+export type ActionReceipt = { status: number; debugId: string | null; confirmedByRead?: true };
 
 export interface DisputeApi {
   readonly mode: PayPalMode;

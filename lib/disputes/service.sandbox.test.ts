@@ -55,6 +55,8 @@ const server = new DemoDisputeApi();
 type Seen = { method: string; path: string; requestId: string | null; contentType: string | null; body: Buffer | null };
 const seen: Seen[] = [];
 let failNextEvidence = false;
+/** Files the next evidence, then loses the reply, as a stalled connection would. */
+let loseNextEvidenceReply = false;
 
 beforeAll(async () => {
   await getDb();
@@ -73,6 +75,10 @@ beforeAll(async () => {
       if (!action) return reply(d);
       const json = () => JSON.parse(body!.toString());
       const ok = { links: [{ rel: "self", method: "GET", href: `https://api-m.sandbox.paypal.com/v1/customer/disputes/${id}` }] };
+      // What the sandbox answered to an action its links no longer offered (2026-10-02).
+      if (!model.actionLink(d, action.replace(/-/g, "_"))) {
+        return reply({ name: "UNPROCESSABLE_ENTITY", debug_id: "dbg-state", details: [{ issue: "ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE", description: "The requested action could not be performed, semantically incorrect, or failed business validation." }] }, 422);
+      }
       if (action === "provide-evidence") {
         if (failNextEvidence) {
           failNextEvidence = false;
@@ -82,6 +88,10 @@ beforeAll(async () => {
         const input = JSON.parse(parts[0].body.toString()).evidences[0];
         const files = parts.slice(1).map((p) => ({ name: p.filename!, contentType: p.type as "application/pdf", bytes: new Uint8Array(p.body) }));
         await server.provideEvidence(d, { evidenceType: input.evidence_type, notes: input.notes, files }, "x");
+        if (loseNextEvidenceReply) {
+          loseNextEvidenceReply = false;
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        }
       } else if (action === "require-evidence") await server.requireEvidence(d, json().action, "x");
       else if (action === "adjudicate") await server.adjudicate(d, json().adjudication_outcome, "x");
       else if (action === "accept-claim") await server.acceptClaim(d, { note: json().note, type: json().accept_claim_type }, "x");
@@ -157,6 +167,30 @@ describe("dispute desk against a mocked PayPal REST API", () => {
     expect(log.at(-1)).toMatchObject({ type: "dispute.resolved", data: { outcome: "RESOLVED_BUYER_FAVOUR", refundedCents: 2000 } });
     expect(log.find((e) => e.type === "dispute.sandbox_decided")!.data).toMatchObject({ outcome: "BUYER_FAVOR", debugId: expect.stringMatching(/^dbg-/) });
     expect((await repo.rentalById(await getDb(), r.id))!.status).toBe("settled");
+  });
+
+  it("records evidence PayPal filed although the reply was lost and the retry was refused", async () => {
+    const r = await settledRental();
+    const opened = await server.open({ sellerTransactionId: r.settlementCaptureId!, transactionCents: 3500, disputedCents: 2000, reason: "INCORRECT_AMOUNT", note: "n", custom: r.id, invoiceNumber: null });
+    await desk.findDisputes(r.id);
+    loseNextEvidenceReply = true;
+    const from = seen.length;
+    await desk.submitEvidence(r.id);
+
+    // The same request id went out twice; the second was refused because the case had moved on.
+    const posts = seen.slice(from).filter((s) => s.path.endsWith("/provide-evidence"));
+    expect(posts).toHaveLength(2);
+    expect(posts[0].requestId).toBe(posts[1].requestId);
+    const filed = (await server.get(opened.dispute_id)).evidences!.filter((e) => e.source === "SUBMITTED_BY_SELLER");
+    expect(filed).toHaveLength(1);
+
+    const log = await repo.eventsFor(await getDb(), r.id);
+    expect(log.filter((e) => e.type === "paypal.error").at(-1)!.data).toMatchObject({ issue: "ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE" });
+    expect(log.find((e) => e.type === "dispute.evidence_sent")!.data).toMatchObject({ disputeId: opened.dispute_id, confirmedByRead: true });
+    // Without a new filing on PayPal's side, an error still stays an error.
+    await desk.sandboxRequireEvidence(r.id);
+    failNextEvidence = true;
+    await expect(desk.submitEvidence(r.id)).rejects.toThrow(/The evidence file is invalid/);
   });
 
   it("never calls PayPal for an action the dispute's links do not offer", async () => {

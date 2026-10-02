@@ -11,6 +11,7 @@ import {
   DisputeActionUnavailable,
   DisputeSchema,
   requestedEvidence,
+  sellerSubmissions,
   usdCents,
   type ActionReceipt,
   type Dispute,
@@ -149,9 +150,20 @@ function notOffered(what: string, d: Dispute): string {
 /**
  * One guarded PayPal action: claimed in dispute_actions first, so a double
  * tap cannot send it twice (the Disputes API does not deduplicate on
- * PayPal-Request-Id), then sent, then marked done or failed.
+ * PayPal-Request-Id), then sent, then marked done or failed. When the reply
+ * is an error, `landed` may read the dispute to check whether PayPal carried
+ * the action out anyway (a lost reply, then a retry refused because the
+ * case had already moved on).
  */
-async function guarded(rentalId: string, d: Dispute, action: string, round: string, step: string, send: (requestId: string) => Promise<ActionReceipt>): Promise<ActionReceipt> {
+async function guarded(
+  rentalId: string,
+  d: Dispute,
+  action: string,
+  round: string,
+  step: string,
+  send: (requestId: string) => Promise<ActionReceipt>,
+  landed?: () => Promise<boolean>,
+): Promise<ActionReceipt> {
   const db = await getDb();
   const requestId = `dispute-${action}:${d.dispute_id}:${round}`.slice(0, 108);
   if (!(await claimAction(db, d.dispute_id, action, round, requestId))) throw new UserError("That was already sent to PayPal for this dispute.");
@@ -160,6 +172,10 @@ async function guarded(rentalId: string, d: Dispute, action: string, round: stri
     await finishAction(db, d.dispute_id, action, round, "done", receipt.debugId);
     return receipt;
   } catch (err) {
+    if (landed && (await landed().catch(() => false))) {
+      await finishAction(db, d.dispute_id, action, round, "done", null);
+      return { status: 0, debugId: null, confirmedByRead: true };
+    }
     await finishAction(db, d.dispute_id, action, round, "failed", null);
     if (err instanceof DisputeActionUnavailable) throw new UserError(notOffered(step, d));
     if (err instanceof RangeError) throw new UserError(`The evidence could not be sent: ${err.message}.`);
@@ -193,8 +209,16 @@ export async function submitEvidence(rentalId: string): Promise<string> {
   if (pack.photos.returned) files.push({ name: `${rental.id}-return.jpg`, contentType: "image/jpeg", bytes: pack.photos.returned });
   // Each request for evidence gets a new due date, so it identifies the round.
   const round = d.seller_response_due_date ?? d.update_time ?? "first";
-  const receipt = await guarded(rentalId, d, "evidence", round, "send the evidence", (requestId) =>
-    disputeApi().provideEvidence(d, { evidenceType, notes: paypalNotes(pack.facts, pack.narrative, pack.sha256), files }, requestId),
+  const names = files.map((f) => f.name);
+  const filedBefore = sellerSubmissions(d, names);
+  const receipt = await guarded(
+    rentalId,
+    d,
+    "evidence",
+    round,
+    "send the evidence",
+    (requestId) => disputeApi().provideEvidence(d, { evidenceType, notes: paypalNotes(pack.facts, pack.narrative, pack.sha256), files }, requestId),
+    async () => sellerSubmissions(await disputeApi().get(d.dispute_id), names) > filedBefore,
   );
   await appendEvent(await getDb(), rentalId, "staff", "dispute.evidence_sent", {
     disputeId: d.dispute_id,
@@ -203,6 +227,7 @@ export async function submitEvidence(rentalId: string): Promise<string> {
     files: files.map((f) => f.name),
     summary: pack.narrative.source,
     debugId: receipt.debugId,
+    ...(receipt.confirmedByRead ? { confirmedByRead: true } : {}),
   });
   publish(rentalId, "dispute.evidence_sent");
   await followUp(rentalId, d);
