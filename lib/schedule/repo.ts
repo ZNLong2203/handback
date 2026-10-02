@@ -136,12 +136,34 @@ export async function unitById(db: Query, id: string): Promise<Unit | null> {
 
 // ─── Rentals on the schedule ────────────────────────────────
 
-/** Rentals that are booked or out on any unit of the item. */
+/** SQL: the rental's item has not come back, that is, it has no return photo and no settlement. */
+const NOT_BACK = "r.settled_at is null and not exists (select 1 from inspections i where i.rental_id = r.id and i.phase = 'checkin')";
+
+/**
+ * Rentals that may hold a unit of the item: drafts, bookings, rentals that
+ * are out, and disputed rentals whose item has not come back (a dispute can
+ * open while the customer still has the item).
+ */
 export async function activeRentalsForItem(db: Query, itemId: string): Promise<Rental[]> {
   const rows = await db.query<Row>(
     `select r.* from rentals r join units u on u.id = r.unit_id
-     where u.item_id = $1 and r.status in ('draft', 'booked', 'out')`,
+     where u.item_id = $1 and (r.status in ('draft', 'booked', 'out') or (r.status = 'disputed' and ${NOT_BACK}))`,
     [itemId],
+  );
+  return rows.map(toRental);
+}
+
+/**
+ * Rentals whose customer has one of these units right now: picked up (the
+ * deposit was held) and not brought back yet, whatever the status says.
+ */
+export async function rentalsWithCustomer(db: Query, unitIds: string[]): Promise<Rental[]> {
+  if (unitIds.length === 0) return [];
+  const rows = await db.query<Row>(
+    `select r.* from rentals r
+     where r.unit_id = any($1) and (r.status = 'out' or (r.status = 'disputed' and r.authorization_id is not null)) and ${NOT_BACK}
+     order by r.end_date, r.id`,
+    [unitIds],
   );
   return rows.map(toRental);
 }
@@ -160,7 +182,8 @@ export async function occupantsForItem(db: Query, itemId: string, now: Date, wit
   const [rentals, blocks] = await Promise.all([activeRentalsForItem(db, itemId), blocksForItem(db, itemId)]);
   const occupants: Occupant[] = [];
   for (const r of rentals) {
-    const span = holdSpan(r, now);
+    // activeRentalsForItem leaves out the rentals whose item is back.
+    const span = holdSpan(r, now, null);
     if (span && r.unitId) occupants.push({ kind: "rental", id: r.id, unitId: r.unitId, span });
   }
   for (const b of blocks) occupants.push({ kind: "block", id: b.id, unitId: b.unitId, span: { start: b.startDate, end: b.endDate } });

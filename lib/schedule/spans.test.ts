@@ -27,19 +27,27 @@ describe("holdSpan: which rentals keep their unit", () => {
   const now = new Date("2026-10-02T12:00:00Z");
 
   it("holds the unit while booked or out", () => {
-    expect(holdSpan(rental(), now)).toEqual({ start: "2026-10-05", end: "2026-10-08" });
-    expect(holdSpan(rental({ status: "out" }), now)).toEqual({ start: "2026-10-05", end: "2026-10-08" });
+    expect(holdSpan(rental(), now, null)).toEqual({ start: "2026-10-05", end: "2026-10-08" });
+    expect(holdSpan(rental({ status: "out" }), now, null)).toEqual({ start: "2026-10-05", end: "2026-10-08" });
   });
 
   it("holds it for an unpaid draft only while the customer is in PayPal", () => {
-    expect(holdSpan(rental({ status: "draft", createdAt: "2026-10-02T11:45:00Z" }), now)).not.toBeNull();
-    expect(holdSpan(rental({ status: "draft", createdAt: "2026-10-02T11:00:00Z" }), now)).toBeNull();
+    expect(holdSpan(rental({ status: "draft", createdAt: "2026-10-02T11:45:00Z" }), now, null)).not.toBeNull();
+    expect(holdSpan(rental({ status: "draft", createdAt: "2026-10-02T11:00:00Z" }), now, null)).toBeNull();
+  });
+
+  it("keeps holding it when a dispute opens before the item is back", () => {
+    // A dispute on the booking fee while the customer still has the item: the unit is not free.
+    expect(holdSpan(rental({ status: "disputed" }), now, null)).toEqual({ start: "2026-10-05", end: "2026-10-08" });
+    // A dispute after the return: the item is on the shelf (or in repair).
+    expect(holdSpan(rental({ status: "disputed" }), now, "2026-10-08")).toBeNull();
   });
 
   it("lets go once the item is back; a repair block takes over if it is damaged", () => {
-    for (const status of ["inspecting", "customer_review", "responded", "settled", "disputed", "cancelled"] as const) {
-      expect(holdSpan(rental({ status }), now)).toBeNull();
+    for (const status of ["inspecting", "customer_review", "responded", "settled", "disputed"] as const) {
+      expect(holdSpan(rental({ status }), now, "2026-10-08")).toBeNull();
     }
+    expect(holdSpan(rental({ status: "cancelled" }), now, null)).toBeNull();
   });
 });
 

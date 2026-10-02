@@ -71,4 +71,34 @@ describe("units at booking time", () => {
     await expect(svc.confirmBooking(late.orderId)).rejects.toThrow(/Nothing was charged/);
     expect(await rental(late.rentalId)).toMatchObject({ status: "draft", feeCaptureId: null });
   });
+
+  it("keeps a unit the customer still has when PayPal opens a dispute, so it is not sold twice", async () => {
+    const ann = await book("projector", "Ann Out", 20, 22);
+    await svc.confirmBooking(ann.orderId);
+    await svc.addPhoto(ann.rentalId, "checkout", { sample: "projector/before" });
+    await svc.holdDeposit(ann.rentalId);
+    await svc.confirmBooking((await book("projector", "Bob Booked", 20, 22)).orderId);
+    expect(await rental(ann.rentalId)).toMatchObject({ status: "out", unitId: "projector-a" });
+    await expect(book("projector", "Cat Third", 20, 22)).rejects.toThrow(/Every Portable projector is booked/);
+
+    // Ann disputes the booking fee with PayPal while the projector is still with her.
+    const { applyPayPalWebhook } = await import("@/lib/rentals/webhooks");
+    const feeCaptureId = (await rental(ann.rentalId)).feeCaptureId!;
+    expect(
+      await applyPayPalWebhook({
+        id: "WH-DISPUTE-ANN",
+        event_type: "CUSTOMER.DISPUTE.CREATED",
+        resource: { dispute_id: "PP-D-ANN", reason: "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", disputed_transactions: [{ seller_transaction_id: feeCaptureId }] },
+      }),
+    ).toBe("applied");
+    expect(await rental(ann.rentalId)).toMatchObject({ status: "disputed", unitId: "projector-a" });
+
+    // The projector is still out, so the third booking is still refused, and the schedule says where it is.
+    await expect(book("projector", "Cat Third", 20, 22)).rejects.toThrow(/Every Portable projector is booked/);
+    const schedule = await import("./repo");
+    expect((await schedule.rentalsWithCustomer(await getDb(), ["projector-a"])).map((r) => r.id)).toEqual([ann.rentalId]);
+    const view = await (await import("./view")).loadScheduleView();
+    expect(view.resources.find((u) => u.id === "projector-a")).toMatchObject({ status: "out" });
+    expect(view.events.find((e) => e.id === ann.rentalId)).toMatchObject({ money: "disputed", conflict: null });
+  });
 });

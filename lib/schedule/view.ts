@@ -131,6 +131,7 @@ export type ScheduleView = {
 
 const DAYS_BEFORE = 7;
 const DAYS_AFTER = 21;
+/** Statuses whose item cannot be back yet, so there is no return day to look up. */
 const HOLDING: RentalStatus[] = ["booked", "out"];
 
 function proposalView(p: repo.Proposal, rentals: Map<string, Rental>, labels: Map<string, string>, blocks: Map<string, repo.Block>): ScheduleProposal {
@@ -201,18 +202,23 @@ export async function loadScheduleView(now = new Date()): Promise<ScheduleView> 
   const pendingFor = new Map(pendingRaw.filter((p) => p.rentalId).map((p) => [p.rentalId!, p.id]));
   const blockById = new Map(blocks.map((b) => [b.id, b]));
 
+  const holds = new Map(rentals.map((r) => [r.id, holdSpan(r, now, returned.get(r.id) ?? null)]));
+  // Picked up and not back: out, or disputed while the customer still has it.
+  const withCustomer = (r: Rental) => r.status === "out" || (r.status === "disputed" && Boolean(r.authorizationId) && !returned.has(r.id));
+
   const events: ScheduleEvent[] = [];
   for (const r of rentals) {
     const money = MONEY_STATE[r.status];
     const span = displaySpan(r, returned.get(r.id) ?? null);
     if (!money || !span || !r.unitId) continue;
-    const hold = holdSpan(r, now);
+    const hold = holds.get(r.id);
     let conflict: string | null = null;
     if (hold) {
       const block = blocks.find((b) => b.unitId === r.unitId && overlaps(hold, { start: b.startDate, end: b.endDate }));
-      const twin = rentals.find(
-        (o) => o.id !== r.id && o.unitId === r.unitId && HOLDING.includes(o.status) && o.createdAt < r.createdAt && overlaps(hold, { start: o.startDate, end: o.endDate }),
-      );
+      const twin = rentals.find((o) => {
+        const other = holds.get(o.id);
+        return o.id !== r.id && o.unitId === r.unitId && other && o.createdAt < r.createdAt && overlaps(hold, other);
+      });
       if (block) conflict = `${labels.get(block.unitId)} is ${block.kind === "repair" ? "in repair" : "blocked"} ${spanLabel({ start: block.startDate, end: block.endDate })}.`;
       else if (twin) conflict = `${labels.get(r.unitId)} is also promised to ${twin.customerName}.`;
     }
@@ -249,7 +255,7 @@ export async function loadScheduleView(now = new Date()): Promise<ScheduleView> 
     resources: units.map((u) => {
       const item = catalogItem(u.itemId);
       const block = blocks.find((b) => b.unitId === u.id && b.startDate <= today && b.endDate >= today);
-      const out = rentals.find((r) => r.unitId === u.id && r.status === "out");
+      const out = rentals.find((r) => r.unitId === u.id && withCustomer(r));
       const status = block ? (block.kind === "repair" ? "repair" : "blocked") : out ? "out" : "shelf";
       return {
         id: u.id,

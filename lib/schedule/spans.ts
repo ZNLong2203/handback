@@ -38,13 +38,18 @@ export type RentalLike = { id: string; status: RentalStatus; startDate: string; 
 /**
  * The days a rental keeps its unit from other customers. A paid booking, and
  * a rental that is out, hold it from the pickup day through the return day.
- * An unpaid draft holds it for a few minutes while the customer is in PayPal.
- * Once the item is back (inspecting onward) the rental holds nothing; if it
- * came back damaged, a repair block takes over.
+ * So does a disputed rental until its item is back: PayPal can open a
+ * dispute on the booking fee while the customer still has the item, so that
+ * status alone does not say where the item is. `returnedOn` is the day of the
+ * return photo, or null if there is none. An unpaid draft holds its unit for
+ * a few minutes while the customer is in PayPal. Once the item is back
+ * (inspecting onward) the rental holds nothing; if it came back damaged, a
+ * repair block takes over.
  */
-export function holdSpan(r: RentalLike, now: Date): Span | null {
+export function holdSpan(r: RentalLike, now: Date, returnedOn: string | null): Span | null {
   const span = { start: r.startDate, end: r.endDate };
   if (r.status === "booked" || r.status === "out") return span;
+  if (r.status === "disputed" && !returnedOn) return span;
   if (r.status === "draft" && now.getTime() - Date.parse(r.createdAt) < DRAFT_HOLD_MINUTES * 60_000) return span;
   return null;
 }

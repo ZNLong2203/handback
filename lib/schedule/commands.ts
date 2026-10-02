@@ -322,8 +322,7 @@ async function proposeFromCall(call: CommandCall, command: string, ctx: CommandC
   const span = { start: call.args.start_date, end: call.args.end_date };
   const problem = blockProblem(span, ctx.today);
   if (problem) return fail(problem);
-  const outNow = await db.query<Record<string, unknown>>("select * from rentals where unit_id = $1 and status = 'out'", [unit.id]);
-  const out = outNow.map(toRental).find((r) => overlaps({ start: r.startDate, end: r.endDate }, span));
+  const out = (await repo.rentalsWithCustomer(db, [unit.id])).find((r) => overlaps({ start: r.startDate, end: r.endDate }, span));
   if (out) return fail(`${unit.label} is out with ${out.customerName} until ${spanLabel({ start: out.endDate, end: out.endDate })}. Block it from the day after it comes back.`);
   const clashing = ctx.bookings.filter((b) => b.unitId === unit.id && overlaps({ start: b.startDate, end: b.endDate }, span));
   const days = dayDiff(span.start, span.end) + 1;

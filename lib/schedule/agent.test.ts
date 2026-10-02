@@ -37,8 +37,9 @@ async function assertNoDoubleBooking() {
   const d = await db();
   const rows = (await d.query<Record<string, unknown>>("select * from rentals where unit_id is not null")).map(rentals.toRental);
   const blocks = await repo.listBlocks(d, "2000-01-01", "2100-01-01");
+  const back = await repo.returnDays(d, rows.map((r) => r.id));
   const holding = rows.flatMap((r) => {
-    const span = holdSpan(r, new Date());
+    const span = holdSpan(r, new Date(), back.get(r.id) ?? null);
     return span ? [{ r, span }] : [];
   });
   for (const a of holding) {
