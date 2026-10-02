@@ -19,7 +19,7 @@ There is no tool to approve a payment, hold a deposit, accept or question a char
 
 1. **Booking.** The renter opens `approveUrl`, logs in to PayPal and approves. PayPal captures nothing yet. It sends the renter back to their rental page, where the server captures the fee (Orders v2 `intent: CAPTURE`) and PayPal saves the wallet for this shop (Vault, `store_in_vault: ON_SUCCESS`).
 2. **Pickup.** The counter photographs the item and holds the deposit on the saved wallet (`intent: AUTHORIZE` with the vault id; the renter is not present). The hold is checked against the mandate first.
-3. **Return.** Two AI looks compare the photos and propose charges from the price list; staff keep or waive each one. The renter accepts or questions every kept charge on their own page.
+3. **Return.** Two AI looks compare the photos and propose charges from the mandate's price list; staff keep or waive each one. The renter accepts or questions every kept charge on their own page.
 4. **Settlement.** The counter settles: one final capture of the charges, and PayPal releases the rest of the hold. Every charge is checked against the mandate first.
 
 ```mermaid
@@ -126,7 +126,7 @@ Every booking, from an assistant or from the website, gets a deposit mandate. It
 | `feeCents` | The rental fee, captured when the renter approves in PayPal |
 | `hold` | `maxCents`, the most the shop may hold, starting `at_pickup` |
 | `charges` | The rules the code applies: amounts only `from` the `price_list`, `onlyAfter` the charge was `shown_to_renter`; an `accepted` charge is `charged`; a `questioned` one is decided by the shop (`shop_decides`); anything `aboveHold` goes to the `saved_paypal` wallet |
-| `priceList` | The repair price list at the time of booking. Later changes to the shop's prices do not apply to this rental |
+| `priceList` | The repair price list at the time of booking. The return inspection prices findings from this list, so later changes to the shop's prices do not apply to this rental |
 | `expiresAt` | 29 days after the scheduled pickup date, the life of a PayPal authorization placed at pickup. Nothing can be held or charged under the mandate after it. Rentals last at most 21 days, so this leaves at least 8 days after the scheduled return to settle; a late pickup does not move it |
 | `createdAt` | When it was issued |
 

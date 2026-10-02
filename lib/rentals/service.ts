@@ -378,7 +378,19 @@ export async function acknowledgeCheckout(token: string): Promise<void> {
 
 // ─── Return ─────────────────────────────────────────────────
 
-/** Compares the latest pickup and return photos with two independent looks. */
+/**
+ * The item on the terms it was booked: repairs are priced from the list
+ * frozen in the renter's mandate, so a later change to the shop's prices is
+ * never proposed to them. Without an intact mandate it falls back to today's
+ * list; settle then refuses any charge a mandate does not cover.
+ */
+function itemAsBooked(rental: Rental): RentalItem {
+  const item = { ...catalogItem(rental.itemId), depositCents: rental.depositCents };
+  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
+  return opened?.intact ? { ...item, prices: opened.mandate.priceList } : item;
+}
+
+/** Compares the latest pickup and return photos with two independent looks, pricing from the renter's agreed list. */
 export async function inspect(rentalId: string): Promise<void> {
   const rental = await mustRental(rentalId);
   expectStatus(rental, ["out"], "inspect the return");
@@ -390,7 +402,7 @@ export async function inspect(rentalId: string): Promise<void> {
   const [before, after] = await Promise.all([loadPhoto(checkout.photoSha), loadPhoto(checkin.photoSha)]);
   if (!before || !after) throw new UserError("A photo is missing from storage.");
 
-  const item = catalogItem(rental.itemId);
+  const item = itemAsBooked(rental);
   const run = await inspectReturn({ bytes: before.bytes, sample: checkout.sample }, { bytes: after.bytes, sample: checkin.sample }, item, SHOP.name);
   const findings: ReviewedFinding[] = run.assessment.findings.map((f) => ({
     ...f,

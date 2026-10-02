@@ -7,6 +7,7 @@ process.env.DEMO_MODE = "true";
 process.env.DATABASE_URL = "memory";
 delete process.env.PAYPAL_CLIENT_ID;
 
+const { catalogItem } = await import("@/lib/catalog");
 const { getDb } = await import("@/lib/db/client");
 const { addDaysIso, todayIso } = await import("@/lib/dates");
 const { canonicalJson, firstBrokenLink } = await import("./audit");
@@ -208,6 +209,25 @@ describe("deposit mandate", () => {
       ["system", "mandate.issued"],
       ["assistant", "booking.started"],
     ]);
+  });
+
+  it("prices the return from the list the renter agreed to, not from today's", async () => {
+    const { rentalId, token } = await outRental();
+    // The shop raises the lens hood from $35 to $50 while the camera is out.
+    const hood = catalogItem("camera-kit").prices.find((p) => p.id === "missing-hood")!;
+    hood.cents = 5000;
+    try {
+      await svc.addPhoto(rentalId, "checkin", { sample: "camera-kit/after__missing-hood" });
+      await svc.inspect(rentalId);
+    } finally {
+      hood.cents = 3500;
+    }
+    const charges = (await assessment(rentalId)).findings.filter((f) => f.staff === "keep");
+    expect(charges.map((f) => [f.price?.label, f.price?.cents])).toEqual([["Replace lens hood", 3500]]);
+    await svc.sendToCustomer(rentalId);
+    await svc.respondAsCustomer(token, charges.map((f) => ({ findingId: f.id, answer: "accept" as const })));
+    await svc.settle(rentalId);
+    expect(await rental(rentalId)).toMatchObject({ status: "settled", capturedCents: 3500, releasedCents: 26500 });
   });
 
   it("blocks a charge whose amount no longer matches the mandate the renter approved", async () => {
