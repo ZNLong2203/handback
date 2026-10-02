@@ -1,5 +1,7 @@
 import { ApiError } from "@paypal/paypal-server-sdk";
 
+const BRAND = Symbol.for("handback.PayPalError");
+
 /**
  * One error shape for every PayPal failure, whether it came from the Server
  * SDK or from our own REST calls. `issue` is the machine-readable reason
@@ -7,6 +9,8 @@ import { ApiError } from "@paypal/paypal-server-sdk";
  * asks for and is logged with every failure.
  */
 export class PayPalError extends Error {
+  readonly [BRAND] = true;
+
   constructor(
     readonly status: number,
     readonly errorName: string,
@@ -16,6 +20,15 @@ export class PayPalError extends Error {
   ) {
     super(message);
     this.name = "PayPalError";
+  }
+
+  /**
+   * Use this, not instanceof. Next.js bundles route handlers and pages with
+   * their own copy of this module, while the one gateway is shared through
+   * globalThis, so a page can receive a PayPalError built by another copy.
+   */
+  static is(err: unknown): err is PayPalError {
+    return typeof err === "object" && err !== null && (err as { [BRAND]?: unknown })[BRAND] === true;
   }
 
   /** True when retrying the same request later could succeed. */
@@ -43,7 +56,7 @@ export function paypalErrorFromBody(status: number, body: unknown, headerDebugId
 
 /** Normalises anything thrown by a Server SDK call into a PayPalError. */
 export function toPayPalError(err: unknown): PayPalError {
-  if (err instanceof PayPalError) return err;
+  if (PayPalError.is(err)) return err;
   if (err instanceof ApiError) {
     let body: unknown = err.result;
     if (body === undefined && typeof err.body === "string") {

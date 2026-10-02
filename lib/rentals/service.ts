@@ -31,7 +31,7 @@ async function paypalStep<T>(rentalId: string, step: string, fn: () => Promise<T
   try {
     return await fn();
   } catch (err) {
-    if (!(err instanceof PayPalError)) throw err;
+    if (!PayPalError.is(err)) throw err;
     const db = await getDb();
     await appendEvent(db, rentalId, "paypal", "paypal.error", { step, status: err.status, name: err.errorName, issue: err.issue ?? null, debugId: err.debugId ?? null });
     publish(rentalId, "paypal.error");
@@ -46,6 +46,8 @@ function friendlyPayPalMessage(step: string, err: PayPalError): string {
       return `PayPal declined the payment method. Ask the customer to choose another one in PayPal${ref}.`;
     case "PAYER_ACTION_REQUIRED":
       return `The customer still needs to approve this in PayPal${ref}.`;
+    case "ORDER_NOT_APPROVED":
+      return `PayPal has no approval for this payment yet, so nothing was charged. Approve it in PayPal first${ref}.`;
     case "MAX_CAPTURE_AMOUNT_EXCEEDED":
       return `That is more than the deposit PayPal is holding${ref}.`;
     case "AUTHORIZATION_EXPIRED":

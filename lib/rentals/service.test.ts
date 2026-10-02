@@ -1,6 +1,6 @@
 // End-to-end rental scenarios in demo mode: the PayPal stand-in, an
 // in-memory database, and recorded Gemini replies for the sample photos.
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 process.env.DEMO_MODE = "true";
 process.env.DATABASE_URL = "memory";
@@ -250,6 +250,34 @@ describe("approving by redirect", () => {
     expect(await Promise.all([svc.returnFromPayPal(b.token, query), svc.returnFromPayPal(b.token, query)])).toEqual(["approved", "approved"]);
     const paid = (await repo.eventsFor(await getDb(), b.rentalId)).filter((e) => e.type === "booking.paid");
     expect(paid).toHaveLength(1);
+  });
+
+  it("shows the renter PayPal's refusal, keeps the booking unpaid, and still books on the real approval", async () => {
+    const b = await draft();
+    // The refusal comes from another copy of the errors module, as it does in
+    // Next.js when the MCP route created the shared gateway (see PayPalError.is).
+    vi.resetModules();
+    const { PayPalError: OtherCopy } = await import("@/lib/paypal/errors");
+    const shared = globalThis as { depositGateway?: object };
+    const real = shared.depositGateway!;
+    shared.depositGateway = Object.assign(Object.create(real), {
+      captureBookingOrder: async () => {
+        throw new OtherCopy(422, "UNPROCESSABLE_ENTITY", "ORDER_NOT_APPROVED", "f73514956e4a5", "Payer has not yet approved the Order for payment.");
+      },
+    });
+    try {
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "NOTAPPROVED1" })).toEqual({
+        error: "PayPal has no approval for this payment yet, so nothing was charged. Approve it in PayPal first (PayPal reference f73514956e4a5).",
+      });
+    } finally {
+      shared.depositGateway = real;
+    }
+    expect((await rental(b.rentalId)).status).toBe("draft");
+    const refused = (await repo.eventsFor(await getDb(), b.rentalId)).at(-1);
+    expect(refused).toMatchObject({ type: "paypal.error", data: { issue: "ORDER_NOT_APPROVED", debugId: "f73514956e4a5" } });
+
+    expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
+    expect((await rental(b.rentalId)).status).toBe("booked");
   });
 
   it("reports a cancel, and ignores a return for some other order or without a payer", async () => {

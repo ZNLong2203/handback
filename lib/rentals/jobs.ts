@@ -67,7 +67,7 @@ export async function renewDueHolds(now = new Date(), gateway: DepositGateway = 
       publish(row.id, "deposit.reauthorized");
       results.push({ rentalId: row.id, outcome: "renewed", detail: fresh.authorizationId });
     } catch (err) {
-      const e = err instanceof PayPalError ? err : null;
+      const e = PayPalError.is(err) ? err : null;
       await appendEvent(db, row.id, "paypal", "paypal.error", {
         step: "renew the deposit hold",
         status: e?.status ?? 0,
