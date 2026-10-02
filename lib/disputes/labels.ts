@@ -44,6 +44,7 @@ export const evidenceLabel = (t: string) => EVIDENCE_LABEL[t] ?? t.toLowerCase()
 
 export const OUTCOME_REASON_LABEL: Record<string, string> = {
   INELIGIBLE_BUYER_PROTECTION_POLICY: "not covered by PayPal's Buyer Protection",
+  INELIGIBLE_SELLER_PROTECTION_POLICY: "not covered by PayPal's Seller Protection",
   VALID_PROOF_SUPPORTING_CLAIM: "the customer's proof supported the claim",
   NO_SELLER_RESPONSE: "the shop did not answer in time",
   SELLER_ISSUED_REFUND: "the shop refunded",

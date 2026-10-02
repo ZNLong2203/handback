@@ -27,6 +27,7 @@ function captureName(rental: Rental, transactionId: string | null): string {
 }
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const at = (m: { at: string | null }) => (m.at ? ` on ${utc(m.at)}` : "");
 
 /**
  * The counter's view of a PayPal dispute: what PayPal says, what the record
@@ -34,7 +35,7 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
  * the dispute right now.
  */
 export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rental }) {
-  const { dispute: d, actions, recommendation: rec, pack } = desk;
+  const { dispute: d, actions, recommendation: rec, pack, money } = desk;
   const status = disputeStatusLabel(d.status, d.outcome);
   const resolved = d.status === "RESOLVED";
   const canOffer = Boolean(rec.offerCents && actions.makeOffer?.includes("REFUND"));
@@ -80,13 +81,28 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
             <dd className="font-medium">{desk.requested.map(evidenceLabel).join(", ")}</dd>
           </div>
         )}
-        {desk.hold && (
+        {money.held && (
           <div className="sm:col-span-2">
-            <dt className="text-muted">Money on hold</dt>
+            <dt className="text-muted">{resolved ? "The shop's balance" : "Money on hold"}</dt>
             <dd className="font-medium">
-              PayPal held {formatUsd(desk.hold.cents)} of the shop&apos;s balance
-              {desk.hold.placedAt ? ` on ${utc(desk.hold.placedAt)}` : ""}
-              {desk.hold.releasedAt ? ` and released it on ${utc(desk.hold.releasedAt)}` : " while it decides"}.
+              PayPal held {formatUsd(money.held.cents)} of the shop&apos;s balance{at(money.held)}
+              {money.released
+                ? ` and released it${at(money.released)}`
+                : money.paidToCustomer
+                  ? ` and paid ${formatUsd(money.paidToCustomer.cents)} to the customer${at(money.paidToCustomer)}`
+                  : resolved
+                    ? ""
+                    : " while it decides"}
+              .
+            </dd>
+          </div>
+        )}
+        {money.fee && (
+          <div className="sm:col-span-2">
+            <dt className="text-muted">Dispute fee</dt>
+            <dd className="font-medium">
+              PayPal charged the shop {formatUsd(money.fee.cents)}
+              {at(money.fee)}.
             </dd>
           </div>
         )}
@@ -95,7 +111,7 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
       {resolved && (
         <Notice tone={d.outcome === "RESOLVED_SELLER_FAVOUR" ? "released" : "charged"} title={status.label}>
           {d.outcome === "RESOLVED_BUYER_FAVOUR"
-            ? `PayPal refunded ${formatUsd(d.refundedCents ?? amount)} to the customer.`
+            ? `PayPal refunded ${formatUsd(d.refundedCents ?? amount)} to the customer${money.fee ? ` and charged the shop a ${formatUsd(money.fee.cents)} dispute fee` : ""}.`
             : d.outcome === "RESOLVED_SELLER_FAVOUR"
               ? "The shop keeps the charge."
               : "PayPal closed the case."}
@@ -249,7 +265,11 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
             </div>
           ) : (
             <p className="mt-2 text-sm text-ink-soft">
-              Nothing to play right now. {desk.mode === "sandbox" ? "In our sandbox runs PayPal offered these about two to three minutes after it received evidence; refresh to check." : "These appear once PayPal is reviewing the case."}
+              {desk.sandboxDecidedAt
+                ? `The sandbox was asked to decide at ${utc(desk.sandboxDecidedAt)}. In our runs the decision showed about two minutes later; refresh to check.`
+                : desk.mode === "sandbox"
+                  ? "Nothing to play right now. In our sandbox runs PayPal offered these two to four minutes after it received evidence; refresh to check."
+                  : "Nothing to play right now. These appear once PayPal is reviewing the case."}
             </p>
           )}
         </section>

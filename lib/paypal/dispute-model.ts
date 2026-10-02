@@ -252,6 +252,34 @@ export function usdCents(m: PayPalMoney | undefined): Cents | null {
   return fromPayPalValue(m.value);
 }
 
+// ─── What PayPal moved on the shop's balance ───────────────
+
+export type Movement = { cents: Cents; at: string | null };
+export type ShopMoney = { held: Movement | null; released: Movement | null; paidToCustomer: Movement | null; fee: Movement | null };
+
+/**
+ * The dispute's money as PayPal reported it in fund_movements. In the
+ * sandbox runs (docs/paypal-sandbox-notes.md) a claim placed a HOLD_PLACED
+ * debit on the seller ("RECEIVER"); a decision for the seller released it
+ * (HOLD_RELEASED); a decision for the buyer debited the seller ("SELLER")
+ * a DISPUTE_SETTLEMENT and a DISPUTE_FEE and credited the buyer.
+ */
+export function shopMoney(d: Pick<Dispute, "fund_movements">): ShopMoney {
+  const moves = d.fund_movements ?? [];
+  const shop = (m: (typeof moves)[number]) => m.party === "RECEIVER" || m.party === "SELLER";
+  const find = (reason: string, type: "DEBIT" | "CREDIT"): Movement | null => {
+    const m = moves.find((x) => shop(x) && x.reason === reason && x.type === type);
+    const cents = usdCents(m?.amount);
+    return m && cents !== null ? { cents, at: m.initiated_time ?? null } : null;
+  };
+  return {
+    held: find("HOLD_PLACED", "DEBIT"),
+    released: find("HOLD_RELEASED", "CREDIT"),
+    paidToCustomer: find("DISPUTE_SETTLEMENT", "DEBIT"),
+    fee: find("DISPUTE_FEE", "DEBIT"),
+  };
+}
+
 // ─── The API, real or stand-in ──────────────────────────────
 
 export type DisputeQuery = { disputedTransactionId?: string; updateTimeAfter?: string; pageSize?: number };

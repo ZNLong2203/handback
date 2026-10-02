@@ -12,11 +12,13 @@ import {
   DisputeSchema,
   requestedEvidence,
   sellerSubmissions,
+  shopMoney,
   usdCents,
   type ActionReceipt,
   type Dispute,
   type DisputeActions,
   type EvidenceFile,
+  type ShopMoney,
 } from "@/lib/paypal/dispute-model";
 import type { PayPalMode } from "@/lib/paypal/config";
 import { loadPhoto } from "@/lib/photos";
@@ -332,8 +334,10 @@ export type DisputeDesk = {
   recommendation: Recommendation;
   pack: (StoredPack & { current: boolean }) | null;
   sent: { sha256: string; at: string; evidenceType: string; files: string[] }[];
-  /** The disputed amount PayPal held from the shop's balance, if PayPal reported it. */
-  hold: { cents: Cents; placedAt: string | null; releasedAt: string | null } | null;
+  /** What PayPal held, released, paid to the customer and charged as a fee, as it reported it. */
+  money: ShopMoney;
+  /** When the sandbox's adjudicate call was sent for this dispute, if it was. */
+  sandboxDecidedAt: string | null;
   /** Whole days until PayPal's response deadline, when there is one. */
   daysLeft: number | null;
   /** What the customer wrote when they opened the case. */
@@ -389,9 +393,6 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
   const sent = view.events
     .filter((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === stored.id)
     .map((e) => ({ sha256: String(e.data.sha256), at: e.at, evidenceType: String(e.data.evidenceType), files: (e.data.files as string[]) ?? [] }));
-  const moves = paypal?.fund_movements ?? [];
-  const placed = moves.find((m) => m.reason === "HOLD_PLACED");
-  const released = moves.find((m) => m.reason === "HOLD_RELEASED");
   return {
     dispute: stored,
     paypal,
@@ -400,7 +401,8 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
     recommendation,
     pack: latest ? { ...latest, current: latest.factsSha === factsSha(nowFacts) } : null,
     sent,
-    hold: placed?.amount ? { cents: usdCents(placed.amount) ?? 0, placedAt: placed.initiated_time ?? null, releasedAt: released?.initiated_time ?? null } : null,
+    money: shopMoney(paypal ?? stored.paypal),
+    sandboxDecidedAt: view.events.findLast((e) => e.type === "dispute.sandbox_decided" && e.data.disputeId === stored.id)?.at ?? null,
     daysLeft: stored.sellerResponseDueAt ? Math.max(0, Math.ceil((Date.parse(stored.sellerResponseDueAt) - now.getTime()) / 86_400_000)) : null,
     customerNote: stored.paypal.evidences?.find((e) => e.source === "SUBMITTED_BY_BUYER" && e.notes)?.notes ?? null,
     mode: disputeApi().mode,

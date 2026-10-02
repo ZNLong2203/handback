@@ -117,6 +117,8 @@ export class DemoDisputeApi implements DisputeApi {
         { evidence_type: "OTHER", source: "REQUESTED_FROM_SELLER", date: at },
       ],
       seller_response_due_date: dueIn(this.now(), 10),
+      // The sandbox held the disputed amount from the seller about 3.5 minutes after filing.
+      fund_movements: [{ party: "RECEIVER", amount: money(o.disputedCents), initiated_time: at, type: "DEBIT", reason: "HOLD_PLACED" }],
       offer: { buyer_requested_amount: money(o.disputedCents) },
       refund_details: { allowed_refund_amount: money(o.disputedCents) },
       allowed_response_options: { accept_claim: { accept_claim_types: ["REFUND"] } },
@@ -165,7 +167,8 @@ export class DemoDisputeApi implements DisputeApi {
     await this.ready();
     const cur = this.current(d, "accept_claim");
     const refunded = a.type === "PARTIAL_REFUND" && a.refundCents ? toPayPalValue(a.refundCents) : cur.dispute_amount.value;
-    return this.resolve(cur, "RESOLVED_BUYER_FAVOUR", refunded);
+    // Not seen in the sandbox yet: only the refund is recorded, no fee.
+    return this.resolve(cur, "RESOLVED_BUYER_FAVOUR", refunded, null);
   }
 
   async makeOffer(d: Dispute, o: Offer, requestId: string): Promise<ActionReceipt> {
@@ -217,15 +220,32 @@ export class DemoDisputeApi implements DisputeApi {
     void requestId;
     await this.ready();
     const cur = this.current(d, "adjudicate");
-    return outcome === "SELLER_FAVOR" ? this.resolve(cur, "RESOLVED_SELLER_FAVOUR", null) : this.resolve(cur, "RESOLVED_BUYER_FAVOUR", cur.dispute_amount.value);
+    // As the sandbox decided on 2026-10-02: for the seller the hold is released; for the
+    // buyer the seller pays the disputed amount and the $15.00 Standard dispute fee.
+    return outcome === "SELLER_FAVOR"
+      ? this.resolve(cur, "RESOLVED_SELLER_FAVOUR", null, null)
+      : this.resolve(cur, "RESOLVED_BUYER_FAVOUR", cur.dispute_amount.value, "15.00");
   }
 
-  private resolve(cur: Dispute, outcome: string, refunded: string | null): Promise<ActionReceipt> {
+  private resolve(cur: Dispute, outcome: string, refunded: string | null, fee: string | null): Promise<ActionReceipt> {
+    const at = this.now().toISOString();
+    const usd = (value: string) => ({ currency_code: "USD", value });
+    const held = (cur.fund_movements ?? []).find((m) => m.reason === "HOLD_PLACED");
+    const moves = refunded
+      ? [
+          { party: "SELLER", amount: usd(refunded), initiated_time: at, type: "DEBIT", reason: "DISPUTE_SETTLEMENT" },
+          ...(fee ? [{ party: "SELLER", amount: usd(fee), initiated_time: at, type: "DEBIT", reason: "DISPUTE_FEE" }] : []),
+          { party: "BUYER", amount: usd(refunded), initiated_time: at, type: "CREDIT", reason: "DISPUTE_SETTLEMENT" },
+        ]
+      : held
+        ? [{ party: "RECEIVER", amount: held.amount, initiated_time: at, type: "CREDIT", reason: "HOLD_RELEASED" }]
+        : [];
     return this.change(cur, {
       status: "RESOLVED",
       dispute_state: "RESOLVED",
       seller_response_due_date: undefined,
-      dispute_outcome: { outcome_code: outcome, ...(refunded ? { amount_refunded: { currency_code: "USD", value: refunded } } : {}) },
+      dispute_outcome: { outcome_code: outcome, ...(refunded ? { amount_refunded: usd(refunded) } : {}) },
+      fund_movements: [...(cur.fund_movements ?? []), ...moves],
       links: [link(cur.dispute_id, "self", "GET")],
     });
   }

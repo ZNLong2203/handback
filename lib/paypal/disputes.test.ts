@@ -84,6 +84,43 @@ describe("availableActions", () => {
   });
 });
 
+describe("shopMoney", () => {
+  // fund_movements exactly as the sandbox returned them for PP-R-HKL-10190228 and PP-R-XKA-10190233.
+  const usd = (value: string) => ({ currency_code: "USD", value });
+  const held = { party: "RECEIVER", amount: usd("20.00"), initiated_time: "2026-10-02T14:00:04.000Z", type: "DEBIT", reason: "HOLD_PLACED" };
+
+  it("reads a hold PayPal released when it decided for the shop", () => {
+    const won = { fund_movements: [held, { party: "RECEIVER", amount: usd("20.00"), initiated_time: "2026-10-02T15:03:34.000Z", type: "CREDIT", reason: "HOLD_RELEASED" }] };
+    expect(model.shopMoney(won)).toEqual({
+      held: { cents: 2000, at: "2026-10-02T14:00:04.000Z" },
+      released: { cents: 2000, at: "2026-10-02T15:03:34.000Z" },
+      paidToCustomer: null,
+      fee: null,
+    });
+  });
+
+  it("reads the payout and the dispute fee when PayPal decided for the customer", () => {
+    const lost = {
+      fund_movements: [
+        { ...held, initiated_time: "2026-10-02T15:27:34.000Z" },
+        { party: "SELLER", amount: usd("20.00"), initiated_time: "2026-10-02T15:37:35.898Z", type: "DEBIT", reason: "DISPUTE_SETTLEMENT" },
+        { party: "SELLER", amount: usd("15.00"), initiated_time: "2026-10-02T15:37:35.898Z", type: "DEBIT", reason: "DISPUTE_FEE" },
+        { party: "BUYER", amount: usd("20.00"), initiated_time: "2026-10-02T15:37:35.898Z", type: "CREDIT", reason: "DISPUTE_SETTLEMENT" },
+      ],
+    };
+    expect(model.shopMoney(lost)).toEqual({
+      held: { cents: 2000, at: "2026-10-02T15:27:34.000Z" },
+      released: null,
+      paidToCustomer: { cents: 2000, at: "2026-10-02T15:37:35.898Z" },
+      fee: { cents: 1500, at: "2026-10-02T15:37:35.898Z" },
+    });
+  });
+
+  it("reports nothing when PayPal has not moved money", () => {
+    expect(model.shopMoney({})).toEqual({ held: null, released: null, paidToCustomer: null, fee: null });
+  });
+});
+
 describe("chooseEvidenceType", () => {
   it("files under OTHER when PayPal asks for proof a counter rental does not have", () => {
     expect(model.chooseEvidenceType(inquiry)).toBe("OTHER");
