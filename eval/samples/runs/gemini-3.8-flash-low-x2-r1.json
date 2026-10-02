@@ -1,0 +1,452 @@
+{
+  "metrics": {
+    "set": "samples",
+    "prompt": 2,
+    "model": "gemini-3.8-flash",
+    "thinking": "low",
+    "passes": 2,
+    "pairs": 5,
+    "realChanges": 4,
+    "caughtAny": 4,
+    "caughtCharged": 4,
+    "pricedRight": 4,
+    "unchangedPairs": 2,
+    "unchangedWithFalseCharge": 0,
+    "falseChargesOnChangedPairs": 0,
+    "errors": 0,
+    "repaired": 0,
+    "networkRetries": 0,
+    "p50ms": 4258,
+    "p95ms": 6483,
+    "inputTokensPerPair": 5794,
+    "outputTokensPerPair": 940
+  },
+  "results": [
+    {
+      "id": "city-bike__frame-scratch",
+      "changed": true,
+      "ms": 3015,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5794,
+        "outputTokens": 446
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "damage: frame",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 2500,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "new_damage",
+            "item": "frame",
+            "description": "Scratches and paint scraping along the main downtube of the bike frame.",
+            "evidence": "Heavy white scratches exposing primer/metal are visible along the down tube in photo B, whereas the same area in photo A shows clean green paint with no scratches.",
+            "box_before": [
+              435,
+              348,
+              622,
+              513
+            ],
+            "box_after": [
+              436,
+              349,
+              621,
+              516
+            ],
+            "confidence": "high",
+            "price_item_id": "frame-scratch"
+          }
+        ],
+        "summary": "The bike was returned with new paint scratches along the down tube."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "frame",
+              "description": "Scratches and paint scraping along the main downtube of the bike frame.",
+              "evidence": "Heavy white scratches exposing primer/metal are visible along the down tube in photo B, whereas the same area in photo A shows clean green paint with no scratches.",
+              "box_before": [
+                435,
+                348,
+                622,
+                513
+              ],
+              "box_after": [
+                436,
+                349,
+                621,
+                516
+              ],
+              "confidence": "high",
+              "price_item_id": "frame-scratch"
+            }
+          ],
+          "summary": "The bike was returned with new paint scratches along the down tube."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "new_damage",
+              "item": "frame",
+              "description": "There are extensive white scratches and paint scrapes along the main down tubes of the frame.",
+              "evidence": "Distinct deep scratches and abrasions exposing lighter undercoat/metal are clearly visible along the frame tubes in Photo B, whereas the paint in Photo A was clean and smooth in the same area under identical lighting.",
+              "box_before": [
+                336,
+                345,
+                608,
+                584
+              ],
+              "box_after": [
+                342,
+                346,
+                613,
+                588
+              ],
+              "confidence": "high",
+              "price_item_id": "frame-scratch"
+            }
+          ],
+          "summary": "The bike frame has sustained significant paint scratches on the down tubes."
+        }
+      ]
+    },
+    {
+      "id": "city-bike__missing-holder",
+      "changed": true,
+      "ms": 4258,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5794,
+        "outputTokens": 1148
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: phone holder",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 1200,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "phone holder",
+            "description": "The handlebar-mounted phone holder is missing from the bicycle.",
+            "evidence": "The phone holder attached to the center of the handlebar in the check-out photo is completely absent in the check-in photo.",
+            "box_before": [
+              115,
+              422,
+              256,
+              498
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-phone-holder"
+          }
+        ],
+        "summary": "The bicycle was returned in good condition, but the phone holder is missing from the handlebars."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "phone holder",
+              "description": "The handlebar-mounted phone holder is missing from the bicycle.",
+              "evidence": "The phone holder attached to the center of the handlebar in the check-out photo is completely absent in the check-in photo.",
+              "box_before": [
+                115,
+                422,
+                256,
+                498
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-phone-holder"
+            }
+          ],
+          "summary": "The bicycle was returned in good condition, but the phone holder is missing from the handlebars."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "phone holder",
+              "description": "The phone holder mount is missing from the handlebars.",
+              "evidence": "The handlebar bracket and phone mount visible in the center of the handlebars at check-out are absent in the check-in photo.",
+              "box_before": [
+                115,
+                424,
+                254,
+                498
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-phone-holder"
+            }
+          ],
+          "summary": "The bike was returned in good condition but is missing the phone holder from the handlebars."
+        }
+      ]
+    },
+    {
+      "id": "city-bike__missing-holder-rear-light",
+      "changed": true,
+      "ms": 6483,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5794,
+        "outputTokens": 2089
+      },
+      "retries": 0,
+      "caught": [
+        {
+          "change": "missing: phone holder",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        },
+        {
+          "change": "missing: rear light",
+          "any": true,
+          "charged": true,
+          "priceRight": true
+        }
+      ],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 2700,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [
+          {
+            "kind": "missing",
+            "item": "phone holder",
+            "description": "The phone holder on the handlebars is missing.",
+            "evidence": "The phone mount visible on the center of the handlebars in check-out is absent in check-in.",
+            "box_before": [
+              114,
+              423,
+              255,
+              499
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-phone-holder"
+          },
+          {
+            "kind": "missing",
+            "item": "rear light",
+            "description": "The rear light attached below the saddle is missing.",
+            "evidence": "The red rear light mounted to the seat post in photo A is not attached in photo B.",
+            "box_before": [
+              357,
+              652,
+              391,
+              698
+            ],
+            "box_after": null,
+            "confidence": "high",
+            "price_item_id": "missing-rear-light"
+          }
+        ],
+        "summary": "The bike was returned without the phone holder and the rear light."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "phone holder",
+              "description": "The phone holder on the handlebars is missing.",
+              "evidence": "The phone mount visible on the center of the handlebars in check-out is absent in check-in.",
+              "box_before": [
+                114,
+                423,
+                255,
+                499
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-phone-holder"
+            },
+            {
+              "kind": "missing",
+              "item": "rear light",
+              "description": "The rear light attached below the saddle is missing.",
+              "evidence": "The red rear light mounted to the seat post in photo A is not attached in photo B.",
+              "box_before": [
+                357,
+                652,
+                391,
+                698
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-rear-light"
+            }
+          ],
+          "summary": "The bike was returned without the phone holder and the rear light."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [
+            {
+              "kind": "missing",
+              "item": "phone holder",
+              "description": "The handlebar-mounted phone holder is missing.",
+              "evidence": "The phone mount clamped to the center of the handlebars in check-out is absent in check-in.",
+              "box_before": [
+                114,
+                421,
+                255,
+                498
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-phone-holder"
+            },
+            {
+              "kind": "missing",
+              "item": "rear light",
+              "description": "The red rear light mounted to the seat post is missing.",
+              "evidence": "The red light attached to the seat post below the saddle in the check-out photo is absent in the check-in photo.",
+              "box_before": [
+                356,
+                646,
+                394,
+                697
+              ],
+              "box_after": null,
+              "confidence": "high",
+              "price_item_id": "missing-rear-light"
+            }
+          ],
+          "summary": "The bicycle was returned missing both the handlebar phone holder and the seatpost rear light."
+        }
+      ]
+    },
+    {
+      "id": "city-bike__same-light",
+      "changed": false,
+      "ms": 4730,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5794,
+        "outputTokens": 679
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The bike and all accessories were returned in the same condition with no new damage or missing items."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The bike and all accessories were returned in the same condition with no new damage or missing items."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The bike and all accessories were returned in the same condition with no new damage or missing parts."
+        }
+      ]
+    },
+    {
+      "id": "city-bike__same-pose",
+      "changed": false,
+      "ms": 3622,
+      "repaired": false,
+      "usage": {
+        "inputTokens": 5794,
+        "outputTokens": 340
+      },
+      "retries": 0,
+      "caught": [],
+      "falseCharges": [],
+      "notes": 0,
+      "proposedCents": 0,
+      "usable": true,
+      "output": {
+        "photos_usable": true,
+        "photo_issue": null,
+        "same_item": true,
+        "findings": [],
+        "summary": "The bicycle was returned in identical condition with all accessories present."
+      },
+      "outputs": [
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The bicycle was returned in identical condition with all accessories present."
+        },
+        {
+          "photos_usable": true,
+          "photo_issue": null,
+          "same_item": true,
+          "findings": [],
+          "summary": "The city bike and all accessories were returned in the same condition with no new damage or missing items."
+        }
+      ]
+    }
+  ]
+}

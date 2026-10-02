@@ -22,9 +22,15 @@
  *   npm run eval:pairs -- --force          # regenerate everything
  *   npm run eval:pairs -- --set real       # the real-photo set in eval/real
  *   npm run eval:pairs -- --set real --redo <id>  # re-composite matching edits from the saved model output
+ *   npm run eval:pairs -- --set samples    # the demo-only sample photos in eval/samples (--redo works the same)
  *
  * To ask the image model again for one real-photo edit, delete its file in
  * eval/real/.raw/ and run with --redo <id>.
+ *
+ * With --set samples, it builds the demo-only sample photos in eval/samples
+ * (scripts/eval/sample-photos.ts): AI-generated like the synthetic set, but
+ * edited the way the real set is, region by region. They are not part of
+ * the published eval numbers.
  */
 import { GoogleGenAI, Modality } from "@google/genai";
 import { existsSync } from "node:fs";
@@ -33,18 +39,19 @@ import path from "node:path";
 import sharp from "sharp";
 import { pasteBack } from "./composite";
 import { REAL_EDITS, REAL_PHOTOS, type RealPhoto } from "./real-photos";
+import { SAMPLE_EDITS, SAMPLE_SCENES, SAMPLE_STYLE, type SampleStep } from "./sample-photos";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
-const SETS = { synthetic: "eval", real: "eval/real" } as const;
+const SETS = { synthetic: "eval", real: "eval/real", samples: "eval/samples" } as const;
 const set = (arg("set") ?? "synthetic") as keyof typeof SETS;
 if (!(set in SETS)) throw new Error(`--set must be one of: ${Object.keys(SETS).join(", ")}`);
 
 const ROOT = path.resolve(SETS[set]);
 const IMAGES = path.join(ROOT, "images");
-/** The image model's full edits of real photos, kept so a region can be re-composited without a new call. Not committed. */
+/** The image model's full edits (real and sample sets), kept so a region can be re-composited without a new call. Not committed. */
 const RAW_EDITS = path.join(ROOT, ".raw");
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image";
 const force = process.argv.includes("--force");
@@ -523,6 +530,88 @@ async function buildReal(ai: GoogleGenAI): Promise<Pair[]> {
   return pairs;
 }
 
+/**
+ * The demo-only samples: an AI-generated pickup photo per scene, code-only
+ * light and pose shifts, and image-model edits pasted back region by region
+ * the way the real set is, so only the requested change differs.
+ */
+async function buildSamples(ai: GoogleGenAI): Promise<Pair[]> {
+  const pairs: Pair[] = [];
+  await mkdir(RAW_EDITS, { recursive: true });
+  for (const [s, scene] of SAMPLE_SCENES.entries()) {
+    const dir = path.join(IMAGES, scene.id);
+    await mkdir(dir, { recursive: true });
+    const beforePath = path.join(dir, "before.jpg");
+    if (force || !existsSync(beforePath)) {
+      await writeFile(beforePath, await generate(ai, `${scene.prompt}\n\n${SAMPLE_STYLE}`, { aspectRatio: "4:3", imageSize: "2K", width: 1280 }));
+      console.log(`generated ${scene.id}/before.jpg`);
+    }
+    const before = await readFile(beforePath);
+
+    for (const neg of ["light", "pose"] as const) {
+      const file = path.join(dir, `after__same-${neg}.jpg`);
+      // Coloured scenes keep their colours: the same light and turn as the real-photo set.
+      if (force || !existsSync(file)) await writeFile(file, await shiftSession(before, neg, s + 1, true));
+      pairs.push({
+        id: `${scene.id}__same-${neg}`,
+        scene: scene.id,
+        item: scene.item,
+        incidental: [],
+        before: path.relative(ROOT, beforePath),
+        after: path.relative(ROOT, file),
+        truth: { changed: false, changes: [] },
+        source: `${IMAGE_MODEL} image + code: ${neg}`,
+      });
+    }
+
+    // One model call per step, shared by every edit that uses the step.
+    const rawEdits = new Map<string, Promise<Buffer>>();
+    const rawEdit = (step: SampleStep) => {
+      if (!rawEdits.has(step.name)) {
+        rawEdits.set(
+          step.name,
+          (async () => {
+            const rawPath = path.join(RAW_EDITS, `${step.name}.png`);
+            if (force || !existsSync(rawPath)) {
+              await writeFile(rawPath, await generate(ai, editRequest(before, step.instruction), { aspectRatio: "4:3", imageSize: "2K" }));
+              console.log(`edited ${step.name}`);
+            }
+            return readFile(rawPath);
+          })(),
+        );
+      }
+      return rawEdits.get(step.name)!;
+    };
+
+    await Promise.all(
+      SAMPLE_EDITS.filter((e) => e.scene === scene.id).map(async (edit) => {
+        const file = path.join(dir, `after__${edit.id.split("__")[1]}.jpg`);
+        if (force || !existsSync(file) || (redo && edit.id.includes(redo))) {
+          let image = before;
+          for (const step of edit.steps) {
+            const { image: pasted, inside, transform, misfit } = await pasteBack(image, await rawEdit(step), step.region);
+            const moved = `zoom ${transform.scale.toFixed(3)}, shift ${(transform.dx * 100).toFixed(1)}% / ${(transform.dy * 100).toFixed(1)}%`;
+            console.log(`${edit.id}, ${step.name}: lined up (${moved}; mismatch outside ${misfit.before.toFixed(1)} -> ${misfit.after.toFixed(1)}), mean change inside ${inside.toFixed(1)}`);
+            image = pasted;
+          }
+          await writeFile(file, await shiftSession(image, edit.session, s + 3, true));
+        }
+        pairs.push({
+          id: edit.id,
+          scene: scene.id,
+          item: scene.item,
+          incidental: edit.incidental ?? [],
+          before: path.relative(ROOT, beforePath),
+          after: path.relative(ROOT, file),
+          truth: { changed: true, changes: edit.changes },
+          source: `${IMAGE_MODEL} image + ${IMAGE_MODEL} edit, region only + code: ${edit.session}`,
+        });
+      }),
+    );
+  }
+  return pairs;
+}
+
 function credits(): string {
   const rows = REAL_PHOTOS.map(
     (p) => `| \`${p.id}\` | ${p.shows} | ${p.commons.author} | [${p.commons.license}](${p.commons.licenseUrl}) | [${p.commons.file}](${p.commons.page}) |`,
@@ -547,7 +636,7 @@ ${rows.join("\n")}
 async function main() {
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set (.env.local)");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const pairs = set === "real" ? await buildReal(ai) : await buildSynthetic(ai);
+  const pairs = set === "real" ? await buildReal(ai) : set === "samples" ? await buildSamples(ai) : await buildSynthetic(ai);
 
   pairs.sort((a, b) => a.id.localeCompare(b.id));
   const pairsFile = path.join(ROOT, "pairs.json");
