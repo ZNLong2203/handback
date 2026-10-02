@@ -6,9 +6,10 @@
  *   - false charges: how often would an unchanged item have been charged?
  *
  * Raw model replies are saved under eval/runs/ so the app's demo mode and the
- * tests can replay them without an API key.
+ * tests can replay them without an API key. --set real runs the pairs built
+ * on real photographs (eval/real) and saves under eval/real/runs/ instead.
  *
- *   npm run eval -- [--model gemini-3.8-flash] [--thinking low|medium|high] [--only <id-substring>] [--tag r2]
+ *   npm run eval -- [--set synthetic|real] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -33,6 +34,12 @@ const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
+/** Each dataset keeps its pairs, images, runs and reports under its own folder. */
+const SETS = { synthetic: "eval", real: "eval/real" } as const;
+const SET_DESCRIPTION = { synthetic: "AI-generated photo pairs", real: "photo pairs built on real photographs" } as const;
+const set = (arg("set") ?? "synthetic") as keyof typeof SETS;
+if (!(set in SETS)) throw new Error(`--set must be one of: ${Object.keys(SETS).join(", ")}`);
+const ROOT = SETS[set];
 const model = arg("model") ?? DEFAULT_VISION_MODEL;
 const thinking = (arg("thinking") ?? "low") as Thinking;
 const only = arg("only");
@@ -71,7 +78,7 @@ type Scored = {
 };
 
 async function image(rel: string) {
-  return { base64: (await readFile(path.join("eval", rel))).toString("base64"), mimeType: "image/jpeg" };
+  return { base64: (await readFile(path.join(ROOT, rel))).toString("base64"), mimeType: "image/jpeg" };
 }
 
 async function scorePair(pair: Pair): Promise<Scored> {
@@ -144,9 +151,9 @@ const quantile = (xs: number[], q: number) => {
 };
 
 async function main() {
-  const { pairs } = JSON.parse(await readFile("eval/pairs.json", "utf8")) as { pairs: Pair[] };
+  const { pairs } = JSON.parse(await readFile(path.join(ROOT, "pairs.json"), "utf8")) as { pairs: Pair[] };
   const todo = only ? pairs.filter((p) => p.id.includes(only)) : pairs;
-  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}) on ${todo.length} pairs`);
+  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}) on ${todo.length} ${set} pairs`);
   const results = await pool(todo, 4, scorePair);
 
   const changes = results.flatMap((r) => r.caught);
@@ -157,6 +164,7 @@ async function main() {
   const tokens = results.reduce((s, r) => ({ i: s.i + r.usage.inputTokens, o: s.o + r.usage.outputTokens }), { i: 0, o: 0 });
 
   const metrics = {
+    set,
     model,
     thinking,
     passes,
@@ -177,13 +185,13 @@ async function main() {
   };
 
   const label = `${model}-${thinking}${passes > 1 ? `-x${passes}` : ""}${tag ? `-${tag}` : ""}`;
-  await mkdir("eval/runs", { recursive: true });
-  await writeFile(`eval/runs/${label}.json`, `${JSON.stringify({ metrics, results }, null, 2)}\n`);
+  await mkdir(path.join(ROOT, "runs"), { recursive: true });
+  await writeFile(path.join(ROOT, "runs", `${label}.json`), `${JSON.stringify({ metrics, results }, null, 2)}\n`);
 
   const lines = [
     `# Condition-check eval: ${model}, thinking ${thinking}, ${passes} independent look${passes > 1 ? "s that must agree" : ""}`,
     "",
-    `${metrics.pairs} labeled photo pairs: ${changed.length} with real changes (${metrics.realChanges} changes in total) and ${unchanged.length} unchanged pairs that only differ in light, pose, dust or glare.`,
+    `${metrics.pairs} labeled ${SET_DESCRIPTION[set]}: ${changed.length} with real changes (${metrics.realChanges} changes in total) and ${unchanged.length} unchanged pairs that only differ in light, pose, dust or glare.`,
     "",
     "| Metric | Result |",
     "|---|---|",
@@ -206,9 +214,9 @@ async function main() {
     }),
     "",
   ];
-  await writeFile(`eval/report-${label}.md`, lines.join("\n"));
+  await writeFile(path.join(ROOT, `report-${label}.md`), lines.join("\n"));
   console.log(lines.slice(4, 15).join("\n"));
-  console.log(`\nwrote eval/report-${label}.md and eval/runs/${label}.json`);
+  console.log(`\nwrote ${ROOT}/report-${label}.md and ${ROOT}/runs/${label}.json`);
 }
 
 main().catch((err) => {

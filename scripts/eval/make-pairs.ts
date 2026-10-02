@@ -12,19 +12,38 @@
  *   - "unchanged" pairs (hard negatives) apply only lighting, pose, dust or
  *     glare changes in code, so the truth is known exactly: nothing changed.
  *
- *   npm run eval:pairs            # create anything missing
- *   npm run eval:pairs -- --force # regenerate everything
+ * With --set real, the base photos are instead freely licensed photographs
+ * from Wikimedia Commons (scripts/eval/real-photos.ts), and only the area
+ * around each requested change is taken from the image model's edit: the
+ * rest of the check-in photo stays the original pixels.
+ *
+ *   npm run eval:pairs                     # create anything missing
+ *   npm run eval:pairs -- --force          # regenerate everything
+ *   npm run eval:pairs -- --set real       # the real-photo set in eval/real
+ *   npm run eval:pairs -- --set real --redo <id>  # re-composite matching edits from the saved model output
  */
 import { GoogleGenAI, Modality } from "@google/genai";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { REAL_EDITS, REAL_PHOTOS, type Box, type RealPhoto } from "./real-photos";
 
-const ROOT = path.resolve("eval");
+const arg = (name: string) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
+const SETS = { synthetic: "eval", real: "eval/real" } as const;
+const set = (arg("set") ?? "synthetic") as keyof typeof SETS;
+if (!(set in SETS)) throw new Error(`--set must be one of: ${Object.keys(SETS).join(", ")}`);
+
+const ROOT = path.resolve(SETS[set]);
 const IMAGES = path.join(ROOT, "images");
+/** The image model's full edits of real photos, kept so a region can be re-composited without a new call. Not committed. */
+const RAW_EDITS = path.join(ROOT, ".raw");
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image";
 const force = process.argv.includes("--force");
+const redo = arg("redo");
 
 const STYLE =
   "A realistic, slightly imperfect smartphone photo taken by a rental shop employee at the check-in counter, " +
@@ -222,19 +241,54 @@ export type Pair = {
   source: string;
 };
 
-async function generate(ai: GoogleGenAI, parts: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"]) {
+type ImageOptions = { aspectRatio: string; imageSize?: "2K"; width?: number };
+
+/** One image from the image model: a JPEG `width` px wide, or the model's full-size output as PNG when no width is given. */
+async function generate(
+  ai: GoogleGenAI,
+  parts: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
+  options: ImageOptions = { aspectRatio: "4:3", width: 1280 },
+) {
   const response = await ai.models.generateContent({
     model: IMAGE_MODEL,
     contents: parts,
-    config: { responseModalities: [Modality.IMAGE], imageConfig: { aspectRatio: "4:3" } },
+    config: {
+      responseModalities: [Modality.IMAGE],
+      imageConfig: { aspectRatio: options.aspectRatio, ...(options.imageSize ? { imageSize: options.imageSize } : {}) },
+    },
   });
   const part = response.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
   if (!part?.inlineData?.data) throw new Error("no image returned");
-  return sharp(Buffer.from(part.inlineData.data, "base64")).resize({ width: 1280 }).jpeg({ quality: 86 }).toBuffer();
+  const image = sharp(Buffer.from(part.inlineData.data, "base64"));
+  return options.width ? image.resize({ width: options.width }).jpeg({ quality: 86 }).toBuffer() : image.png().toBuffer();
+}
+
+function editRequest(before: Buffer, instruction: string) {
+  return [
+    {
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "image/jpeg", data: before.toString("base64") } },
+        { text: `Edit this photo. ${instruction} Keep everything else exactly the same: the same objects, positions, framing and lighting.` },
+      ],
+    },
+  ];
+}
+
+/**
+ * A smaller turn for real photos, cropped just enough that no fill colour
+ * shows in the corners: on wood, grass or a white sweep a grey corner would
+ * stand out in a way a second visit to the counter never looks.
+ */
+export function fittedTurn(seed: number, width: number, height: number) {
+  const angle = seed % 2 === 0 ? 3 : -3;
+  const t = (Math.abs(angle) * Math.PI) / 180;
+  const keep = Math.min(width / (width * Math.cos(t) + height * Math.sin(t)), height / (width * Math.sin(t) + height * Math.cos(t))) - 0.005;
+  return { angle, keep };
 }
 
 /** A second visit to the counter: a little different light or framing. */
-async function shiftSession(input: Buffer, shift: SessionShift | Negative, seed: number): Promise<Buffer> {
+async function shiftSession(input: Buffer, shift: SessionShift | Negative, seed: number, realBackground = false): Promise<Buffer> {
   const img = sharp(input);
   const { width = 1280, height = 960 } = await img.metadata();
   if (shift === "light") {
@@ -245,10 +299,10 @@ async function shiftSession(input: Buffer, shift: SessionShift | Negative, seed:
       .toBuffer();
   }
   if (shift === "pose") {
-    const angle = seed % 2 === 0 ? 4 : -5;
+    const { angle, keep } = realBackground ? fittedTurn(seed, width, height) : { angle: seed % 2 === 0 ? 4 : -5, keep: 0.92 };
     const rotated = await img.rotate(angle, { background: { r: 205, g: 206, b: 208 } }).toBuffer();
     const meta = await sharp(rotated).metadata();
-    const crop = { left: Math.round(((meta.width ?? width) - width * 0.92) / 2), top: Math.round(((meta.height ?? height) - height * 0.92) / 2), width: Math.round(width * 0.92), height: Math.round(height * 0.92) };
+    const crop = { left: Math.round(((meta.width ?? width) - width * keep) / 2), top: Math.round(((meta.height ?? height) - height * keep) / 2), width: Math.round(width * keep), height: Math.round(height * keep) };
     return sharp(rotated).extract(crop).resize({ width }).jpeg({ quality: 86 }).toBuffer();
   }
   if (shift === "dust-glare") {
@@ -271,11 +325,8 @@ async function shiftSession(input: Buffer, shift: SessionShift | Negative, seed:
   return input;
 }
 
-async function main() {
-  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set (.env.local)");
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+async function buildSynthetic(ai: GoogleGenAI): Promise<Pair[]> {
   const pairs: Pair[] = [];
-
   await Promise.all(
     scenes.map(async (scene, s) => {
       const dir = path.join(IMAGES, scene.id);
@@ -305,17 +356,7 @@ async function main() {
       for (const edit of edits.filter((e) => e.scene === scene.id)) {
         const file = path.join(dir, `after__${edit.id.split("__")[1]}.jpg`);
         if (force || !existsSync(file)) {
-          const edited = await generate(ai, [
-            {
-              role: "user",
-              parts: [
-                { inlineData: { mimeType: "image/jpeg", data: before.toString("base64") } },
-                {
-                  text: `Edit this photo. ${edit.instruction} Keep everything else exactly the same: the same objects, positions, framing and lighting.`,
-                },
-              ],
-            },
-          ]);
+          const edited = await generate(ai, editRequest(before, edit.instruction));
           await writeFile(file, await shiftSession(edited, edit.session, s + 3));
           console.log(`edited ${edit.id}`);
         }
@@ -332,11 +373,236 @@ async function main() {
       }
     }),
   );
+  return pairs;
+}
+
+/** Real photos are scaled to fit this box. */
+const REAL_WIDTH = 1280;
+const REAL_HEIGHT = 960;
+const UA = "HandbackEvalBuilder/1.0 (builds an eval set from freely licensed Wikimedia Commons photos)";
+
+/** Wikimedia rate-limits downloads of original files: one at a time, waiting as long as it asks. */
+let downloads: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
+  const run = downloads.then(task);
+  downloads = run.catch(() => undefined);
+  return run;
+}
+
+async function fetchRetrying(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    if (res.ok || attempt === 5 || (res.status !== 429 && res.status < 500)) return res;
+    const wait = Number(res.headers.get("retry-after")) * 1000 || 3000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
+
+/**
+ * Downloads the file version listed in real-photos.ts, after checking that
+ * neither it nor its license changed. It fetches Wikimedia's standard
+ * 1920 px rendering rather than the original, which is rate-limited hard and
+ * far larger than the 1280 px kept here.
+ */
+async function fetchCommons(photo: RealPhoto): Promise<Buffer> {
+  const query = new URLSearchParams({
+    action: "query",
+    format: "json",
+    formatversion: "2",
+    titles: `File:${photo.commons.file}`,
+    prop: "imageinfo",
+    iiprop: "url|sha1|extmetadata",
+    iiurlwidth: "1920",
+    iiextmetadatafilter: "LicenseShortName",
+  });
+  const res = await fetchRetrying(`https://commons.wikimedia.org/w/api.php?${query}`);
+  if (!res.ok) throw new Error(`${photo.id}: Commons API returned ${res.status}`);
+  const info = (await res.json()).query?.pages?.[0]?.imageinfo?.[0];
+  if (!info) throw new Error(`${photo.id}: ${photo.commons.file} was not found on Commons`);
+  if (info.sha1 !== photo.commons.sha1) throw new Error(`${photo.id}: the file on Commons changed; check the new version and its license first`);
+  const license = info.extmetadata?.LicenseShortName?.value;
+  if (license !== photo.commons.license) throw new Error(`${photo.id}: the license is now ${license}, not ${photo.commons.license}`);
+  const file = await fetchRetrying(info.thumburl ?? info.url);
+  if (!file.ok) throw new Error(`${photo.id}: download returned ${file.status}`);
+  return cutToAspect(Buffer.from(await file.arrayBuffer()), photo);
+}
+
+/** The largest part of the photo (or of its crop box) with the edit's aspect ratio, scaled to fit REAL_WIDTH x REAL_HEIGHT. */
+async function cutToAspect(original: Buffer, photo: RealPhoto): Promise<Buffer> {
+  const { data, info } = await sharp(original).rotate().flatten({ background: "#ffffff" }).raw().toBuffer({ resolveWithObject: true });
+  const [ymin, xmin, ymax, xmax] = (photo.crop ?? [0, 0, 1000, 1000]).map((v) => v / 1000);
+  const boxW = (xmax - xmin) * info.width;
+  const boxH = (ymax - ymin) * info.height;
+  const [aw, ah] = photo.aspect.split(":").map(Number);
+  const width = Math.min(boxW, (boxH * aw) / ah);
+  const height = (width * ah) / aw;
+  const region = {
+    left: Math.round(xmin * info.width + (boxW - width) / 2),
+    top: Math.round(ymin * info.height + (boxH - height) / 2),
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
+    .extract(region)
+    .resize({ width: REAL_WIDTH, height: REAL_HEIGHT, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 86 })
+    .toBuffer();
+}
+
+/**
+ * Takes only `region` from the image model's edit and lays it over the
+ * original photo with a soft edge, so the rest of the check-in photo is the
+ * real photograph and not the model's redrawing of it. The edit's colour is
+ * matched to the original just around the region so the seam does not show.
+ * Also reports how much the model changed inside and outside the region.
+ */
+export async function pasteBack(before: Buffer, edited: Buffer, region: Box) {
+  const { data: base, info } = await sharp(before).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H } = info;
+  const edit = await sharp(edited).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  const [y0, x0, y1, x1] = [(region[0] * H) / 1000, (region[1] * W) / 1000, (region[2] * H) / 1000, (region[3] * W) / 1000];
+  const feather = Math.max(4, Math.round(Math.min(W, H) * 0.02));
+  const ring = feather * 3;
+  const distance = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) distance[y * W + x] = Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1));
+  }
+
+  const sums = [0, 0, 0];
+  let ringPixels = 0;
+  for (let p = 0; p < W * H; p++) {
+    if (distance[p] <= feather || distance[p] > ring) continue;
+    for (let c = 0; c < 3; c++) sums[c] += base[p * 3 + c] - edit[p * 3 + c];
+    ringPixels++;
+  }
+  const offset = sums.map((s) => Math.max(-25, Math.min(25, ringPixels ? s / ringPixels : 0)));
+
+  const out = Buffer.from(base);
+  const diff = { inside: 0, insidePixels: 0, outside: 0, outsidePixels: 0 };
+  for (let p = 0; p < W * H; p++) {
+    const d = distance[p];
+    const alpha = d === 0 ? 1 : d >= feather ? 0 : 0.5 * (1 + Math.cos((Math.PI * d) / feather));
+    let delta = 0;
+    for (let c = 0; c < 3; c++) {
+      const i = p * 3 + c;
+      const e = Math.max(0, Math.min(255, edit[i] + offset[c]));
+      delta += Math.abs(e - base[i]) / 3;
+      if (alpha > 0) out[i] = Math.round(base[i] * (1 - alpha) + e * alpha);
+    }
+    if (d === 0) {
+      diff.inside += delta;
+      diff.insidePixels++;
+    } else if (d > ring) {
+      diff.outside += delta;
+      diff.outsidePixels++;
+    }
+  }
+  return {
+    image: await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(),
+    inside: diff.inside / Math.max(1, diff.insidePixels),
+    outside: diff.outside / Math.max(1, diff.outsidePixels),
+  };
+}
+
+async function pool<T>(items: T[], size: number, fn: (item: T, index: number) => Promise<void>) {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: size }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        await fn(items[i], i);
+      }
+    }),
+  );
+}
+
+async function buildReal(ai: GoogleGenAI): Promise<Pair[]> {
+  const pairs: Pair[] = [];
+  await mkdir(RAW_EDITS, { recursive: true });
+  await pool(REAL_PHOTOS, 3, async (photo, s) => {
+    const dir = path.join(IMAGES, photo.id);
+    await mkdir(dir, { recursive: true });
+    const beforePath = path.join(dir, "before.jpg");
+    if (force || !existsSync(beforePath)) {
+      await writeFile(beforePath, await oneAtATime(() => fetchCommons(photo)));
+      console.log(`downloaded ${photo.id}/before.jpg`);
+    }
+    const before = await readFile(beforePath);
+
+    for (const neg of NEGATIVES) {
+      const file = path.join(dir, `after__same-${neg}.jpg`);
+      if (force || !existsSync(file)) await writeFile(file, await shiftSession(before, neg, s + 1, true));
+      pairs.push({
+        id: `${photo.id}__same-${neg}`,
+        scene: photo.id,
+        item: photo.item,
+        incidental: [],
+        before: path.relative(ROOT, beforePath),
+        after: path.relative(ROOT, file),
+        truth: { changed: false, changes: [] },
+        source: `Commons photo + code: ${neg}`,
+      });
+    }
+
+    for (const edit of REAL_EDITS.filter((e) => e.photo === photo.id)) {
+      const file = path.join(dir, `after__${edit.id.split("__")[1]}.jpg`);
+      if (force || !existsSync(file) || (redo && edit.id.includes(redo))) {
+        const rawPath = path.join(RAW_EDITS, `${edit.id}.png`);
+        if (force || !existsSync(rawPath)) {
+          await writeFile(rawPath, await generate(ai, editRequest(before, edit.instruction), { aspectRatio: photo.aspect, imageSize: "2K" }));
+          console.log(`edited ${edit.id}`);
+        }
+        const { image, inside, outside } = await pasteBack(before, await readFile(rawPath), edit.region);
+        console.log(`${edit.id}: mean pixel change ${inside.toFixed(1)} inside the region, ${outside.toFixed(1)} elsewhere (discarded)`);
+        await writeFile(file, await shiftSession(image, edit.session, s + 3, true));
+      }
+      pairs.push({
+        id: edit.id,
+        scene: photo.id,
+        item: photo.item,
+        incidental: edit.incidental ?? [],
+        before: path.relative(ROOT, beforePath),
+        after: path.relative(ROOT, file),
+        truth: { changed: true, changes: edit.changes },
+        source: `Commons photo + ${IMAGE_MODEL} edit, region only + code: ${edit.session}`,
+      });
+    }
+  });
+  return pairs;
+}
+
+function credits(): string {
+  const rows = REAL_PHOTOS.map(
+    (p) => `| \`${p.id}\` | ${p.shows} | ${p.commons.author} | [${p.commons.license}](${p.commons.licenseUrl}) | [${p.commons.file}](${p.commons.page}) |`,
+  );
+  return `# Real-photo eval set: credits and licenses
+
+Every check-out photo in \`images/*/before.jpg\` is a photograph from Wikimedia Commons, used under the license listed below. Each was cut to an aspect ratio the image model supports and scaled to fit ${REAL_WIDTH} x ${REAL_HEIGHT} px (\`scripts/eval/real-photos.ts\`, \`scripts/eval/make-pairs.ts\`).
+
+Every check-in photo (\`images/*/after__*.jpg\`) is an adaptation of the check-out photo in the same folder:
+
+- \`after__same-light.jpg\`, \`after__same-pose.jpg\` and \`after__same-dust-glare.jpg\` were changed in code only: warmer and darker light; a 3° turn with a crop; or dust specks and a glare spot.
+- Every other \`after__*.jpg\` shows damage or a missing accessory. A Gemini image model (\`${IMAGE_MODEL}\`) edited the photo, only a box around the requested change was pasted back onto the original photo, and then the light or the framing was shifted in code.
+
+Each adaptation is released under the same license as the photo it was made from: adaptations of CC BY-SA photos are CC BY-SA in the same version, adaptations of CC BY photos are CC BY in the same version with the credit below, and adaptations of the CC0 photo are CC0. The MIT license of this repository does not cover these images. Product names and logos visible in the photos are trademarks of their owners, who have no connection with this project.
+
+| Folder | Shows | Author | License | Source |
+|---|---|---|---|---|
+${rows.join("\n")}
+`;
+}
+
+async function main() {
+  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set (.env.local)");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const pairs = set === "real" ? await buildReal(ai) : await buildSynthetic(ai);
 
   pairs.sort((a, b) => a.id.localeCompare(b.id));
-  await writeFile(path.join(ROOT, "pairs.json"), `${JSON.stringify({ imageModel: IMAGE_MODEL, pairs }, null, 2)}\n`);
+  const pairsFile = path.join(ROOT, "pairs.json");
+  await writeFile(pairsFile, `${JSON.stringify({ imageModel: IMAGE_MODEL, pairs }, null, 2)}\n`);
+  if (set === "real") await writeFile(path.join(ROOT, "CREDITS.md"), credits());
   const changed = pairs.filter((p) => p.truth.changed).length;
-  console.log(`${pairs.length} pairs (${changed} changed, ${pairs.length - changed} unchanged) -> eval/pairs.json`);
+  console.log(`${pairs.length} pairs (${changed} changed, ${pairs.length - changed} unchanged) -> ${path.relative(process.cwd(), pairsFile)}`);
 }
 
 main().catch((err) => {
