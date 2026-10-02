@@ -7,9 +7,14 @@ import { encodeMultipart, type MultipartPart } from "./multipart";
 /**
  * A small REST client for the PayPal APIs the Server SDK does not cover
  * (Webhooks, Disputes). Tokens are cached until a minute before expiry and
- * refreshed on a 401; 429 and 5xx are retried with backoff, honouring
- * Retry-After; every POST carries a PayPal-Request-Id, the same one on every
- * retry, so a retried POST cannot act twice.
+ * refreshed on a 401; network failures, 429 and 5xx are retried with
+ * backoff, honouring Retry-After, and so is a token request that fails that
+ * way. Every POST carries a PayPal-Request-Id, the same one on every retry.
+ * That stops a retried POST acting twice only where PayPal deduplicates on
+ * the header. The Disputes API does not: in the sandbox a repeated id was
+ * run again and refused with a 422 (docs/paypal-sandbox-notes.md), so
+ * lib/disputes guards its actions itself, with dispute_actions and a read
+ * of the dispute after an error.
  */
 let token: { value: string; expiresAt: number } | undefined;
 
@@ -56,11 +61,13 @@ export async function paypalRequest<T>(method: "GET" | "POST" | "PATCH" | "DELET
   const multipart = opts.multipart ? encodeMultipart(opts.multipart) : undefined;
   const body = multipart ? multipart.body : opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
   let refreshed = false;
+  let forceToken = false;
   for (let attempt = 1; ; attempt++) {
     let res: Response;
     let text: string;
     try {
-      const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken()}`, Prefer: "return=representation" };
+      const headers: Record<string, string> = { Authorization: `Bearer ${await accessToken(forceToken)}`, Prefer: "return=representation" };
+      forceToken = false;
       if (requestId) headers["PayPal-Request-Id"] = requestId;
       if (multipart) headers["Content-Type"] = multipart.contentType;
       else if (opts.body !== undefined) headers["Content-Type"] = "application/json";
@@ -68,14 +75,16 @@ export async function paypalRequest<T>(method: "GET" | "POST" | "PATCH" | "DELET
       res = await fetch(`${cfg.apiBase}${path}`, { method, headers, body: body as BodyInit | undefined, signal: AbortSignal.timeout(20_000) });
       text = await res.text();
     } catch (err) {
-      const network = !(err instanceof PayPalError) || err.status === 0;
-      if (!network || attempt >= attempts) throw err instanceof PayPalError ? err : new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
+      // fetch throws only for network failures; a PayPalError here came from the token request.
+      const retry = !(err instanceof PayPalError) || err.status === 0 || err.retryable;
+      if (!retry || attempt >= attempts) throw err instanceof PayPalError ? err : new PayPalError(0, "NETWORK_ERROR", undefined, undefined, err instanceof Error ? err.message : String(err));
       await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       continue;
     }
     if (res.status === 401 && !refreshed) {
+      // The new token is fetched inside the try above, so a failed refresh is retried like any other.
       refreshed = true;
-      await accessToken(true);
+      forceToken = true;
       attempt--;
       continue;
     }

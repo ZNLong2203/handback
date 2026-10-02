@@ -110,6 +110,49 @@ describe("paypalRequest", () => {
     expect({ tokenCalls, apiCalls }).toEqual({ tokenCalls: 2, apiCalls: 2 });
   });
 
+  it("retries when the token endpoint answers 503, and when the refresh after a 401 fails", async () => {
+    let tokenCalls = 0;
+    const auth: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url.endsWith("/v1/oauth2/token")) {
+          tokenCalls += 1;
+          if (tokenCalls === 1) return json(503, { name: "SERVICE_UNAVAILABLE" });
+          if (tokenCalls === 3) throw new TypeError("fetch failed");
+          return Response.json({ access_token: `t${tokenCalls}`, expires_in: 3600 });
+        }
+        auth.push((init.headers as Record<string, string>).Authorization);
+        // The first token is refused once, as an expired one would be.
+        return auth.length === 1 ? json(401, { name: "AUTHENTICATION_FAILURE" }) : json(200, { dispute_id: "PP-D-7" });
+      }),
+    );
+    vi.resetModules();
+    const fresh = await import("./rest");
+    const res = await fresh.paypalRequest<{ dispute_id: string }>("GET", "/v1/customer/disputes/PP-D-7", { attempts: 3 });
+    expect(res.data.dispute_id).toBe("PP-D-7");
+    // 503, then t2 (refused with 401), then a refresh that fails on the network, then t4.
+    expect(tokenCalls).toBe(4);
+    expect(auth).toEqual(["Bearer t2", "Bearer t4"]);
+  });
+
+  it("does not retry a token request PayPal refuses with a 4xx", async () => {
+    let tokenCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (!url.endsWith("/v1/oauth2/token")) throw new Error(`unexpected request to ${url}`);
+        tokenCalls += 1;
+        return json(401, { error: "invalid_client", error_description: "Client Authentication failed" });
+      }),
+    );
+    vi.resetModules();
+    const fresh = await import("./rest");
+    const err = await fresh.paypalRequest("GET", "/v1/customer/disputes/PP-D-8").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 401, errorName: "invalid_client" });
+    expect(tokenCalls).toBe(1);
+  });
+
   it("does not retry a 422 and keeps PayPal's issue and debug id", async () => {
     const { calls } = mockFetch([
       json(422, { name: "UNPROCESSABLE_ENTITY", debug_id: "dbg-9", details: [{ issue: "INVALID_EVIDENCE_FILE", description: "Bad file." }] }),

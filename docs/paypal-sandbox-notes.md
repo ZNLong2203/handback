@@ -103,7 +103,7 @@ Design consequences:
 - PayPal asked a counter rental for proof of shipment, refund and a delivery signature. The pack is filed as `OTHER` instead of under a type it is not.
 - In both runs PayPal held the disputed $20.00 from the shop's balance about three and a half minutes after the case was filed. A decision for the shop released it about a minute after the adjudicate call; a decision for the customer paid it out and charged the shop a $15.00 `DISPUTE_FEE`, the Standard fee the recommendation uses. The panel shows these from `fund_movements`, and the demo stand-in now reports the same movements.
 - The sandbox needs minutes between steps. The panel says so and offers "Refresh from PayPal"; in production the webhooks bring the changes.
-- `api-m.sandbox.paypal.com` timed out several times during the run. `lib/paypal/rest.ts` now treats a stalled body or a failed token request as a network failure and retries it with the same request id.
+- `api-m.sandbox.paypal.com` timed out several times during the run. `lib/paypal/rest.ts` now retries a response whose body stalls, and a token request that gets no answer or a 429 or 5xx (also the refresh after a 401), with the same request id.
 
 PayPal's simulated `CUSTOMER.DISPUTE.UPDATED` and `RESOLVED` payloads (`POST /v1/notifications/simulate-event`) carry the full dispute as `resource`, including `status`, `dispute_outcome` and `links`, but write the links on `api.sandbox.paypal.com` rather than `api-m.sandbox.paypal.com`. The client accepts both names of the same environment's API and always sends the request to the configured base.
 
