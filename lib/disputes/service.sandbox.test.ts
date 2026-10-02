@@ -56,8 +56,8 @@ const server = new DemoDisputeApi();
 type Seen = { method: string; path: string; requestId: string | null; contentType: string | null; body: Buffer | null };
 const seen: Seen[] = [];
 let failNextEvidence = false;
-/** Files the next evidence, then loses the reply, as a stalled connection would. */
-let loseNextEvidenceReply = false;
+/** Carries out the next request for this action, then loses the reply, as a stalled connection would. */
+let loseNextReply: string | null = null;
 
 beforeAll(async () => {
   await getDb();
@@ -89,14 +89,14 @@ beforeAll(async () => {
         const input = JSON.parse(parts[0].body.toString()).evidences[0];
         const files = parts.slice(1).map((p) => ({ name: p.filename!, contentType: p.type as "application/pdf", bytes: new Uint8Array(p.body) }));
         await server.provideEvidence(d, { evidenceType: input.evidence_type, notes: input.notes, files }, "x");
-        if (loseNextEvidenceReply) {
-          loseNextEvidenceReply = false;
-          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
-        }
       } else if (action === "require-evidence") await server.requireEvidence(d, json().action, "x");
       else if (action === "adjudicate") await server.adjudicate(d, json().adjudication_outcome, "x");
       else if (action === "accept-claim") await server.acceptClaim(d, { note: json().note, type: json().accept_claim_type }, "x");
       else return reply({ name: "NOT_FOUND" }, 404);
+      if (loseNextReply === action) {
+        loseNextReply = null;
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }
       return reply(ok);
     }),
   );
@@ -182,7 +182,7 @@ describe("dispute desk against a mocked PayPal REST API", () => {
     const r = await settledRental();
     const opened = await server.open({ sellerTransactionId: r.settlementCaptureId!, transactionCents: 3500, disputedCents: 2000, reason: "INCORRECT_AMOUNT", note: "n", custom: r.id, invoiceNumber: null });
     await desk.findDisputes(r.id);
-    loseNextEvidenceReply = true;
+    loseNextReply = "provide-evidence";
     const from = seen.length;
     await desk.submitEvidence(r.id);
 
@@ -200,6 +200,37 @@ describe("dispute desk against a mocked PayPal REST API", () => {
     await desk.sandboxRequireEvidence(r.id);
     failNextEvidence = true;
     await expect(desk.submitEvidence(r.id)).rejects.toThrow(/The evidence file is invalid/);
+  });
+
+  it("records accepting, asking for evidence and deciding when PayPal did them but the reply was lost", async () => {
+    const lost = async (action: string, run: () => Promise<void>) => {
+      loseNextReply = action;
+      const from = seen.length;
+      await run();
+      const posts = seen.slice(from).filter((s) => s.path.endsWith(`/${action}`));
+      // Sent twice with one request id; PayPal refused the second because the case had moved on.
+      expect(posts).toHaveLength(2);
+      expect(posts[1].requestId).toBe(posts[0].requestId);
+    };
+    const confirmedEvent = async (rentalId: string, type: string) => (await repo.eventsFor(await getDb(), rentalId)).findLast((e) => e.type === type)?.data;
+
+    const a = await settledRental();
+    await server.open({ sellerTransactionId: a.settlementCaptureId!, transactionCents: 3500, disputedCents: 2000, reason: "INCORRECT_AMOUNT", note: "n", custom: a.id, invoiceNumber: null });
+    await desk.findDisputes(a.id);
+    await lost("accept-claim", () => desk.acceptClaim(a.id));
+    expect(await confirmedEvent(a.id, "dispute.claim_accepted")).toMatchObject({ refundCents: 2000, confirmedByRead: true, debugId: null });
+    expect((await repo.rentalById(await getDb(), a.id))!.status).toBe("settled");
+
+    const b = await settledRental();
+    await server.open({ sellerTransactionId: b.settlementCaptureId!, transactionCents: 3500, disputedCents: 2000, reason: "INCORRECT_AMOUNT", note: "n", custom: b.id, invoiceNumber: null });
+    await desk.findDisputes(b.id);
+    await desk.submitEvidence(b.id);
+    await lost("require-evidence", () => desk.sandboxRequireEvidence(b.id));
+    expect(await confirmedEvent(b.id, "dispute.sandbox_evidence_requested")).toMatchObject({ confirmedByRead: true });
+    await desk.submitEvidence(b.id);
+    await lost("adjudicate", () => desk.sandboxDecide(b.id, "SELLER_FAVOR"));
+    expect(await confirmedEvent(b.id, "dispute.sandbox_decided")).toMatchObject({ outcome: "SELLER_FAVOR", confirmedByRead: true });
+    expect((await repo.eventsFor(await getDb(), b.id)).at(-1)).toMatchObject({ type: "dispute.resolved", data: { outcome: "RESOLVED_SELLER_FAVOUR" } });
   });
 
   it("never calls PayPal for an action the dispute's links do not offer", async () => {

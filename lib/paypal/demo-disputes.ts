@@ -223,14 +223,15 @@ export class DemoDisputeApi implements DisputeApi {
     void requestId;
     await this.ready();
     const cur = this.current(d, "adjudicate");
-    // As the sandbox decided on 2026-10-02: for the seller the hold is released; for the
-    // buyer the seller pays the disputed amount and the $15.00 Standard dispute fee.
+    // As the sandbox decided on 2026-10-02: for the seller the hold is released (adjudication
+    // DENY_BUYER); for the buyer the seller pays the disputed amount and the $15.00 Standard
+    // dispute fee (RECOVER_FROM_SELLER).
     return outcome === "SELLER_FAVOR"
-      ? this.resolve(cur, "RESOLVED_SELLER_FAVOUR", null, null)
-      : this.resolve(cur, "RESOLVED_BUYER_FAVOUR", cur.dispute_amount.value, "15.00");
+      ? this.resolve(cur, "RESOLVED_SELLER_FAVOUR", null, null, "DENY_BUYER")
+      : this.resolve(cur, "RESOLVED_BUYER_FAVOUR", cur.dispute_amount.value, "15.00", "RECOVER_FROM_SELLER");
   }
 
-  private resolve(cur: Dispute, outcome: string, refunded: string | null, fee: string | null): Promise<ActionReceipt> {
+  private resolve(cur: Dispute, outcome: string, refunded: string | null, fee: string | null, adjudication: string | null = null): Promise<ActionReceipt> {
     const at = this.now().toISOString();
     const usd = (value: string) => ({ currency_code: "USD", value });
     const held = (cur.fund_movements ?? []).find((m) => m.reason === "HOLD_PLACED");
@@ -248,6 +249,7 @@ export class DemoDisputeApi implements DisputeApi {
       dispute_state: "RESOLVED",
       seller_response_due_date: undefined,
       dispute_outcome: { outcome_code: outcome, ...(refunded ? { amount_refunded: usd(refunded) } : {}) },
+      ...(adjudication ? { adjudications: [...(cur.adjudications ?? []), { type: adjudication, adjudication_time: at, dispute_life_cycle_stage: cur.dispute_life_cycle_stage }] } : {}),
       fund_movements: [...(cur.fund_movements ?? []), ...moves],
       links: [link(cur.dispute_id, "self", "GET")],
     });

@@ -6,6 +6,7 @@ import { formatUsd, type Cents } from "@/lib/money";
 import { disputeApi } from "@/lib/paypal";
 import { DemoDisputeApi } from "@/lib/paypal/demo-disputes";
 import {
+  actionLanded,
   availableActions,
   chooseEvidenceType,
   DisputeActionUnavailable,
@@ -153,7 +154,7 @@ function notOffered(what: string, d: Dispute): string {
  * One guarded PayPal action: claimed in dispute_actions first, so a double
  * tap cannot send it twice (the Disputes API does not deduplicate on
  * PayPal-Request-Id), then sent, then marked done or failed. When the reply
- * is an error, `landed` may read the dispute to check whether PayPal carried
+ * is an error, `landed` reads the dispute to check whether PayPal carried
  * the action out anyway (a lost reply, then a retry refused because the
  * case had already moved on).
  */
@@ -164,7 +165,7 @@ async function guarded(
   round: string,
   step: string,
   send: (requestId: string) => Promise<ActionReceipt>,
-  landed?: () => Promise<boolean>,
+  landed: () => Promise<boolean>,
 ): Promise<ActionReceipt> {
   const db = await getDb();
   const requestId = `dispute-${action}:${d.dispute_id}:${round}`.slice(0, 108);
@@ -174,7 +175,9 @@ async function guarded(
     await finishAction(db, d.dispute_id, action, round, "done", receipt.debugId);
     return receipt;
   } catch (err) {
-    if (landed && (await landed().catch(() => false))) {
+    // These two are thrown before anything is sent, so there is nothing to look for.
+    const unsent = err instanceof DisputeActionUnavailable || err instanceof RangeError;
+    if (!unsent && (await landed().catch(() => false))) {
       await finishAction(db, d.dispute_id, action, round, "done", null);
       return { status: 0, debugId: null, confirmedByRead: true };
     }
@@ -184,6 +187,9 @@ async function guarded(
     throw err;
   }
 }
+
+/** Marks an audit event for an action whose reply was lost and that a read of the dispute confirmed. */
+const confirmed = (r: ActionReceipt) => (r.confirmedByRead ? { confirmedByRead: true } : {});
 
 /** After an action, read the dispute a few times until PayPal shows the change. */
 async function followUp(rentalId: string, before: Dispute): Promise<void> {
@@ -229,7 +235,7 @@ export async function submitEvidence(rentalId: string): Promise<string> {
     files: files.map((f) => f.name),
     summary: pack.narrative.source,
     debugId: receipt.debugId,
-    ...(receipt.confirmedByRead ? { confirmedByRead: true } : {}),
+    ...confirmed(receipt),
   });
   publish(rentalId, "dispute.evidence_sent");
   await followUp(rentalId, d);
@@ -245,8 +251,16 @@ export async function acceptClaim(rentalId: string): Promise<void> {
   if (types.length > 0 && !types.includes("REFUND")) throw new UserError("PayPal only offers a partial or return-based acceptance here; settle it in PayPal's Resolution Center.");
   const amount = usdCents(d.dispute_amount);
   const note = `${SHOP.name} accepts the claim on rental ${rental.id}${amount !== null ? ` and agrees to refund ${formatUsd(amount)}` : ""}.`;
-  const receipt = await guarded(rentalId, d, "accept", "once", "accept the claim", (requestId) => disputeApi().acceptClaim(d, { note, type: "REFUND" }, requestId));
-  await appendEvent(await getDb(), rentalId, "staff", "dispute.claim_accepted", { disputeId: d.dispute_id, refundCents: amount, debugId: receipt.debugId });
+  const receipt = await guarded(
+    rentalId,
+    d,
+    "accept",
+    "once",
+    "accept the claim",
+    (requestId) => disputeApi().acceptClaim(d, { note, type: "REFUND" }, requestId),
+    async () => actionLanded.accept(d, await disputeApi().get(d.dispute_id)),
+  );
+  await appendEvent(await getDb(), rentalId, "staff", "dispute.claim_accepted", { disputeId: d.dispute_id, refundCents: amount, debugId: receipt.debugId, ...confirmed(receipt) });
   publish(rentalId, "dispute.claim_accepted");
   await followUp(rentalId, d);
 }
@@ -259,8 +273,16 @@ export async function makeOffer(rentalId: string, cents: Cents): Promise<void> {
   const disputed = usdCents(d.dispute_amount) ?? 0;
   if (!Number.isSafeInteger(cents) || cents <= 0 || cents >= disputed) throw new UserError(`An offer must be more than $0.00 and less than the ${formatUsd(disputed)} in dispute.`);
   const note = `${SHOP.name} offers to refund ${formatUsd(cents)} on rental ${rental.id}: the part the customer questioned at the counter.`;
-  const receipt = await guarded(rentalId, d, "offer", String(cents), "make an offer", (requestId) => disputeApi().makeOffer(d, { note, type: "REFUND", amountCents: cents }, requestId));
-  await appendEvent(await getDb(), rentalId, "staff", "dispute.offer_made", { disputeId: d.dispute_id, offerCents: cents, debugId: receipt.debugId });
+  const receipt = await guarded(
+    rentalId,
+    d,
+    "offer",
+    String(cents),
+    "make an offer",
+    (requestId) => disputeApi().makeOffer(d, { note, type: "REFUND", amountCents: cents }, requestId),
+    async () => actionLanded.offer(d, await disputeApi().get(d.dispute_id), cents),
+  );
+  await appendEvent(await getDb(), rentalId, "staff", "dispute.offer_made", { disputeId: d.dispute_id, offerCents: cents, debugId: receipt.debugId, ...confirmed(receipt) });
   publish(rentalId, "dispute.offer_made");
   await followUp(rentalId, d);
 }
@@ -277,8 +299,16 @@ export async function sandboxRequireEvidence(rentalId: string): Promise<void> {
   const { stored } = await currentDispute(rentalId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).requireEvidence) throw new UserError(notOffered("ask for evidence", d));
-  const receipt = await guarded(rentalId, d, "require-evidence", d.update_time ?? "first", "ask for evidence", (requestId) => disputeApi().requireEvidence(d, "SELLER_EVIDENCE", requestId));
-  await appendEvent(await getDb(), rentalId, "staff", "dispute.sandbox_evidence_requested", { disputeId: d.dispute_id, debugId: receipt.debugId });
+  const receipt = await guarded(
+    rentalId,
+    d,
+    "require-evidence",
+    d.update_time ?? "first",
+    "ask for evidence",
+    (requestId) => disputeApi().requireEvidence(d, "SELLER_EVIDENCE", requestId),
+    async () => actionLanded.requireEvidence(d, await disputeApi().get(d.dispute_id)),
+  );
+  await appendEvent(await getDb(), rentalId, "staff", "dispute.sandbox_evidence_requested", { disputeId: d.dispute_id, debugId: receipt.debugId, ...confirmed(receipt) });
   publish(rentalId, "dispute.sandbox");
   await followUp(rentalId, d);
 }
@@ -289,8 +319,16 @@ export async function sandboxDecide(rentalId: string, outcome: "SELLER_FAVOR" | 
   const { stored } = await currentDispute(rentalId);
   const d = await pull(rentalId, stored.id);
   if (!availableActions(d).adjudicate) throw new UserError(notOffered("decide the case", d));
-  const receipt = await guarded(rentalId, d, "adjudicate", "once", "decide the case", (requestId) => disputeApi().adjudicate(d, outcome, requestId));
-  await appendEvent(await getDb(), rentalId, "staff", "dispute.sandbox_decided", { disputeId: d.dispute_id, outcome, debugId: receipt.debugId });
+  const receipt = await guarded(
+    rentalId,
+    d,
+    "adjudicate",
+    "once",
+    "decide the case",
+    (requestId) => disputeApi().adjudicate(d, outcome, requestId),
+    async () => actionLanded.adjudicate(d, await disputeApi().get(d.dispute_id)),
+  );
+  await appendEvent(await getDb(), rentalId, "staff", "dispute.sandbox_decided", { disputeId: d.dispute_id, outcome, debugId: receipt.debugId, ...confirmed(receipt) });
   publish(rentalId, "dispute.sandbox");
   await followUp(rentalId, d);
 }

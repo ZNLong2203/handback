@@ -121,6 +121,46 @@ describe("shopMoney", () => {
   });
 });
 
+describe("actionLanded", () => {
+  const usd = (value: string) => ({ currency_code: "USD", value });
+  const waiting = { ...inquiry, evidences: [...inquiry.evidences!] };
+
+  it("sees an accepted claim only when the accept link is gone and the customer was refunded", () => {
+    const accepted = { ...waiting, status: "RESOLVED", links: [], dispute_outcome: { outcome_code: "RESOLVED_BUYER_FAVOUR", amount_refunded: usd("2.00") } };
+    expect(model.actionLanded.accept(waiting, accepted)).toBe(true);
+    // Still offered: PayPal has not acted on it.
+    expect(model.actionLanded.accept(waiting, { ...accepted, links: waiting.links })).toBe(false);
+    // Resolved for the shop is not an acceptance.
+    expect(model.actionLanded.accept(waiting, { ...accepted, dispute_outcome: { outcome_code: "RESOLVED_SELLER_FAVOUR" } })).toBe(false);
+    // A refund PayPal reported as a fund movement counts too.
+    const paidOut = { ...waiting, links: [], fund_movements: [{ party: "SELLER", type: "DEBIT", reason: "DISPUTE_SETTLEMENT", amount: usd("2.00") }] };
+    expect(model.actionLanded.accept(waiting, paidOut)).toBe(true);
+  });
+
+  it("sees an offer only when PayPal shows that amount as the shop's offer", () => {
+    const offered = { ...waiting, offer: { seller_offered_amount: usd("1.50") } };
+    expect(model.actionLanded.offer(waiting, offered, 150)).toBe(true);
+    expect(model.actionLanded.offer(waiting, offered, 100)).toBe(false);
+    expect(model.actionLanded.offer(offered, offered, 150)).toBe(false);
+  });
+
+  it("sees a sandbox request for evidence by new requests or a new deadline", () => {
+    const reviewing = { ...underReview, evidences: waiting.evidences!.filter((e) => e.source !== "REQUESTED_FROM_SELLER"), seller_response_due_date: undefined };
+    const asked = { ...reviewing, status: "WAITING_FOR_SELLER_RESPONSE", evidences: [...reviewing.evidences, { evidence_type: "PROOF_OF_REFUND", source: "REQUESTED_FROM_SELLER" }] };
+    expect(model.actionLanded.requireEvidence(reviewing, asked)).toBe(true);
+    expect(model.actionLanded.requireEvidence(reviewing, { ...reviewing, seller_response_due_date: "2026-10-06T06:59:59.000Z" })).toBe(true);
+    expect(model.actionLanded.requireEvidence(reviewing, { ...reviewing, links: [] })).toBe(false);
+  });
+
+  it("sees a sandbox decision by a new adjudication or by the case resolving", () => {
+    const adjudicated = { ...underReview, adjudications: [{ type: "RECOVER_FROM_SELLER", adjudication_time: "2026-10-02T15:36:20.004Z" }] };
+    expect(model.actionLanded.adjudicate(underReview, adjudicated)).toBe(true);
+    expect(model.actionLanded.adjudicate(underReview, { ...underReview, status: "RESOLVED" })).toBe(true);
+    expect(model.actionLanded.adjudicate(underReview, underReview)).toBe(false);
+    expect(model.actionLanded.adjudicate(adjudicated, adjudicated)).toBe(false);
+  });
+});
+
 describe("chooseEvidenceType", () => {
   it("files under OTHER when PayPal asks for proof a counter rental does not have", () => {
     expect(model.chooseEvidenceType(inquiry)).toBe("OTHER");

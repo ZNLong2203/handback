@@ -159,6 +159,32 @@ export function sellerSubmissions(d: Pick<Dispute, "evidences">, fileNames: stri
   ).length;
 }
 
+type Seen = Pick<Dispute, "status" | "links" | "evidences" | "seller_response_due_date" | "offer" | "adjudications" | "dispute_outcome" | "fund_movements">;
+
+const requestCount = (d: Seen) => (d.evidences ?? []).filter((e) => e.source === "REQUESTED_FROM_SELLER").length;
+const customerRefunded = (d: Seen) =>
+  d.dispute_outcome?.outcome_code === "RESOLVED_BUYER_FAVOUR" || (usdCents(d.dispute_outcome?.amount_refunded) ?? 0) > 0 || shopMoney(d).paidToCustomer !== null;
+
+/**
+ * Whether a dispute read after an unclear reply shows that PayPal carried
+ * out an action anyway (the same lost-reply case as sellerSubmissions).
+ * Each compares the read before the action with the read after it and looks
+ * for the change that action makes, so an unrelated update is not taken
+ * for it. A slow sandbox can show the change late; then the action stays
+ * failed, as it was before this check existed.
+ */
+export const actionLanded = {
+  /** Accepting closes the offer to accept and refunds the customer. */
+  accept: (before: Seen, after: Seen) => !actionLink(after, "accept_claim") && !customerRefunded(before) && customerRefunded(after),
+  /** PayPal shows the shop's offer on the dispute. */
+  offer: (before: Seen, after: Seen, cents: Cents) => usdCents(before.offer?.seller_offered_amount) !== cents && usdCents(after.offer?.seller_offered_amount) === cents,
+  /** Sandbox require-evidence: new requests to the seller, or a new deadline. */
+  requireEvidence: (before: Seen, after: Seen) =>
+    requestCount(after) > requestCount(before) || Boolean(after.seller_response_due_date && after.seller_response_due_date !== before.seller_response_due_date),
+  /** Sandbox adjudicate: a new adjudication (the sandbox dated one four seconds after the call), or the case resolved. */
+  adjudicate: (before: Seen, after: Seen) => (after.adjudications?.length ?? 0) > (before.adjudications?.length ?? 0) || (after.status === "RESOLVED" && before.status !== "RESOLVED"),
+};
+
 /** Evidence types PayPal has asked the shop for, oldest request first. */
 export function requestedEvidence(d: Dispute): string[] {
   const types = (d.evidences ?? []).filter((e) => e.source === "REQUESTED_FROM_SELLER" && e.evidence_type).map((e) => e.evidence_type!);
