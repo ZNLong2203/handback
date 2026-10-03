@@ -336,6 +336,19 @@ describe("PAYMENT.CAPTURE.REFUNDED", () => {
     expect(await events(rentalId, "refund.recorded")).toHaveLength(0);
   });
 
+  it("applies a delivery that failed when PayPal sends it again, instead of calling it a duplicate", async () => {
+    const { rentalId, captureId } = await settledHood();
+    const db = await getDb();
+    const hook = refundWebhook(`WH-${rentalId}-flaky`, "OUTSIDE-FLAKY-1", captureId, "5.00");
+    const broken = vi.spyOn(db, "tx").mockRejectedValueOnce(new Error("connection reset"));
+    await expect(applyPayPalWebhook(hook)).rejects.toThrow(/connection reset/);
+    broken.mockRestore();
+    expect((await view(rentalId)).refunds).toEqual([]);
+    expect(await applyPayPalWebhook(hook)).toBe("applied");
+    expect((await view(rentalId)).refunds).toEqual([expect.objectContaining({ refundId: "OUTSIDE-FLAKY-1", amountCents: 500 })]);
+    expect(await applyPayPalWebhook(hook)).toBe("duplicate");
+  });
+
   it("counts a refund once when PayPal's webhook arrives before PayPal's reply is recorded", async () => {
     const { rentalId, captureId } = await settledHood();
     const real = gateway.refund.bind(gateway);

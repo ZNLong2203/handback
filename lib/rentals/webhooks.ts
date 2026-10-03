@@ -65,7 +65,18 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
     [event.id, event.event_type, resourceId, JSON.stringify(event)],
   );
   if (inserted.length === 0) return "duplicate";
+  try {
+    return await apply(event, resourceId);
+  } catch (err) {
+    // The delivery failed (the route answers 500), so PayPal sends the event
+    // again; free its id so that delivery is applied, not called a duplicate.
+    await db.query("delete from webhook_events where id = $1", [event.id]);
+    throw err;
+  }
+}
 
+async function apply(event: PayPalWebhookEvent, resourceId: string | null): Promise<"applied" | "ignored"> {
+  const db = await getDb();
   const r = event.resource ?? {};
   let rental: Rental | null = null;
   if (event.event_type === "PAYMENT.CAPTURE.REFUNDED" && r.id) {
@@ -122,7 +133,7 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
     }
   });
   publish(rentalId, moved ?? event.event_type);
-  if (approvedUnpaid) await captureApproved(event.id, r.id!);
+  if (approvedUnpaid) await captureApproved(r.id!);
   return "applied";
 }
 
@@ -130,15 +141,14 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
  * Captures a booking the renter approved, from CHECKOUT.ORDER.APPROVED. A
  * refusal PayPal would repeat is already in the rental's audit log (paypalStep
  * wrote it) and the renter can approve again. A failure that may pass later
- * frees the event id and fails the delivery, so PayPal's redelivery tries again
- * with the same request id.
+ * fails the delivery, so PayPal's redelivery tries again with the same
+ * request id.
  */
-async function captureApproved(eventId: string, orderId: string): Promise<void> {
+async function captureApproved(orderId: string): Promise<void> {
   try {
     await confirmBooking(orderId);
   } catch (err) {
     if (err instanceof UserError && !(err instanceof PayPalStepError && err.retryable)) return;
-    await (await getDb()).query("delete from webhook_events where id = $1", [eventId]);
     throw err;
   }
 }
