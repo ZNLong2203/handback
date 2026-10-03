@@ -41,6 +41,7 @@ const EVENT_LABEL: Record<string, string> = {
   "booking.paid": "Rental fee paid; PayPal saved for the deposit",
   "booking.pending": "Rental fee approved; PayPal is still processing it",
   "booking.declined": "PayPal did not take the rental fee",
+  "booking.not_captured": "The renter approved in PayPal, but the booking could not be taken",
   "photo.added": "Photo recorded",
   "deposit.held": "Deposit held on PayPal",
   "checkout.acknowledged": "Customer confirmed the pickup photos",

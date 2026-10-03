@@ -128,6 +128,8 @@ export class PayPalStepError extends UserError {
   constructor(
     message: string,
     readonly retryable: boolean,
+    /** PayPal's details[0].issue, when it gave one. */
+    readonly issue: string | null = null,
   ) {
     super(message);
     this.name = "PayPalStepError";

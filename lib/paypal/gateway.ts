@@ -20,6 +20,8 @@ export interface DepositGateway {
   createBookingOrder(req: BookingOrderRequest, requestId: string): Promise<Hold>;
   /** After the buyer approves: capture the fee and read back the saved-wallet token. */
   captureBookingOrder(orderId: string, requestId: string): Promise<BookingCapture>;
+  /** Reads a booking order back: its capture and saved-wallet token, or null while it has no capture. */
+  getBookingOrder(orderId: string): Promise<BookingCapture | null>;
   /** Pickup: hold the deposit on the saved wallet, buyer not present. */
   holdWithSavedWallet(req: SavedWalletRequest, requestId: string): Promise<Authorization>;
   /** Damage above the deposit: charge the saved wallet directly. */

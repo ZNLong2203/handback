@@ -603,4 +603,49 @@ describe("CHECKOUT.ORDER.APPROVED", () => {
     expect(await applyPayPalWebhook(approved(`WH-${flaky.rentalId}-f`, flaky.orderId))).toBe("applied");
     expect((await rental(flaky.rentalId)).status).toBe("booked");
   });
+
+  it("writes it down when the booking cannot be taken because the last unit went while the renter was in PayPal", async () => {
+    const dates = spacedDates(2);
+    const book = (name: string) => svc.startBooking({ itemId: "drone-kit", name, email: `${name.toLowerCase()}@example.com`, ...dates });
+    const late = await book("Sam");
+    // Sam takes over an hour in PayPal, so the draft no longer holds its unit, and both drone kits are booked.
+    await (await getDb()).query("update rentals set created_at = now() - interval '1 hour' where id = $1", [late.rentalId]);
+    for (const name of ["Ana", "Bo"]) await svc.confirmBooking((await book(name)).orderId);
+
+    const asked = await withCapture(null, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${late.rentalId}-gone`, late.orderId))).toBe("applied");
+    });
+    expect(asked).toBe(0);
+    expect((await rental(late.rentalId)).status).toBe("draft");
+    expect((await repo.eventsFor(await getDb(), late.rentalId)).at(-1)).toMatchObject({
+      type: "booking.not_captured",
+      data: { orderId: late.orderId, reason: expect.stringMatching(/was booked\. Nothing was charged/), webhookEventId: `WH-${late.rentalId}-gone` },
+    });
+  });
+
+  it("books a renter whose capture went through unanswered, when PayPal later says the order is already captured", async () => {
+    const b = await draft();
+    const shared = globalThis as { depositGateway?: DepositGateway };
+    const real = shared.depositGateway!;
+    // The capture lands at PayPal, but its answer is lost: the delivery fails and PayPal will send it again.
+    await withCapture(async (orderId, requestId) => {
+      await real.captureBookingOrder(orderId, requestId);
+      throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, "socket hang up");
+    }, async () => {
+      await expect(applyPayPalWebhook(approved(`WH-${b.rentalId}-lost`, b.orderId))).rejects.toThrow();
+    });
+    expect((await rental(b.rentalId)).status).toBe("draft");
+
+    // By the redelivery PayPal no longer recognises the request id and refuses a second capture.
+    await withCapture(async () => {
+      throw new PayPalError(422, "UNPROCESSABLE_ENTITY", "ORDER_ALREADY_CAPTURED", "demo-already", "Order already captured.");
+    }, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-lost`, b.orderId))).toBe("applied");
+    });
+    const paid = await real.getBookingOrder(b.orderId);
+    expect(await rental(b.rentalId)).toMatchObject({ status: "booked", feeCaptureId: paid!.captureId, vaultId: paid!.vaultId });
+    const log = await repo.eventsFor(await getDb(), b.rentalId);
+    expect(log.filter((e) => e.type === "paypal.error").at(-1)).toMatchObject({ data: { issue: "ORDER_ALREADY_CAPTURED" } });
+    expect(log.at(-1)).toMatchObject({ type: "booking.paid", data: { captureId: paid!.captureId, readBackFromOrder: true } });
+  });
 });

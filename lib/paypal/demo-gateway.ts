@@ -25,6 +25,7 @@ type DemoOrder = {
   savePayPal: boolean;
   authorizationId?: string;
   captureId?: string;
+  vaultId?: string;
 };
 type DemoAuth = Authorization & { capturedCents: number; reauthorized: boolean };
 type DemoCapture = { id: string; amountCents: number; refundedCents: number };
@@ -153,8 +154,17 @@ export class DemoDepositGateway implements DepositGateway {
       order.captureId = capture.id;
       const vaultId = this.id("DEMO-VAULT");
       this.state.vaults[vaultId] = "renter@example.com";
+      order.vaultId = vaultId;
       return { captureId: capture.id, status: "COMPLETED", capturedCents: order.totalCents, vaultId, payerEmail: "renter@example.com" };
     });
+  }
+
+  async getBookingOrder(orderId: string): Promise<BookingCapture | null> {
+    await this.ready();
+    const order = this.state.orders[orderId];
+    if (!order) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Order not found.");
+    if (!order.captureId) return null;
+    return { captureId: order.captureId, status: "COMPLETED", capturedCents: order.totalCents, vaultId: order.vaultId, payerEmail: "renter@example.com" };
   }
 
   async holdWithSavedWallet(req: SavedWalletRequest, requestId: string): Promise<Authorization> {

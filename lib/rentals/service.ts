@@ -9,6 +9,7 @@ import { inspectReturn } from "@/lib/inspection/run";
 import { publish } from "@/lib/live";
 import { formatUsd, type Cents } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
+import type { BookingCapture } from "@/lib/paypal/gateway";
 import { loadPhoto, storePhoto } from "@/lib/photos";
 import { sampleFile } from "@/lib/samples";
 import { afterSettlement } from "@/lib/schedule/agent";
@@ -38,7 +39,7 @@ export async function paypalStep<T>(rentalId: string, step: string, fn: () => Pr
     const refusal = { step, status: err.status, name: err.errorName, issue: err.issue ?? null, debugId: err.debugId ?? null, message: err.message };
     await appendEvent(db, rentalId, "paypal", "paypal.error", refusal);
     publish(rentalId, "paypal.error");
-    throw new PayPalStepError(explainPayPalError(refusal), err.retryable || err.status === 0 || err.status === 408);
+    throw new PayPalStepError(explainPayPalError(refusal), err.retryable || err.status === 0 || err.status === 408, err.issue ?? null);
   }
 }
 
@@ -246,9 +247,20 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
   if (rental.feeCaptureId) return { token: rental.token, pending: true };
 
   await confirmUnitBeforePayment(rental.id);
-  const paid = await paypalStep(rental.id, "capture the rental fee", () =>
-    depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`),
-  );
+  let paid: BookingCapture;
+  let readBack = false;
+  try {
+    paid = await paypalStep(rental.id, "capture the rental fee", () => depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`));
+  } catch (err) {
+    // An earlier capture went through but its answer never reached us, and
+    // PayPal no longer recognises the request id: read the order back and
+    // record that capture, rather than leave a paid renter unpaid.
+    if (!(err instanceof PayPalStepError && err.issue === "ORDER_ALREADY_CAPTURED")) throw err;
+    const found = await paypalStep(rental.id, "read the captured booking order", () => depositGateway().getBookingOrder(orderId));
+    if (!found) throw err;
+    paid = found;
+    readBack = true;
+  }
   if (paid.status === "PENDING") {
     const recorded = await db.tx(async (tx) => {
       const rows = await tx.query(
@@ -279,6 +291,7 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
         captureId: paid.captureId,
         feeCents: paid.capturedCents,
         savedWallet: Boolean(paid.vaultId),
+        ...(readBack ? { readBackFromOrder: true } : {}),
       });
     }
     return moved;

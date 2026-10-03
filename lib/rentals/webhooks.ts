@@ -133,7 +133,7 @@ async function apply(event: PayPalWebhookEvent, resourceId: string | null): Prom
     }
   });
   publish(rentalId, moved ?? event.event_type);
-  if (approvedUnpaid) await captureApproved(r.id!);
+  if (approvedUnpaid) await captureApproved(rentalId, r.id!, event.id);
   return "applied";
 }
 
@@ -144,11 +144,16 @@ async function apply(event: PayPalWebhookEvent, resourceId: string | null): Prom
  * fails the delivery, so PayPal's redelivery tries again with the same
  * request id.
  */
-async function captureApproved(orderId: string): Promise<void> {
+async function captureApproved(rentalId: string, orderId: string, webhookEventId: string): Promise<void> {
   try {
     await confirmBooking(orderId);
   } catch (err) {
-    if (err instanceof UserError && !(err instanceof PayPalStepError && err.retryable)) return;
-    throw err;
+    if (!(err instanceof UserError) || (err instanceof PayPalStepError && err.retryable)) throw err;
+    // PayPal's refusals are already in the log (paypalStep). One from before
+    // PayPal, such as the last unit going while the renter was in PayPal, is not.
+    if (!(err instanceof PayPalStepError)) {
+      await appendEvent(await getDb(), rentalId, "system", "booking.not_captured", { orderId, reason: err.message, webhookEventId });
+      publish(rentalId, "booking.not_captured");
+    }
   }
 }
