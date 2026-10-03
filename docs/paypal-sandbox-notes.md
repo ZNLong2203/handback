@@ -181,4 +181,8 @@ Both samples write their links on `api.sandbox.paypal.com`.
 
 `scripts/register-webhook.ts` now adds missing event types to a URL that is already registered, with `PATCH /v1/notifications/webhooks/{id}` (`replace` on `/event_types`, the only operation the endpoint supports). Checked on a throwaway registration for an example.com URL, deleted afterwards: created with two event types (webhook `74W15631HG422952E`, debug_id `ca44b43b39fc3`), the script added the ten missing ones including `CHECKOUT.ORDER.APPROVED`, a GET showed all twelve (debug_id `ca44b43cc2c22`), a second run changed nothing, and the DELETE answered 204.
 
+### Reading a captured booking order back
+
+`confirmBooking` reads the order back when PayPal answers a capture with `ORDER_ALREADY_CAPTURED` (a capture that went through unanswered, retried after PayPal stopped recognising its request id). `GET /v2/checkout/orders/5VT96881B7313973S`, the `R-BYNANG` booking above (debug_id `ca44b72392bcf`), returned status `COMPLETED` with the fee capture `5CM53111UC959472K` (`COMPLETED`, 87.00) under `purchase_units[0].payments.captures` and the saved-wallet token, `VAULTED`, under `payment_source.paypal.attributes.vault`: everything the booking records. The `ORDER_ALREADY_CAPTURED` refusal itself was not provoked in the sandbox.
+
 Capturing a booking from a real `CHECKOUT.ORDER.APPROVED` delivery has not been seen: it needs a deployment with a public URL. The handler is tested against the simulator's payload shape above.
