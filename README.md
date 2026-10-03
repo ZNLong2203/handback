@@ -35,6 +35,7 @@ Also in this build:
 
 - **Answer a PayPal dispute from the rental's record.** A dispute arrives by webhook (or from the counter's "Check PayPal for disputes" button) and opens a desk on the rental. Code builds a one-page evidence PDF from what was recorded: both photos with their SHA-256, what the renter accepted on their phone, the PayPal ids and the audit chain. The desk recommends fighting, offering part back or accepting, from the record and PayPal's published dispute fee, and sends the pack and both photos to PayPal.
 - **A schedule of physical units, with a repair agent.** Each booking gets a physical unit (for example "Projector B") when it is made. `/shop/schedule` shows every unit on a Bryntum Scheduler timeline. When a settled return has a charged damage or missing part, the unit is blocked for its repair, and an agent suggests a fix for each booking that now clashes: another unit, later dates, or a call. Staff approve each suggestion; drags and typed commands go through the same checks on the server.
+- **Refunds after settling.** If the shop kept too much, staff refund part or all of the settlement capture (or of the charge above the deposit) from the counter, with a reason the renter sees on their page. A double submit refunds once, and while a PayPal dispute is open the counter sends staff to the dispute desk instead.
 - **Booking through an AI assistant over MCP.** `/api/mcp` lets an assistant (Claude Desktop, Claude Code or any MCP client) list items, quote, start a booking and follow it with a read-only status token. The assistant hands the person PayPal's approval link. Money moves only after the person approves in PayPal and the counter settles, and every hold and charge is checked against the deposit mandate first.
 
 ![The schedule after a damaged return: Projector A is in repair, and the agent suggests moving Priya to Projector B and offering Diego later dates](docs/images/schedule-proposals.png)
@@ -69,6 +70,7 @@ Open http://localhost:3000 and use two tabs, one as the renter and one as the co
 
 Then, still in demo mode:
 
+- **Refund.** On the settled rental, under **Refunds**, enter an amount and the reason the renter will see, then **Refund** and confirm. The renter's page shows it without a reload.
 - **Dispute.** On the settled rental, press **Demo stand-in: the customer disputes this charge with PayPal**, then **Prepare the evidence pack**, **Send to PayPal** and confirm. The panel's **Demo stand-in: play PayPal's part** buttons ask for evidence again and decide the case.
 - **Schedule.** Open **Schedule** at the counter. The first visit books two weeks of sample rentals through the real service; [docs/bryntum.md](docs/bryntum.md#demo-data) shows how to stage a damaged return.
 - **Assistant.** `claude mcp add --transport http handback http://localhost:3000/api/mcp`, or any client from [docs/agents.md](docs/agents.md#connecting-a-client). In demo mode the approval link opens a page labelled as a stand-in for PayPal.
@@ -110,6 +112,7 @@ Terms used below:
 | The deposit mandate, checked before every hold and charge | No PayPal call: before the hold and before the settlement capture or saved-wallet charge, the server checks the hold against the mandate's limit, each charge against its price list and the renter's answer, and the date against its end. The stored mandate must hash to the value the audit chain recorded at booking, and the chain must verify. A refusal is written to the audit log and PayPal is not called | [`lib/rentals/mandate.ts`](lib/rentals/mandate.ts) (`mandateViolations`), [`lib/rentals/service.ts`](lib/rentals/service.ts) (`holdDeposit`, `settle`) |
 | Settle: one capture of what is owed after review, the rest released | Payments v2 `POST /v2/payments/authorizations/{id}/capture` with `final_capture: true` (`PaymentsController.captureAuthorizedPayment`) | [`lib/paypal/paypal-gateway.ts`](lib/paypal/paypal-gateway.ts) (`settle`), [`lib/rentals/service.ts`](lib/rentals/service.ts) (`settle`) |
 | Release the whole deposit when nothing is owed | Payments v2 `POST /v2/payments/authorizations/{id}/void` (`PaymentsController.voidPayment`) | [`lib/paypal/paypal-gateway.ts`](lib/paypal/paypal-gateway.ts) (`release`) |
+| Refund part or all of a settled charge | Payments v2 `POST /v2/payments/captures/{id}/refund` with `amount`, `note_to_payer` (the reason staff typed) and `invoice_id` (`PaymentsController.refundCapturedPayment`). Only the settlement capture and the charge above the deposit, never more than is left on that capture after earlier refunds, and not while a PayPal dispute on the rental is open. Run in the sandbox from the counter | [`lib/paypal/paypal-gateway.ts`](lib/paypal/paypal-gateway.ts) (`refund`), [`lib/rentals/refunds.ts`](lib/rentals/refunds.ts) (`refundCharge`), [`components/refund-form.tsx`](components/refund-form.tsx) |
 | Charge repairs that cost more than the deposit | Orders v2 `POST /v2/checkout/orders`, `intent: CAPTURE` on the saved `vault_id` | [`lib/paypal/paypal-gateway.ts`](lib/paypal/paypal-gateway.ts) (`chargeSavedWallet`) |
 | Renew a hold the day before the item is due back, never before day 4, at most once | Payments v2 `POST /v2/payments/authorizations/{id}/reauthorize` (`PaymentsController.reauthorizePayment`), run by `POST /api/jobs/renew-holds` | [`lib/rentals/jobs.ts`](lib/rentals/jobs.ts) (`renewDueHolds`), [`app/api/jobs/renew-holds/route.ts`](app/api/jobs/renew-holds/route.ts) |
 | Hold renewals on Render Workflows, where configured | The hourly cron job calls `POST /api/jobs/renew-holds`, which starts a `renew-holds` task run keyed by the hour; the task runs the same `renewDueHolds`. Without `RENDER_WORKFLOW_SLUG` and `RENDER_API_KEY`, in demo mode, or when Render cannot be reached, the sweep runs in the web process | [`lib/workflows/dispatch.ts`](lib/workflows/dispatch.ts) (`runRenewals`), [`workflows/tasks.ts`](workflows/tasks.ts), [`render.yaml`](render.yaml) |
@@ -118,17 +121,17 @@ Terms used below:
 | Accept the claim, or offer part back | `POST /v1/customer/disputes/{id}/accept-claim` (`REFUND`) and `POST /v1/customer/disputes/{id}/make-offer` (`REFUND`, less than the disputed amount). Not yet run in the sandbox; tested against the stand-in | [`lib/paypal/disputes.ts`](lib/paypal/disputes.ts) (`acceptClaim`, `makeOffer`), [`lib/disputes/service.ts`](lib/disputes/service.ts) |
 | Play PayPal's part in the sandbox | `POST /v1/customer/disputes/{id}/require-evidence` and `POST /v1/customer/disputes/{id}/adjudicate`, refused in code outside the sandbox | [`lib/paypal/disputes.ts`](lib/paypal/disputes.ts) (`requireEvidence`, `adjudicate`), [`lib/disputes/service.ts`](lib/disputes/service.ts) (`sandboxRequireEvidence`, `sandboxDecide`) |
 | Act only on links PayPal returned | Every dispute action reads the dispute first and follows the link PayPal returned for that action, only to PayPal's own API host. With no link, nothing is sent | [`lib/paypal/disputes.ts`](lib/paypal/disputes.ts), [`lib/paypal/dispute-model.ts`](lib/paypal/dispute-model.ts) (`availableActions`) |
-| No double charges | A `PayPal-Request-Id` on every order and payment POST, derived from the rental (`booking:<id>`, `booking-capture:<id>`, `deposit:<id>`, `settle:<id>`, `release:<id>`, `extra:<id>`, `reauth:<id>:<date>`), so a retry returns the first result. The Disputes API did not deduplicate on that header in the sandbox, so each dispute action (`dispute-<action>:<dispute id>:<round>`) is first claimed in a `dispute_actions` row, and an error is followed by a read that checks whether the action landed | [`lib/rentals/service.ts`](lib/rentals/service.ts), [`lib/rentals/jobs.ts`](lib/rentals/jobs.ts), [`lib/disputes/service.ts`](lib/disputes/service.ts), [`lib/paypal/dispute-model.ts`](lib/paypal/dispute-model.ts) (`actionLanded`) |
+| No double charges | A `PayPal-Request-Id` on every order and payment POST, derived from the rental (`booking:<id>`, `booking-capture:<id>`, `deposit:<id>`, `settle:<id>`, `release:<id>`, `extra:<id>`, `reauth:<id>:<date>`), so a retry returns the first result. A refund uses `refund:<id>:<n>`, where `n` is the rental's next refund number: it is claimed in a `refunds` row before PayPal is called and carried by the counter's form, so sending the same form twice refunds once and a later refund gets a new id. The Disputes API did not deduplicate on that header in the sandbox, so each dispute action (`dispute-<action>:<dispute id>:<round>`) is first claimed in a `dispute_actions` row, and an error is followed by a read that checks whether the action landed | [`lib/rentals/service.ts`](lib/rentals/service.ts), [`lib/rentals/jobs.ts`](lib/rentals/jobs.ts), [`lib/rentals/refunds.ts`](lib/rentals/refunds.ts), [`lib/disputes/service.ts`](lib/disputes/service.ts), [`lib/paypal/dispute-model.ts`](lib/paypal/dispute-model.ts) (`actionLanded`) |
 | Retries and tokens | One long-lived Server SDK client, which caches and refreshes its OAuth token, retrying GET, POST and PATCH on 408, 429, 500, 502, 503 and 504. A small REST client covers the webhook and Disputes APIs: it caches its token, refreshes it on a 401, and retries network failures, stalled bodies, 429 and 5xx with backoff, honouring `Retry-After` and sending the same request id and the same bytes | [`lib/paypal/sdk.ts`](lib/paypal/sdk.ts), [`lib/paypal/rest.ts`](lib/paypal/rest.ts) |
 | Errors people can act on | A PayPal error keeps PayPal's `issue` and `debug_id` and is written to the rental's audit trail. On the booking page and at the counter it becomes a message with the PayPal reference, and known issues are explained in plain words (for example `INSTRUMENT_DECLINED`, `MAX_CAPTURE_AMOUNT_EXCEEDED`, `AUTHORIZATION_EXPIRED`) | [`lib/paypal/errors.ts`](lib/paypal/errors.ts), [`lib/rentals/service.ts`](lib/rentals/service.ts) (`paypalStep`) |
 | Webhook verification | Offline RSA-SHA256 check of the signature over transmission id, time, webhook id and the body's CRC-32, against a currently valid certificate from a paypal.com host; `POST /v1/notifications/verify-webhook-signature` as the fallback; anything unverified gets a 401 | [`lib/paypal/webhook-signature.ts`](lib/paypal/webhook-signature.ts), [`lib/paypal/webhooks.ts`](lib/paypal/webhooks.ts), [`app/api/paypal/webhooks/route.ts`](app/api/paypal/webhooks/route.ts) |
-| Webhook handling | Each event is applied once (deduplicated on its id) and logged on the rental it belongs to. `CUSTOMER.DISPUTE.CREATED`, `UPDATED` and `RESOLVED` store PayPal's view of the case, and a delivery older than the stored one changes nothing. A dispute moves a settled rental to disputed, and back to settled once PayPal has closed every case on it; a dispute opened while the item is still out records the case and leaves the rental out. `PAYMENT.CAPTURE.COMPLETED` and `DENIED` resolve a pending fee capture (above) | [`lib/rentals/webhooks.ts`](lib/rentals/webhooks.ts) (`applyPayPalWebhook`), [`lib/disputes/record.ts`](lib/disputes/record.ts) (`recordDispute`, `rentalStatusFor`) |
-| Webhook registration | `GET` and `POST /v1/notifications/webhooks` | [`scripts/register-webhook.ts`](scripts/register-webhook.ts) |
+| Webhook handling | Each event is applied once (deduplicated on its id) and logged on the rental it belongs to. `CUSTOMER.DISPUTE.CREATED`, `UPDATED` and `RESOLVED` store PayPal's view of the case, and a delivery older than the stored one changes nothing. A dispute moves a settled rental to disputed, and back to settled once PayPal has closed every case on it; a dispute opened while the item is still out records the case and leaves the rental out. `PAYMENT.CAPTURE.COMPLETED` and `DENIED` resolve a pending fee capture (above). `CHECKOUT.ORDER.APPROVED` captures a booking whose renter approved but never came back to the page: for a rental still unpaid whose booking order is the event's order, it runs the same `confirmBooking` with the same request id, so the page, the redirect and the webhook capture once between them; a failure that may pass later lets PayPal redeliver. `PAYMENT.CAPTURE.REFUNDED` carries the refund, not the capture: it is matched on the refund id, so a refund made at the counter is counted once, and otherwise on the capture named in its `up` link, which records a refund made outside the app | [`lib/rentals/webhooks.ts`](lib/rentals/webhooks.ts) (`applyPayPalWebhook`), [`lib/rentals/refunds.ts`](lib/rentals/refunds.ts) (`recordRefundWebhook`), [`lib/disputes/record.ts`](lib/disputes/record.ts) (`recordDispute`, `rentalStatusFor`) |
+| Webhook registration | `GET` and `POST /v1/notifications/webhooks`; `PATCH /v1/notifications/webhooks/{id}` adds missing event types to a URL already registered | [`scripts/register-webhook.ts`](scripts/register-webhook.ts) |
 | Demo mode | A stand-in that enforces the sandbox rules: no capture above the hold, no void after a final capture, one reauthorization from day 4, the first result for a repeated request id. A second stand-in plays the Disputes API with the links, requested evidence and fund movements the sandbox returned | [`lib/paypal/demo-gateway.ts`](lib/paypal/demo-gateway.ts), [`lib/paypal/demo-disputes.ts`](lib/paypal/demo-disputes.ts) |
 
-The gateway also has `refund` (Payments v2 `POST /v2/payments/captures/{id}/refund`) and `getAuthorization`, which only the sandbox smoke script calls; the app has no refund button. When the shop accepts a dispute claim, PayPal refunds the renter through the Disputes API. The gateway also has `createHold` and `authorizeHold`, an AUTHORIZE order the renter approves, meant for renters who did not save PayPal at booking. No page calls them yet: the counter can only hold a deposit on a saved account.
+The gateway also has `getAuthorization`, which only the sandbox smoke script calls. When the shop accepts a dispute claim or makes an offer, PayPal refunds the renter through the Disputes API, not through the counter's refund form. The gateway also has `createHold` and `authorizeHold`, an AUTHORIZE order the renter approves, meant for renters who did not save PayPal at booking. No page calls them yet: the counter can only hold a deposit on a saved account.
 
-Before building on PayPal, we checked each behaviour in the sandbox: partial capture, void, over-capture, reauthorization timing, refund, saving PayPal at booking to hold the deposit later, approval by redirect and the cancel link, and two buyer disputes answered through the Disputes API. [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md) records what we tried and what PayPal returned.
+Before building on PayPal, we checked each behaviour in the sandbox: partial capture, void, over-capture, reauthorization timing, refund (also from the counter, with a repeated request id), saving PayPal at booking to hold the deposit later, approval by redirect and the cancel link, and two buyer disputes answered through the Disputes API. [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md) records what we tried and what PayPal returned.
 
 ## How we use AI
 
@@ -185,7 +188,10 @@ sequenceDiagram
     A->>A: Issue the deposit mandate, hashed into the audit chain
     A->>P: POST /v2/checkout/orders (intent CAPTURE, vault on success)
     R->>P: Approve in PayPal (JS SDK v6 button, or the payer-action link)
-    A->>P: POST /v2/checkout/orders/{id}/capture
+    opt The renter closes the window before PayPal sends them back
+        P-)A: CHECKOUT.ORDER.APPROVED
+    end
+    A->>P: POST /v2/checkout/orders/{id}/capture (once, whichever path arrives first)
     P-->>A: Fee captured, vault_id returned
 
     Note over R,P: Pick up
@@ -224,6 +230,11 @@ sequenceDiagram
         A->>P: POST /v2/checkout/orders (intent CAPTURE, saved vault_id)
     end
     P-)A: Webhooks, verified and applied once per event id
+    opt The shop kept too much
+        S->>A: Refund part of a charge, with a reason
+        A->>P: POST /v2/payments/captures/{id}/refund
+        P-->>A: Refund COMPLETED; the renter's page shows it
+    end
 
     opt The renter disputes a charge in PayPal
         P-)A: CUSTOMER.DISPUTE.CREATED (or the counter asks PayPal)
@@ -245,17 +256,20 @@ sequenceDiagram
 - **A dispute answer states only what was recorded.** The evidence PDF is built by code from the rental's record, with both photos embedded byte for byte under their SHA-256, and the same record gives the same bytes. Gemini's summary is printed only if every number and id in it is in the facts it cites. Dispute actions follow only the links PayPal returned.
 - **Nothing on the schedule moves without a person.** The agent plans in code; Gemini only words the customer message and reads a typed command into one proposed tool call. The server checks every move (same item, still waiting for pickup, same length, nothing else on the unit), and staff confirm it.
 - **Evidence the renter can check.** Photos are stored under the SHA-256 of their bytes, the renter sees that hash when confirming the pickup photo, and every step is written to a hash-chained audit log with its PayPal ids.
+- **The counter can be closed to the public.** With `SHOP_ACCESS_CODE` set, every counter page, every staff server action, the shop's live channel and the evidence PDFs need a staff cookie that a sign-in page issues for the right code. The check runs inside each server action, not only in front of the pages, because an action can be posted to from any path. The cookie holds an HMAC derived from the code, never the code, and a new code signs everyone out.
+- **Refunds are bounded and counted once.** A refund can take back at most what is left on that capture, is refused while a PayPal dispute is open, and is matched on PayPal's refund id when PayPal's webhook reports it.
 - **Honest labels.** The strip on every page says whether PayPal and the AI are real or stand-ins, and sample photos are labeled as AI-generated.
 
 Known limits of this build:
 
-- The counter pages (`/shop`, including the schedule and the dispute desk) have no sign-in. Anyone who can reach a running copy can act as staff: hold, settle, answer disputes and move bookings. A real shop would have to keep `/shop` behind its host's access control.
+- The counter's access code is one shared code, not staff accounts: whoever has it is "the counter", and the audit log cannot say which person held, settled or refunded. It is off unless `SHOP_ACCESS_CODE` is set, so a local run or a clone without it leaves `/shop` open to anyone who can reach it, as before. Wrong codes are slowed and limited in the web process (five per client and 100 in total per 15 minutes, keyed by the address the proxy reports), so a restart resets the count, and anyone can lock everyone out of signing in for up to 15 minutes with 100 wrong codes. A signed-in browser stays signed in for 12 hours; there is no way to sign out other browsers except changing the code.
 - The renter's page is protected only by the random token in its link. PayPal sends the renter there after they approve, which takes their PayPal login (in demo mode, no login).
 - The MCP endpoint has no authentication and no rate limit, like the booking form: anyone can create unpaid drafts. The assistant's name in a mandate is whatever the assistant says it is.
 - The mandate is hashed, not signed, and the audit log is tamper-evident, not tamper-proof: anyone with write access to the database can rewrite a mandate together with the whole chain after it. A chain broken by accident (two entries written for one rental at the same instant) also stops holds and charges until someone looks; releasing the deposit still works.
-- Photos and evidence PDFs are served to anyone who has their SHA-256.
+- Photos are served to anyone who has their SHA-256, because the renter's page shows them without a cookie. Evidence PDFs need the staff cookie when `SHOP_ACCESS_CODE` is set. A rental's own live channel stays open: it carries an event name and a time, never data.
+- The counter refunds only what a settlement took (the settlement capture and the charge above the deposit), not the booking fee. A refund made in PayPal's own dashboard is recorded when its `PAYMENT.CAPTURE.REFUNDED` webhook arrives, with PayPal's `note_to_payer` as the reason if the event has one. We have not checked whether PayPal also sends that event for money a dispute gives back; if it does, the refund is listed as made outside the counter, next to the dispute's outcome. `PAYMENT.CAPTURE.REVERSED` is only logged.
 - Live page updates use an in-process event bus, so the app is meant to run as a single server instance.
-- A fee capture that PayPal leaves pending is resolved only by webhooks, so without `PAYPAL_WEBHOOK_ID` the rental stays unpaid.
+- A fee capture that PayPal leaves pending is resolved only by webhooks, so without `PAYPAL_WEBHOOK_ID` the rental stays unpaid. Likewise a renter who approves and closes the window is booked only through the `CHECKOUT.ORDER.APPROVED` webhook, which has not yet been delivered to a deployment (only PayPal's simulated payload was checked).
 - When PayPal asks for proof of shipment, of a refund or of a delivery signature, the evidence pack is filed as `OTHER`, because it is none of those.
 - The Bryntum Scheduler trial shows a watermark and runs for 45 days per browser. Using Handback beyond evaluation needs a Bryntum licence ([docs/bryntum.md](docs/bryntum.md#licensing)).
 - Dates are whole days in UTC.
@@ -265,14 +279,16 @@ Known limits of this build:
 - **Unit tests** (`npm test`, Vitest). They need no keys and no network: the scenarios run in demo mode, or against a mocked PayPal REST API, on an in-memory database.
   - Money, dates and the photo comparison: [`lib/money.test.ts`](lib/money.test.ts), [`lib/dates.test.ts`](lib/dates.test.ts), and the pricing gate and consensus rule in [`lib/inspection/policy.test.ts`](lib/inspection/policy.test.ts).
   - PayPal (`lib/paypal/*.test.ts`): the stand-in's sandbox rules, webhook signatures, the REST client's retries and token refresh, the multipart encoder, reading dispute links and fund movements, and recognising a PayPal error across module copies.
-  - Rentals (`lib/rentals/*.test.ts`): whole rentals in demo mode (damage, clean and contested paths, audit-chain tampering, webhook deduplication), the mandate and its enforcement, approval by redirect (reloads, two returns at once, a pending capture completed or denied by webhook, the cancel URL), and hold renewal timing.
+  - Rentals (`lib/rentals/*.test.ts`): whole rentals in demo mode (damage, clean and contested paths, audit-chain tampering, webhook deduplication), the mandate and its enforcement, approval by redirect (reloads, two returns, the button and the `CHECKOUT.ORDER.APPROVED` webhook at once, a pending capture completed or denied by webhook, the cancel URL), the approved-order webhook (books once; ignored for unknown orders, rentals no longer unpaid and bookings the page already captured; a transient failure redelivered), refunds (partial, full, over-refund refused, a double submit refunding once, refused during an open dispute, a lost reply retried with the same request id, `PAYMENT.CAPTURE.REFUNDED` not counted twice, even when it arrives before PayPal's reply), and hold renewal timing.
+  - Counter access ([`lib/staff-access.test.ts`](lib/staff-access.test.ts), [`app/staff-access.test.ts`](app/staff-access.test.ts)): the cookie (valid, forged, expired, missing, signed under an old code), the wrong-code limits, every staff server action refusing without the cookie when `SHOP_ACCESS_CODE` is set, the shop's live channel and evidence PDFs closed, the renter's side open, and nothing read or changed when it is unset.
   - Disputes (`lib/disputes/*.test.ts`): byte-identical PDFs, the summary's fact check and template fallback, the fee-based recommendation, dispute records and webhooks, and the desk against a mocked PayPal REST API, including a reply that was lost and a retry PayPal refused.
   - MCP ([`lib/mcp/server.test.ts`](lib/mcp/server.test.ts)): the SDK client against the HTTP handler: tool annotations, a booking that moves no money, status only by status token, and the `Origin` check.
   - Schedule (`lib/schedule/*.test.ts`): overlaps and unit search, assignment at booking, the agent's repair blocks and suggestions, handover warnings, message checks and typed commands.
   - Render and operations: where jobs run and their idempotency keys (`lib/workflows/*.test.ts`), the two tasks ([`workflows/tasks.test.ts`](workflows/tasks.test.ts)), the cron script and route ([`scripts/cron/renew-holds.test.ts`](scripts/cron/renew-holds.test.ts), [`app/api/jobs/renew-holds/route.test.ts`](app/api/jobs/renew-holds/route.test.ts)), `/api/health` ([`lib/health.test.ts`](lib/health.test.ts)), the demo seed (`lib/seed/*.test.ts`) and the Postgres driver's JSON handling ([`lib/db/client.test.ts`](lib/db/client.test.ts)).
   - Eval tooling (`scripts/eval/*.test.ts`): lining up the image model's edits, and a check that `eval/README.md` matches the saved runs.
-- **End-to-end tests** (`npm run e2e`, Playwright). They build the app, start it in demo mode, and drive the counter on a desktop and the renter on a phone-sized screen.
-  - [`e2e/rental-flow.spec.ts`](e2e/rental-flow.spec.ts): one rental from booking to settlement. The renter's page must update without a reload at each step, and the test ends on $35.00 kept, $265.00 released and an intact audit chain.
+- **End-to-end tests** (`npm run e2e`, Playwright). They build the app, start it in demo mode (three servers: two without an access code, one with), and drive the counter on a desktop and the renter on a phone-sized screen.
+  - [`e2e/rental-flow.spec.ts`](e2e/rental-flow.spec.ts): one rental from booking to settlement. The renter's page must update without a reload at each step, and the settlement ends on $35.00 kept, $265.00 released and an intact audit chain. The counter then refunds $10.00 with a reason, and the renter's page shows it.
+  - [`e2e/staff-access.spec.ts`](e2e/staff-access.spec.ts), on its own server with `SHOP_ACCESS_CODE` set: the renter books with no code; a counter link goes to the sign-in page and back; a wrong code is refused; a counter page left open after its cookie is gone cannot hold the deposit; signing out closes the counter again.
   - [`e2e/dispute-desk.spec.ts`](e2e/dispute-desk.spec.ts): the renter disputes the settled charge; the counter prepares the PDF, sends it with both photos, is asked for evidence again, sends again, and the case is decided for the shop.
   - [`e2e/agent-booking.spec.ts`](e2e/agent-booking.spec.ts): an assistant books over MCP and no reply leads to the renter's page. The phone leaves the PayPal stand-in once, reads the mandate on the cancel page, approves, and lands booked on its own page, whose token the status tool refuses.
   - [`e2e/city-bike.spec.ts`](e2e/city-bike.spec.ts): the story from the bike shop interview. A city bike comes back without its phone holder and rear light; the renter accepts the $12.00 phone holder and questions the rear light, the counter waives it and settles: $12.00 kept, $138.00 released.
@@ -287,6 +303,7 @@ Known limits of this build:
   | Return: two live `gemini-3.8-flash` looks in 5.6 s, both report the missing lens hood | proposal: $35.00 from the price list |
   | The renter accepts; the counter settles | capture `27E47755F4775162P`: $35.00 kept, $265.00 released |
 
+- **Refunds from the counter in the sandbox.** On a settled walkthrough rental (`R-BYNANG`, capture `7H306284X5802020F`, $35.00 kept), `scripts/sandbox-refund.ts` refunded $10.00 through the app's `refundCharge`: refund `43940452SN0728157`, `COMPLETED`. Sending the same refund to PayPal again with the same `PayPal-Request-Id` returned the same refund, and the capture read back `PARTIALLY_REFUNDED`. The counter's form then refused $30.00 (only $25.00 left) without calling PayPal and refunded $5.00 (refund `4N364898EK815390T`). Details in [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md).
 - **Two sandbox disputes, answered from the counter.** `scripts/spike-dispute.ts` files a real buyer case in PayPal's Resolution Center on a settled $35.00 damage capture, and the counter answers it through the app's own Disputes code:
 
   | Case | What the counter did | How PayPal closed it |
@@ -308,7 +325,8 @@ app/                       Next.js App Router
   r/[token]/               the renter's own rental page; PayPal returns here after approval
   paypal/cancelled/        where PayPal's cancel link lands; carries no renter token
   demo/paypal/             demo-mode stand-in for PayPal's approval page
-  shop/                    the counter: today's rentals, the rental workflow and the dispute desk
+  shop/                    the counter: today's rentals, the rental workflow, refunds and the dispute desk
+  shop/sign-in/            the counter's access code page, when SHOP_ACCESS_CODE is set
   shop/schedule/           the Bryntum timeline of units, repairs and the agent's suggestions
   actions.ts               server actions
   api/paypal/webhooks/     PayPal webhook receiver
@@ -324,7 +342,7 @@ components/                UI: booking form with the PayPal button, findings vie
 lib/
   paypal/                  gateway interface, Server SDK gateway, Disputes v1 client, demo stand-ins, REST client with multipart, webhook verification
   inspection/              prompt, output schema, Gemini call, pricing policy, consensus rule
-  rentals/                 rental service, settlement arithmetic, deposit mandate, audit chain, hold renewal, webhook handling
+  rentals/                 rental service, settlement arithmetic, deposit mandate, audit chain, refunds, hold renewal, webhook handling
   disputes/                evidence facts, one-page PDF, fact-checked summary, fee-based recommendation, dispute record, desk service
   schedule/                units and availability, repair blocks, the schedule agent, typed commands, customer messages
   mcp/                     MCP server and its four tools
@@ -334,11 +352,12 @@ lib/
   catalog.ts               the demo shop's nine items, kits, deposits and repair prices
   money.ts                 integer cents and PayPal amount strings
   photos.ts                photo storage and quality checks
+  staff-access.ts          the counter's shared access code: cookie, checks, wrong-code limits
 workflows/                 Render Workflows entry point and the inspect-return and renew-holds tasks
-e2e/                       Playwright tests: rental flow, dispute desk, assistant booking, schedule
+e2e/                       Playwright tests: rental flow and refund, city bike, dispute desk, assistant booking, schedule, counter access code
 eval/                      synthetic photo pairs, recorded model replies, results
   real/                    pairs built on Wikimedia Commons photos, with CREDITS.md
-scripts/                   sandbox smoke test, walkthrough, dispute and assistant runs, MCP demo client, seed, cron job, webhook registration, eval, git hooks
+scripts/                   sandbox smoke test, walkthrough, refund, dispute and assistant runs, MCP demo client, seed, cron job, webhook registration, eval, git hooks
 test/                      shared test helpers
 docs/                      PayPal sandbox notes, deployment, assistants, schedule, AI build log, screenshots
 render.yaml                Render Blueprint: web service, Postgres, Workflows service, cron job
@@ -348,11 +367,10 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, zod, the PayPal Ser
 
 ## Not built yet
 
-- A refund button. The gateway can refund a capture, but only the sandbox smoke script calls it.
 - A deposit for a renter who did not save PayPal at booking (`createHold` and `authorizeHold` exist; no page calls them).
-- Capturing an approved booking from the `CHECKOUT.ORDER.APPROVED` webhook, for a renter who closes the window before PayPal sends them back.
 - A glare check before the model, and an eval set of real before and after photos of real damage.
-- A deployment on Render. Until there is one, live PayPal webhooks have not been exercised from a public URL, and the Blueprint, task runs on Render and the cron job's private-network call are unverified.
+- Staff accounts: the counter has one shared access code, not a sign-in per person.
+- A deployment on Render. Until there is one, live PayPal webhooks (including `CHECKOUT.ORDER.APPROVED` and `PAYMENT.CAPTURE.REFUNDED`) have not been exercised from a public URL, and the Blueprint, task runs on Render and the cron job's private-network call are unverified.
 
 ## More documentation
 

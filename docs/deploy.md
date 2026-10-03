@@ -56,6 +56,8 @@ flowchart LR
    | `handback` | `PAYPAL_WEBHOOK_ID` | Leave empty; set it after the first deploy (below) |
    | `handback` | `APP_URL` | Leave empty unless you add a custom domain; the app uses `RENDER_EXTERNAL_URL` |
    | `handback` | `RENDER_API_KEY` | Your Render API key, or empty to keep jobs in the web process |
+   | `handback` | `SHOP_ACCESS_CODE` | A long random code, for example from `openssl rand -base64 12`. Staff enter it at `/shop/sign-in`; without it anyone who finds the URL can hold, settle and refund. Changing it signs every browser out |
+   | `handback` | `PUBLIC_DEMO` | `true` on the copy judges use, so the sign-in page says the code is in the Devpost testing instructions; empty otherwise |
    | `handback-workflows` | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `GEMINI_API_KEY` | **The same values** as the web service. A task whose mode differs skips its work and the web service does it instead (see "Same modes on both services") |
 
    If the form does not show the workflow's fields, add them under `handback-workflows`, **Environment**, after the Blueprint is created.
@@ -79,7 +81,7 @@ npm run paypal:webhook -- https://handback.onrender.com
 npm run paypal:webhook
 ```
 
-It prints `PAYPAL_WEBHOOK_ID=...` (or finds the webhook already registered for that URL). Set `PAYPAL_WEBHOOK_ID` on the `handback` service under **Environment**; Render redeploys, and `/api/health` then shows `"webhookConfigured": true`. Until then `POST /api/paypal/webhooks` answers 503, because it refuses events it cannot verify.
+It prints `PAYPAL_WEBHOOK_ID=...` (or finds the webhook already registered for that URL). The webhook subscribes to `CHECKOUT.ORDER.APPROVED` (books a renter who approved and closed the window before PayPal sent them back), the `PAYMENT.CAPTURE.*` events including `REFUNDED`, the two `PAYMENT.AUTHORIZATION.*` events, the three `CUSTOMER.DISPUTE.*` events and the two vault token events. For a URL registered before `CHECKOUT.ORDER.APPROVED` was on the list, running the command again adds the missing event types. Set `PAYPAL_WEBHOOK_ID` on the `handback` service under **Environment**; Render redeploys, and `/api/health` then shows `"webhookConfigured": true`. Until then `POST /api/paypal/webhooks` answers 503, because it refuses events it cannot verify.
 
 ### Seed the counter
 
@@ -99,11 +101,12 @@ In demo mode the stand-in caches its state in the web process: if you seed after
 ### Smoke test
 
 1. `curl -s https://handback.onrender.com/api/health` should show `"ok": true`, `"driver": "postgres"`, the PayPal and AI modes you chose, `"runner": "render-workflows"` and the commit you deployed. The modes are the web service's; the workflow's are checked on each run, and `"lastSkippedRun"` stays `null` while they agree (check it again after steps 3 and 5).
-2. Open `/shop`: the seeded rentals are grouped by step.
+2. Open `/shop`: it sends you to `/shop/sign-in`; enter `SHOP_ACCESS_CODE`, and the seeded rentals are grouped by step. `curl -s -o /dev/null -w "%{http_code}" https://handback.onrender.com/api/live/shop` should answer 401.
 3. Run one rental end to end with two screens: `/rent` on a phone (pay with the sandbox buyer), `/shop` on a laptop. Take the pickup photo, hold the deposit, take the return photo, press **Compare the photos**. The audit trail should say "Render Workflows" next to "Two AI looks compared the photos".
 4. In the dashboard, `handback-workflows`, **Tasks**, `inspect-return`, **Runs**: the run has input `["R-…", {"paypal":"sandbox","ai":"gemini"}]` and result `{"status":"inspected"}`.
 5. Trigger the cron job once (`handback-renew-holds`, **Trigger Run**). The log should end with `HTTP 200 {"ok":true,"ranOn":"render-workflows",...}`. In demo mode it says `"ranOn":"web"`.
 6. After settling a sandbox rental, the audit trail gains "PayPal confirmed by webhook" once PayPal delivers `PAYMENT.CAPTURE.COMPLETED`.
+7. Refund a few dollars of that rental from its **Refunds** form. The audit trail shows PayPal's refund id, and once PayPal delivers `PAYMENT.CAPTURE.REFUNDED` another "PayPal confirmed by webhook" entry follows; the refund is still counted once.
 
 ## Costs
 
@@ -152,6 +155,8 @@ Both processes need the same database. PGlite (the default local database) lives
 | `RENDER_WORKFLOWS=off` | web | Run jobs in the web process even when Render Workflows is set up |
 | `RENDER_USE_LOCAL_DEV`, `RENDER_LOCAL_DEV_URL` | local | Send runs to `render workflows dev` (default `http://localhost:8120`) |
 | `CRON_SECRET` | web, cron | Generated; authorizes `POST /api/jobs/renew-holds` |
+| `SHOP_ACCESS_CODE` | web | The counter's shared access code; unset leaves the counter open |
+| `PUBLIC_DEMO` | web | `true` on the judges' copy: the sign-in page says where the code is published |
 | `HANDBACK_HOSTPORT` or `HANDBACK_URL` | cron | Where the cron job finds the web service |
 | `APP_URL` | web | Public URL for PayPal return links and the customer QR code; defaults to `RENDER_EXTERNAL_URL` |
 | `SEED_VAULT_ID` | Shell | Saved sandbox wallet for seeding, or `latest` |
@@ -179,6 +184,8 @@ The button creates the same paid services in the account of whoever clicks it. L
 | `/api/health` shows a `lastSkippedRun` for `inspect-return` | The workflow's `GEMINI_API_KEY` differs from the web service's (one has a key, the other not). The web service compared the photos itself; fix the workflow's value |
 | Cron run fails with HTTP 401 | The two `CRON_SECRET` values differ; sync the Blueprint again |
 | Inspections show "Recorded Gemini reply" on Render | `GEMINI_API_KEY` is missing on `handback` (the web service decides the AI mode) |
+| The sign-in page says "Too many wrong codes" | Five wrong codes from one address, or 100 from everyone, in 15 minutes. Wait for the window to end, or restart the web service, which resets the counts |
+| Anyone can open `/shop` | `SHOP_ACCESS_CODE` is not set on `handback` |
 
 ## What has been verified
 
