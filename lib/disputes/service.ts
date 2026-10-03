@@ -24,6 +24,7 @@ import {
 import type { PayPalMode } from "@/lib/paypal/config";
 import { loadPhoto } from "@/lib/photos";
 import { appendEvent } from "@/lib/rentals/audit";
+import { disputeReturns, isRefunded, refundableCaptures, refundsFor, type StoredRefund } from "@/lib/rentals/refunds";
 import { eventsFor, inspectionsFor, latestAssessment } from "@/lib/rentals/repo";
 import { mustRental, paypalStep } from "@/lib/rentals/service";
 import { isCharged } from "@/lib/rentals/settlement";
@@ -97,9 +98,17 @@ export async function findDisputes(rentalId: string): Promise<number> {
 
 // ─── The evidence pack ──────────────────────────────────────
 
+/** Refunds as the evidence facts record them: the ones PayPal made or reported. */
+const factRefunds = (refunds: StoredRefund[]) => refunds.filter(isRefunded).map((r) => ({ refundId: r.refundId, captureId: r.captureId, cents: r.amountCents, at: r.createdAt }));
+
 async function sourceFor(rental: Rental, stored: StoredDispute): Promise<EvidenceSource> {
   const db = await getDb();
-  const [inspections, assessment, events] = await Promise.all([inspectionsFor(db, rental.id), latestAssessment(db, rental.id), eventsFor(db, rental.id)]);
+  const [inspections, assessment, events, refunds] = await Promise.all([
+    inspectionsFor(db, rental.id),
+    latestAssessment(db, rental.id),
+    eventsFor(db, rental.id),
+    refundsFor(db, rental.id),
+  ]);
   return {
     shop: SHOP,
     rental,
@@ -109,6 +118,7 @@ async function sourceFor(rental: Rental, stored: StoredDispute): Promise<Evidenc
     assessment,
     events,
     dispute: disputeFacts(stored),
+    refunds: factRefunds(refunds),
   };
 }
 
@@ -349,20 +359,24 @@ export async function demoOpenDispute(rentalId: string): Promise<void> {
   const rental = await mustRental(rentalId);
   if (rental.status !== "settled") throw new UserError("Only a settled rental can be disputed.");
   if ((await disputesFor(await getDb(), rentalId)).length > 0) throw new UserError("This rental already has a dispute.");
-  const damage = Boolean(rental.settlementCaptureId && rental.capturedCents);
+  // What the customer can still dispute is what the shop still has: a refund since settling is not disputed again.
+  const db = await getDb();
+  const refunds = await refundsFor(db, rentalId);
+  const kept = refundableCaptures(rental, refunds, await disputeReturns(db, rentalId)).find((c) => c.captureId === rental.settlementCaptureId);
+  const damage = Boolean(kept && kept.leftCents > 0);
   const captureId = damage ? rental.settlementCaptureId! : rental.feeCaptureId;
-  const cents = damage ? rental.capturedCents! : rental.feeCents;
+  const cents = damage ? kept!.leftCents : rental.feeCents - refunds.filter((r) => isRefunded(r) && r.captureId === rental.feeCaptureId).reduce((s, r) => s + r.amountCents, 0);
   if (!captureId) throw new UserError("Nothing was captured on PayPal for this rental.");
+  if (cents <= 0) throw new UserError("Everything this rental's payment took has been refunded, so there is nothing left to dispute.");
   const d = await api.open({
     sellerTransactionId: captureId,
-    transactionCents: cents,
+    transactionCents: damage ? rental.capturedCents! : rental.feeCents,
     disputedCents: cents > 1500 ? cents - 1500 : cents,
     reason: "INCORRECT_AMOUNT",
     note: "I returned the kit complete. I should not have been charged this much.",
     custom: rental.id,
     invoiceNumber: damage ? `${rental.id}-damage` : `${rental.id}-fee`,
   });
-  const db = await getDb();
   await db.tx((tx) => recordDispute(tx, rentalId, d, "demo"));
   publish(rentalId, "dispute.opened");
 }
@@ -435,6 +449,7 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
     assessment: view.assessment,
     events: view.events,
     dispute: disputeFacts(stored),
+    refunds: factRefunds(view.refunds),
   });
   const sent = view.events
     .filter((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === stored.id)

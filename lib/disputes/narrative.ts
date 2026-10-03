@@ -109,8 +109,11 @@ export function templateNarrative(f: EvidenceFacts, note: string | null = null):
         : `PayPal released the whole ${formatUsd(m.releasedCents ?? 0)} deposit.`,
     );
   }
+  if (m.refunds?.length) {
+    p3.push(`After that, ${formatUsd(m.refunds.reduce((s, x) => s + x.cents, 0))} was refunded to the customer through PayPal.`);
+  }
   p3.push(`Every step above is in Handback's hash-chained audit log, which was ${f.audit.intact ? "intact" : "found broken"} when this pack was made.`);
-  paragraphs.push({ text: p3.join(" "), cites: cite("settlement", "audit") });
+  paragraphs.push({ text: p3.join(" "), cites: cite("settlement", "refunds", "audit") });
   return { paragraphs, source: "template", model: null, note };
 }
 
