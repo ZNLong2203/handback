@@ -122,10 +122,14 @@ export type Settlement = {
 export type RefundRequest = {
   captureId: string;
   amountCents: Cents;
+  /** Shown to the payer in their PayPal activity and PayPal's email; PayPal allows 255 characters. */
   noteToPayer: string;
+  /** PayPal allows 127 characters. */
+  invoiceId?: string;
 };
 
-export type RefundResult = { refundId: string; status: string };
+/** Payments v2 `refund`: status is COMPLETED, PENDING, FAILED or CANCELLED. */
+export type RefundResult = { refundId: string; status: string; amountCents: Cents };
 
 /** Honor period and reauthorization window, as enforced by the sandbox. */
 export const HONOR_PERIOD_DAYS = 3;

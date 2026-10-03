@@ -327,10 +327,18 @@ export class PayPalDepositGateway implements DepositGateway {
         captureId: req.captureId,
         paypalRequestId: requestId,
         prefer: PREFER,
-        body: { amount: usd(req.amountCents), noteToPayer: req.noteToPayer.slice(0, 255) },
+        body: {
+          amount: usd(req.amountCents),
+          noteToPayer: req.noteToPayer.slice(0, 255),
+          ...(req.invoiceId ? { invoiceId: req.invoiceId.slice(0, 127) } : {}),
+        },
       }),
     );
     if (!refund.id) throw new Error("PayPal returned no refund");
-    return { refundId: refund.id, status: refund.status ?? "PENDING" };
+    return {
+      refundId: refund.id,
+      status: refund.status ?? "PENDING",
+      amountCents: refund.amount?.value ? fromPayPalValue(refund.amount.value) : req.amountCents,
+    };
   }
 }

@@ -3,6 +3,8 @@
 import { refresh } from "next/cache";
 import * as desk from "@/lib/disputes/service";
 import { after } from "next/server";
+import { parseUsdInput } from "@/lib/money";
+import { refundCharge } from "@/lib/rentals/refunds";
 import * as svc from "@/lib/rentals/service";
 import { polishMessages } from "@/lib/schedule/agent";
 import { UserError, type Phase } from "@/lib/rentals/types";
@@ -114,6 +116,19 @@ export async function settleAction(rentalId: string) {
     await svc.settle(rentalId);
     // The schedule agent has already planned around any repair; Gemini words its customer messages after the response.
     after(() => polishMessages().catch((err) => console.error("message polish failed", err)));
+  });
+}
+
+/**
+ * Refunds part or all of a settled charge. The form sends dollars as typed;
+ * the service checks whole cents, what is left on that capture, and the
+ * refund number that keeps a second submit from refunding twice.
+ */
+export async function refundAction(rentalId: string, input: { captureId: string; amount: string; reason: string; seq: number }) {
+  return asStaff(async () => {
+    const cents = parseUsdInput(String(input?.amount ?? ""));
+    if (cents === null) throw new UserError("Enter the amount in dollars and cents, for example 12.50.");
+    await refundCharge(String(rentalId), { captureId: String(input?.captureId ?? ""), cents, reason: String(input?.reason ?? ""), seq: Number(input?.seq) });
   });
 }
 

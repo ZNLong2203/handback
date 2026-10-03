@@ -79,6 +79,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                   capturedCents={rental.capturedCents ?? 0}
                   releasedCents={rental.releasedCents ?? 0}
                   extraCents={rental.extraCents ?? 0}
+                  refundedCents={view.refundedCents}
                 />
               ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
                 <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
@@ -216,6 +217,17 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             </Notice>
           ))}
 
+        {view.refunds
+          .filter((r) => r.state === "done" && r.paypalStatus !== "FAILED" && r.paypalStatus !== "CANCELLED")
+          .map((r) => (
+            <Notice key={r.id} tone="released" title={`The shop refunded ${formatUsd(r.amountCents)} to you`}>
+              {r.reason ? <span className="mb-1 block">&ldquo;{r.reason}&rdquo;</span> : null}
+              {r.paypalStatus === "PENDING"
+                ? "PayPal is processing the refund and sends it back the way you paid."
+                : "PayPal sends it back the way you paid. If a card funds your PayPal, your card issuer decides when it shows."}
+            </Notice>
+          ))}
+
         {settled && (
           <Card className="p-6">
             <h2 className="flex items-center gap-2 font-display text-2xl font-bold">
@@ -232,6 +244,12 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                   <dd className="tabular font-semibold text-charged">{formatUsd(l.cents)}</dd>
                 </div>
               ))}
+              {view.refundedCents > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-muted">Refunded by the shop afterwards</dt>
+                  <dd className="tabular font-semibold text-released">−{formatUsd(view.refundedCents)}</dd>
+                </div>
+              )}
               <div className="flex justify-between border-t border-line pt-2">
                 <dt className="font-semibold text-released">Deposit released to your PayPal</dt>
                 <dd className="tabular font-bold text-released">{formatUsd(rental.releasedCents ?? 0)}</dd>

@@ -9,6 +9,7 @@ import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
 import { MoneyBar } from "@/components/money-bar";
 import { PhotoCapture } from "@/components/photo-capture";
+import { RefundForm } from "@/components/refund-form";
 import { Qr } from "@/components/qr";
 import { UnitHandover } from "@/components/schedule/unit-handover";
 import { Timeline } from "@/components/timeline";
@@ -67,6 +68,10 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
   // A dispute does not undo the settlement: the money view stays as it was.
   const settled = rental.status === "settled" || rental.status === "disputed";
   const paypalMode = paypalConfig().mode;
+  const disputeOpen = Boolean(view.dispute && view.dispute.status !== "RESOLVED");
+  const refundLeft = view.refundable.some((c) => c.leftCents > 0);
+  const captureLabel = (captureId: string) =>
+    view.refundable.find((c) => c.captureId === captureId)?.label ?? (captureId === rental.feeCaptureId ? "the rental fee" : `capture ${captureId}`);
 
   return (
     <>
@@ -232,6 +237,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                   capturedCents={rental.capturedCents ?? 0}
                   releasedCents={rental.releasedCents ?? 0}
                   extraCents={rental.extraCents ?? 0}
+                  refundedCents={view.refundedCents}
                 />
               </div>
               <dl className="mt-5 grid gap-x-6 gap-y-1 font-mono text-xs text-muted sm:grid-cols-2">
@@ -254,6 +260,39 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               </dl>
               {desk?.dispute.outcome === "RESOLVED_BUYER_FAVOUR" && (
                 <p className="mt-3 text-sm text-charged">After the dispute, PayPal refunded {formatUsd(desk.dispute.refundedCents ?? desk.dispute.amountCents ?? 0)} of this to the customer.</p>
+              )}
+              {(view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
+                <div className="mt-5 space-y-3 border-t border-line pt-4">
+                  <h3 className="font-semibold">Refunds</h3>
+                  {view.refunds
+                    .filter((r) => r.state !== "refused")
+                    .map((r) => (
+                      <div key={r.id} className="text-sm">
+                        <p>
+                          <span className="tabular font-semibold text-released">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
+                          {r.state === "requested"
+                            ? ": sent to PayPal, no answer recorded yet. Send the same refund again to ask PayPal."
+                            : r.paypalStatus === "PENDING"
+                              ? ": PayPal is processing it."
+                              : r.paypalStatus === "FAILED" || r.paypalStatus === "CANCELLED"
+                                ? `: PayPal reports it ${r.paypalStatus.toLowerCase()}.`
+                                : r.source === "webhook"
+                                  ? ": refunded outside the counter, reported by PayPal."
+                                  : " refunded."}
+                          {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}
+                        </p>
+                        {r.refundId && <p className="font-mono text-xs text-muted">refund {r.refundId}</p>}
+                      </div>
+                    ))}
+                  {disputeOpen ? (
+                    <p className="max-w-prose text-sm text-muted">
+                      The customer has an open PayPal dispute on this rental. To give money back, use the dispute desk above, so PayPal counts it toward
+                      the case.
+                    </p>
+                  ) : refundLeft ? (
+                    <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} />
+                  ) : null}
+                </div>
               )}
               {!desk && (
                 <div className="mt-5 flex flex-wrap items-start gap-3 border-t border-line pt-4">
@@ -324,6 +363,12 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                       <dt className="text-muted">Released</dt>
                       <dd className="tabular font-semibold text-released">{formatUsd(rental.releasedCents ?? 0)}</dd>
                     </div>
+                    {view.refundedCents > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted">Refunded since</dt>
+                        <dd className="tabular font-semibold text-released">{formatUsd(view.refundedCents)}</dd>
+                      </div>
+                    )}
                   </>
                 )}
                 {rental.authorizationExpiresAt && !settled && (

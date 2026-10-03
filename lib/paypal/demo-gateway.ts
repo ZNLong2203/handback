@@ -277,7 +277,7 @@ export class DemoDepositGateway implements DepositGateway {
         throw fail(422, "UNPROCESSABLE_ENTITY", "REFUND_AMOUNT_EXCEEDED", "Refund amount exceeds the refundable amount.");
       }
       capture.refundedCents += req.amountCents;
-      return { refundId: this.id("DEMO-REFUND"), status: "COMPLETED" };
+      return { refundId: this.id("DEMO-REFUND"), status: "COMPLETED", amountCents: req.amountCents };
     });
   }
 }

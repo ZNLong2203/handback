@@ -26,6 +26,16 @@ export function fromPayPalValue(value: string): Cents {
   return Number(match[1]) * 100 + Number(fraction);
 }
 
+/**
+ * What staff type into an amount field: "12", "12.5", "$12.50" -> cents.
+ * Null for anything else, including negative numbers and fractions of a cent.
+ */
+export function parseUsdInput(text: string): Cents | null {
+  const match = /^\$?\s*(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text.trim());
+  if (!match) return null;
+  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+}
+
 /** 12345 -> "$123.45" */
 export function formatUsd(cents: Cents): string {
   const sign = cents < 0 ? "-" : "";

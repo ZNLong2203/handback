@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { disputesFor } from "@/lib/disputes/repo";
 import { firstBrokenLink } from "./audit";
 import { openMandate } from "./mandate";
+import { nextRefundSeq, refundableCaptures, refundedCents, refundsFor } from "./refunds";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
 import { planSettlement } from "./settlement";
 
@@ -12,11 +13,12 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
   const db = await getDb();
   const rental = "id" in by ? await rentalById(db, by.id) : await rentalByToken(db, by.token);
   if (!rental) return null;
-  const [inspections, assessment, events, disputes] = await Promise.all([
+  const [inspections, assessment, events, disputes, refunds] = await Promise.all([
     inspectionsFor(db, rental.id),
     latestAssessment(db, rental.id),
     eventsFor(db, rental.id),
     disputesFor(db, rental.id),
+    refundsFor(db, rental.id),
   ]);
   const checkout = inspections.filter((i) => i.phase === "checkout").at(-1) ?? null;
   const checkin = inspections.filter((i) => i.phase === "checkin").at(-1) ?? null;
@@ -34,6 +36,11 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     chainIntact: firstBrokenLink(events) === null,
     /** The PayPal dispute the desk works on: the newest open one, else the newest. */
     dispute: disputes[0] ?? null,
+    /** Refunds after settlement: the counter's and any PayPal reported by webhook. */
+    refunds,
+    refundedCents: refundedCents(refunds),
+    refundable: refundableCaptures(rental, refunds),
+    nextRefundSeq: nextRefundSeq(refunds),
   };
 }
 

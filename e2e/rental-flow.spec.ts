@@ -61,4 +61,17 @@ test("a rental from booking to a fair settlement, with the customer on their pho
   await expect(phone.getByText("$265.00").first()).toBeVisible();
   await shot(phone, "09-customer-receipt");
   await expect(counter.getByText(/Audit chain intact/)).toBeVisible();
+
+  // 7. The hood turns up later: the counter refunds $10.00 of the $35.00, and the renter's page says so by itself.
+  await counter.getByLabel("Amount").fill("10");
+  await counter.getByLabel("Reason Maya sees").fill("The hood turned up in the case");
+  await counter.getByRole("button", { name: "Refund $10.00" }).click();
+  await counter.getByRole("button", { name: "Yes, refund $10.00 to Maya" }).click();
+  await expect(counter.getByText(/^refund DEMO-REFUND-/)).toBeVisible();
+  await expect(counter.getByText(/At most \$25\.00 is left to refund/)).toBeVisible();
+  await expect(phone.getByText("The shop refunded $10.00 to you")).toBeVisible();
+  await expect(phone.getByText(/The hood turned up in the case/).first()).toBeVisible();
+  await expect(phone.getByText("Refunded by the shop afterwards")).toBeVisible();
+  await shot(counter, "10-counter-refunded");
+  await shot(phone, "11-customer-refunded");
 });

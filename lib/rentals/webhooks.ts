@@ -4,6 +4,7 @@ import { recordDispute, type DisputeLike } from "@/lib/disputes/record";
 import { rentalIdForDispute } from "@/lib/disputes/repo";
 import { publish } from "@/lib/live";
 import { appendEvent } from "./audit";
+import { recordRefundWebhook, refundedCaptureId, rentalIdForRefund, type RefundResource } from "./refunds";
 import { rentalByAuthorization, rentalById, updateRental } from "./repo";
 import type { Rental } from "./types";
 
@@ -18,6 +19,9 @@ export type PayPalWebhookEvent = {
     reason?: string;
     disputed_transactions?: { seller_transaction_id?: string }[];
     supplementary_data?: { related_ids?: { authorization_id?: string; order_id?: string } };
+    amount?: { value?: string; currency_code?: string };
+    note_to_payer?: string;
+    links?: { href?: string; rel?: string }[];
   };
 };
 
@@ -38,6 +42,9 @@ async function rentalByCapture(captureId: string): Promise<Rental | null> {
  * cancelled when PayPal denies it. Dispute events (CUSTOMER.DISPUTE.CREATED,
  * UPDATED, RESOLVED) carry the dispute itself; they update the stored dispute
  * and the rental, and a delivery older than what is stored changes nothing.
+ * PAYMENT.CAPTURE.REFUNDED carries the refund, not the capture: it is matched
+ * on the refund id first, so a refund the counter made is counted once, then
+ * on the capture its `up` link names (see refunds.ts).
  */
 export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"duplicate" | "applied" | "ignored"> {
   const db = await getDb();
@@ -50,7 +57,11 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
 
   const r = event.resource ?? {};
   let rental: Rental | null = null;
-  if (event.event_type.startsWith("PAYMENT.CAPTURE.") && r.id) {
+  if (event.event_type === "PAYMENT.CAPTURE.REFUNDED" && r.id) {
+    const known = await rentalIdForRefund(db, r.id);
+    const captureId = refundedCaptureId(r as RefundResource);
+    rental = known ? await rentalById(db, known) : captureId ? await rentalByCapture(captureId) : null;
+  } else if (event.event_type.startsWith("PAYMENT.CAPTURE.") && r.id) {
     rental = await rentalByCapture(r.id);
     if (!rental && r.supplementary_data?.related_ids?.authorization_id) {
       rental = await rentalByAuthorization(db, r.supplementary_data.related_ids.authorization_id);
@@ -86,6 +97,8 @@ export async function applyPayPalWebhook(event: PayPalWebhookEvent): Promise<"du
       } else if (pendingFee && event.event_type === "PAYMENT.CAPTURE.DENIED" && (await updateRental(tx, rentalId, { status: "cancelled" }, "draft"))) {
         await appendEvent(tx, rentalId, "paypal", "booking.declined", { captureId: r.id, status: "DENIED" });
         moved = "booking.declined";
+      } else if (event.event_type === "PAYMENT.CAPTURE.REFUNDED") {
+        moved = await recordRefundWebhook(tx, rental!, r as RefundResource, event.id);
       }
     }
   });

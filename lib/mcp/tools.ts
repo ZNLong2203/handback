@@ -5,6 +5,7 @@ import { todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { formatUsd, type Cents } from "@/lib/money";
 import { DepositMandateSchema, mandateExpiry, mandateTerms } from "@/lib/rentals/mandate";
+import { refundedCents, refundsFor } from "@/lib/rentals/refunds";
 import { latestAssessment, rentalByStatusToken } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
@@ -108,6 +109,8 @@ export const StatusOut = z.object({
     kept: Money.nullable(),
     released: Money.nullable(),
     chargedAboveHold: Money.nullable(),
+    /** Given back by the shop after settling, on PayPal; null when nothing was refunded. */
+    refunded: Money.nullable(),
   }),
   /** Proposed charges the renter has to accept or question, on their own page; no tool can answer them. */
   waitingForRenter: z.array(z.object({ findingId: z.string(), item: z.string(), description: z.string(), charge: z.string(), price: Money })),
@@ -195,6 +198,7 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
   const settled = rental.settledAt !== null;
   const holding = !settled && rental.authorizationId !== null && rental.authorizedCents !== null;
   const processing = feePending(rental);
+  const refunded = settled ? refundedCents(await refundsFor(db, rental.id)) : 0;
   return {
     rentalId: rental.id,
     item: { id: rental.itemId, name: item?.name ?? rental.itemId },
@@ -214,6 +218,7 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
       kept: settled ? money(rental.capturedCents ?? 0) : null,
       released: settled ? money(rental.releasedCents ?? 0) : null,
       chargedAboveHold: settled && rental.extraCents ? money(rental.extraCents) : null,
+      refunded: refunded > 0 ? money(refunded) : null,
     },
     waitingForRenter: assessment
       ? awaitingCustomer(assessment.findings).map((f) => ({

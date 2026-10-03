@@ -54,6 +54,8 @@ const EVENT_LABEL: Record<string, string> = {
   "contest.waived": "Counter waived a questioned charge",
   "deposit.settled": "Deposit settled: charge captured, rest released",
   "deposit.released": "Whole deposit released",
+  "refund.issued": "Shop refunded money it had kept, on PayPal",
+  "refund.recorded": "PayPal reported a refund made outside the counter",
   "paypal.error": "PayPal refused a step",
   "webhook.received": "PayPal confirmed by webhook",
   "deposit.reauthorized": "Deposit hold renewed",
