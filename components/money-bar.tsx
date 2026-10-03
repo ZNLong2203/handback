@@ -5,7 +5,7 @@ type Props =
   | { state: "none"; depositCents: number }
   | { state: "held"; authorizedCents: number }
   | { state: "proposed"; authorizedCents: number; proposedCents: number }
-  | { state: "settled"; authorizedCents: number; capturedCents: number; releasedCents: number; extraCents?: number; voided?: boolean };
+  | { state: "settled"; authorizedCents: number; capturedCents: number; releasedCents: number; extraCents?: number; refundedCents?: number; voided?: boolean };
 
 const pct = (part: number, whole: number) => (whole <= 0 ? 0 : Math.max(0, Math.min(100, (part / whole) * 100)));
 
@@ -76,6 +76,11 @@ export function MoneyBar(props: Props & { className?: string; size?: "md" | "lg"
         {Boolean(props.extraCents) && (
           <span className="text-muted">
             Plus <span className="tabular font-semibold text-charged">{formatUsd(props.extraCents!)}</span> above the deposit
+          </span>
+        )}
+        {Boolean(props.refundedCents) && (
+          <span className="text-muted">
+            Refunded <span className="tabular font-semibold text-released">{formatUsd(props.refundedCents!)}</span> afterwards
           </span>
         )}
       </div>

@@ -147,3 +147,42 @@ Design consequences:
 PayPal's simulated `CUSTOMER.DISPUTE.UPDATED` and `RESOLVED` payloads (`POST /v1/notifications/simulate-event`) carry the full dispute as `resource`, including `status`, `dispute_outcome` and `links`, but write the links on `api.sandbox.paypal.com` rather than `api-m.sandbox.paypal.com`. The client accepts both names of the same environment's API and always sends the request to the configured base.
 
 An earlier exploratory run the same day, before the panel existed, filed format-test evidence on case `PP-R-CHU-10190215` (capture `8JN17439E0980024P`). PayPal's record of it shows the same sequence: hold placed 3.5 minutes after filing, adjudication `DENY_BUYER` at 08:00:40, hold released at 08:01:34, `RESOLVED_SELLER_FAVOUR`.
+
+## 2026-10-03: refunds from the counter
+
+A settled rental from `scripts/sandbox-walkthrough.ts`, run against a dev server in sandbox mode with live Gemini: rental `R-BYNANG`, order `5VT96881B7313973S`, fee capture `5CM53111UC959472K`, deposit authorization `113101924X6498226` ($300.00), two Gemini looks in 5.3 s both reporting the missing lens hood, settlement capture `7H306284X5802020F` ($35.00 kept, $265.00 released). Steps 1 to 4 ran through `scripts/sandbox-refund.ts`, which calls the app's `refundCharge` (`lib/rentals/refunds.ts`) on the app's database; steps 5 and 6 used the refund form on the counter page in a browser.
+
+| # | What we tried | Result |
+|---|---|---|
+| 1 | Refund $10.00 of the $35.00 capture with a reason, refund number 1 (`PayPal-Request-Id: refund:R-BYNANG:1`, `invoice_id` `R-BYNANG-refund-1`) | Refund `43940452SN0728157`, `COMPLETED`, 10.00. Recorded once, with an audit entry carrying the refund id |
+| 2 | The same form again (same number, capture and amount) | Answered from the app's record with the same refund id; PayPal was not called |
+| 3 | The same refund request sent to PayPal again with the same `PayPal-Request-Id` | PayPal returned refund `43940452SN0728157` again, `COMPLETED`, 10.00: no second refund |
+| 4 | `GET /v2/payments/refunds/43940452SN0728157` and `GET /v2/payments/captures/7H306284X5802020F` | Refund `COMPLETED`, 10.00, `note_to_payer` as sent, `invoice_id` `R-BYNANG-refund-1` (debug_id `ca44b3c842fee`); capture `PARTIALLY_REFUNDED` (debug_id `ca44b3c868996`) |
+| 5 | Counter form: refund $30.00 when $25.00 is left | Refused by the app before PayPal: "At most $25.00 is left to refund on the charge from the deposit ($35.00 taken, $10.00 refunded)." |
+| 6 | Counter form: refund $5.00, refund number 2 (`refund:R-BYNANG:2`) | Refund `4N364898EK815390T`, `COMPLETED`. The counter lists both refunds; the renter's page shows "The shop refunded $10.00 to you" and "$5.00", and its receipt subtracts $15.00 |
+
+Design consequences:
+
+- PayPal answers a repeated `PayPal-Request-Id` on a refund with the first refund, so a number claimed in the database before the call, and carried by the counter's form, is enough to make a double submit refund once.
+- The app checks what is left on the capture itself, so PayPal's `REFUND_AMOUNT_EXCEEDED` is not the first line of defence. We did not send an over-refund to PayPal in this run; the stand-in answers it the way the Payments v2 schema documents.
+
+Not seen in the sandbox: a `PENDING` or `FAILED` refund, a refund refused with `TRANSACTION_DISPUTED` (the app refuses to refund while a dispute is open, before PayPal), and a real `PAYMENT.CAPTURE.REFUNDED` delivery: the dev server had no public URL.
+
+### PayPal's simulated webhook payloads
+
+`POST /v1/notifications/simulate-event` (sent to an example.com URL, so nothing reached the app) returned these sample events, which the webhook handler follows:
+
+- `PAYMENT.CAPTURE.REFUNDED` (debug_id `f6677239e5d50`): `resource_type` `refund`. The resource is the refund, not the capture: `id` is the refund id, with `status`, `amount`, `seller_payable_breakdown` and `links`. The refunded capture appears only as the `up` link, `/v2/payments/captures/{capture id}`. The handler matches the refund id first, then the capture in the `up` link.
+- `CHECKOUT.ORDER.APPROVED` (debug_id `f9888362e7320`): `resource_type` `checkout-order`. The resource is the order with `id`, `status` `APPROVED`, `intent`, `purchase_units`, `payer` and `links`. It has no captures and no `payment_source.paypal.attributes.vault`, so it cannot book a rental by itself: the saved-wallet token arrives only with the capture.
+
+Both samples write their links on `api.sandbox.paypal.com`.
+
+### Adding an event type to a registered webhook
+
+`scripts/register-webhook.ts` now adds missing event types to a URL that is already registered, with `PATCH /v1/notifications/webhooks/{id}` (`replace` on `/event_types`, the only operation the endpoint supports). Checked on a throwaway registration for an example.com URL, deleted afterwards: created with two event types (webhook `74W15631HG422952E`, debug_id `ca44b43b39fc3`), the script added the ten missing ones including `CHECKOUT.ORDER.APPROVED`, a GET showed all twelve (debug_id `ca44b43cc2c22`), a second run changed nothing, and the DELETE answered 204.
+
+### Reading a captured booking order back
+
+`confirmBooking` reads the order back when PayPal answers a capture with `ORDER_ALREADY_CAPTURED` (a capture that went through unanswered, retried after PayPal stopped recognising its request id). `GET /v2/checkout/orders/5VT96881B7313973S`, the `R-BYNANG` booking above (debug_id `ca44b72392bcf`), returned status `COMPLETED` with the fee capture `5CM53111UC959472K` (`COMPLETED`, 87.00) under `purchase_units[0].payments.captures` and the saved-wallet token, `VAULTED`, under `payment_source.paypal.attributes.vault`: everything the booking records. The `ORDER_ALREADY_CAPTURED` refusal itself was not provoked in the sandbox.
+
+Capturing a booking from a real `CHECKOUT.ORDER.APPROVED` delivery has not been seen: it needs a deployment with a public URL. The handler is tested against the simulator's payload shape above.

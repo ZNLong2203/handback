@@ -56,11 +56,13 @@ flowchart LR
    | `handback` | `PAYPAL_WEBHOOK_ID` | Leave empty; set it after the first deploy (below) |
    | `handback` | `APP_URL` | Leave empty unless you add a custom domain; the app uses `RENDER_EXTERNAL_URL` |
    | `handback` | `RENDER_API_KEY` | Your Render API key, or empty to keep jobs in the web process |
+   | `handback` | `SHOP_ACCESS_CODE` | A random code of at least 12 characters, for example from `openssl rand -base64 12`. Staff enter it at `/shop/sign-in`; without it anyone who finds the URL can hold, settle and refund, and a shorter one closes the counter to everyone. Changing it signs every browser out |
+   | `handback` | `PUBLIC_DEMO` | `true` on the copy judges use, so the sign-in page says the code is in the Devpost testing instructions; empty otherwise |
    | `handback-workflows` | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `GEMINI_API_KEY` | **The same values** as the web service. A task whose mode differs skips its work and the web service does it instead (see "Same modes on both services") |
 
    If the form does not show the workflow's fields, add them under `handback-workflows`, **Environment**, after the Blueprint is created.
 
-   Render fills in the rest: `DATABASE_URL` (internal connection string), a random `CRON_SECRET`, `RENDER_WORKFLOW_SLUG` (from the workflow service), the cron job's `HANDBACK_HOSTPORT` and `CRON_SECRET` (from the web service), `PAYPAL_ENVIRONMENT=sandbox` and `NODE_VERSION=22`.
+   Render fills in the rest: `DATABASE_URL` (internal connection string), a random `CRON_SECRET` and `STAFF_COOKIE_SECRET`, `RENDER_WORKFLOW_SLUG` (from the workflow service), the cron job's `HANDBACK_HOSTPORT` and `CRON_SECRET` (from the web service), `PAYPAL_ENVIRONMENT=sandbox` and `NODE_VERSION=22`.
 3. Apply. The web service builds with `npm ci && npm run build` and starts with `npm run start`; it goes live once `GET /api/health` answers 200, which needs the database. The workflow service builds with `npm ci`, then runs `npm run workflows` to register its tasks: its **Tasks** page should list `inspect-return` and `renew-holds`. After the web service's first successful deploy, Render runs `npm run seed:demo` once (`initialDeployHook`).
 4. If your workspace cannot create a workflow from a Blueprint, delete the `handback-workflows` service and the `RENDER_WORKFLOW_SLUG` entry from `render.yaml` before applying it. Then create the workflow by hand: **New**, **Workflow**, this repository, language Node, region Oregon, build command `npm ci`, start command `npm run workflows`, with `DATABASE_URL` (the database's internal URL), `NODE_VERSION=22` and the PayPal and Gemini values from step 2. Finally set `RENDER_WORKFLOW_SLUG` on `handback` to the workflow's slug, shown on each task's page as `<slug>/<task>`.
 
@@ -79,7 +81,7 @@ npm run paypal:webhook -- https://handback.onrender.com
 npm run paypal:webhook
 ```
 
-It prints `PAYPAL_WEBHOOK_ID=...` (or finds the webhook already registered for that URL). Set `PAYPAL_WEBHOOK_ID` on the `handback` service under **Environment**; Render redeploys, and `/api/health` then shows `"webhookConfigured": true`. Until then `POST /api/paypal/webhooks` answers 503, because it refuses events it cannot verify.
+It prints `PAYPAL_WEBHOOK_ID=...` (or finds the webhook already registered for that URL). The webhook subscribes to `CHECKOUT.ORDER.APPROVED` (books a renter who approved and closed the window before PayPal sent them back), the `PAYMENT.CAPTURE.*` events including `REFUNDED`, the two `PAYMENT.AUTHORIZATION.*` events, the three `CUSTOMER.DISPUTE.*` events and the two vault token events. For a URL registered before `CHECKOUT.ORDER.APPROVED` was on the list, running the command again adds the missing event types. Set `PAYPAL_WEBHOOK_ID` on the `handback` service under **Environment**; Render redeploys, and `/api/health` then shows `"webhookConfigured": true`. Until then `POST /api/paypal/webhooks` answers 503, because it refuses events it cannot verify.
 
 ### Seed the counter
 
@@ -99,11 +101,12 @@ In demo mode the stand-in caches its state in the web process: if you seed after
 ### Smoke test
 
 1. `curl -s https://handback.onrender.com/api/health` should show `"ok": true`, `"driver": "postgres"`, the PayPal and AI modes you chose, `"runner": "render-workflows"` and the commit you deployed. The modes are the web service's; the workflow's are checked on each run, and `"lastSkippedRun"` stays `null` while they agree (check it again after steps 3 and 5).
-2. Open `/shop`: the seeded rentals are grouped by step.
+2. Open `/shop`: it sends you to `/shop/sign-in`; enter `SHOP_ACCESS_CODE`, and the seeded rentals are grouped by step. `curl -s -o /dev/null -w "%{http_code}" https://handback.onrender.com/api/live/shop` should answer 401. In `/api/health`, `staffAccess.mode` should be `code`, and `staffAccess.countedAs` should be your own public address (compare with what an IP lookup site shows). If it is an address of Cloudflare or Render instead, set `TRUSTED_PROXY_HOPS=1` (or more, one per extra proxy) and check again: wrong codes are counted against that address.
 3. Run one rental end to end with two screens: `/rent` on a phone (pay with the sandbox buyer), `/shop` on a laptop. Take the pickup photo, hold the deposit, take the return photo, press **Compare the photos**. The audit trail should say "Render Workflows" next to "Two AI looks compared the photos".
 4. In the dashboard, `handback-workflows`, **Tasks**, `inspect-return`, **Runs**: the run has input `["R-…", {"paypal":"sandbox","ai":"gemini"}]` and result `{"status":"inspected"}`.
 5. Trigger the cron job once (`handback-renew-holds`, **Trigger Run**). The log should end with `HTTP 200 {"ok":true,"ranOn":"render-workflows",...}`. In demo mode it says `"ranOn":"web"`.
 6. After settling a sandbox rental, the audit trail gains "PayPal confirmed by webhook" once PayPal delivers `PAYMENT.CAPTURE.COMPLETED`.
+7. Refund a few dollars of that rental from its **Refunds** form. The audit trail shows PayPal's refund id, and once PayPal delivers `PAYMENT.CAPTURE.REFUNDED` another "PayPal confirmed by webhook" entry follows; the refund is still counted once.
 
 ## Costs
 
@@ -152,6 +155,10 @@ Both processes need the same database. PGlite (the default local database) lives
 | `RENDER_WORKFLOWS=off` | web | Run jobs in the web process even when Render Workflows is set up |
 | `RENDER_USE_LOCAL_DEV`, `RENDER_LOCAL_DEV_URL` | local | Send runs to `render workflows dev` (default `http://localhost:8120`) |
 | `CRON_SECRET` | web, cron | Generated; authorizes `POST /api/jobs/renew-holds` |
+| `SHOP_ACCESS_CODE` | web | The counter's shared access code, at least 12 characters; unset leaves the counter open, shorter closes it |
+| `STAFF_COOKIE_SECRET` | web | Generated; mixed into the staff cookie's key |
+| `TRUSTED_PROXY_HOPS` | web | `X-Forwarded-For` entries after the client's address added by proxies; default 0 |
+| `PUBLIC_DEMO` | web | `true` on the judges' copy: the sign-in page says where the code is published |
 | `HANDBACK_HOSTPORT` or `HANDBACK_URL` | cron | Where the cron job finds the web service |
 | `APP_URL` | web | Public URL for PayPal return links and the customer QR code; defaults to `RENDER_EXTERNAL_URL` |
 | `SEED_VAULT_ID` | Shell | Saved sandbox wallet for seeding, or `latest` |
@@ -179,6 +186,9 @@ The button creates the same paid services in the account of whoever clicks it. L
 | `/api/health` shows a `lastSkippedRun` for `inspect-return` | The workflow's `GEMINI_API_KEY` differs from the web service's (one has a key, the other not). The web service compared the photos itself; fix the workflow's value |
 | Cron run fails with HTTP 401 | The two `CRON_SECRET` values differ; sync the Blueprint again |
 | Inspections show "Recorded Gemini reply" on Render | `GEMINI_API_KEY` is missing on `handback` (the web service decides the AI mode) |
+| The sign-in page says "Too many wrong codes" | Five wrong codes from one address, or 100 from everyone, in 15 minutes (`/api/health` shows `"signInLocked": true` for the second). Wait for the window to end, or restart the web service, which resets the counts |
+| The sign-in page says "The counter is closed" | `SHOP_ACCESS_CODE` is set but shorter than 12 characters, or only spaces; `/api/health` shows `"mode": "misconfigured"` |
+| Anyone can open `/shop` | `SHOP_ACCESS_CODE` is not set on `handback` |
 
 ## What has been verified
 

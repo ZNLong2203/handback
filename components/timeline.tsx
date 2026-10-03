@@ -1,4 +1,5 @@
 import { Bot, BotMessageSquare, CreditCard, Link2, ShieldCheck, ShieldX, Store, User } from "lucide-react";
+import { formatUsd } from "@/lib/money";
 import { eventLabel } from "@/lib/rentals/status";
 import type { AuditEvent } from "@/lib/rentals/types";
 import { cx } from "./ui";
@@ -16,10 +17,12 @@ const MOVED_VIA: Record<string, string> = { drag: "dragged on the schedule", age
 
 function detail(e: AuditEvent): string | null {
   const d = e.data as Record<string, unknown>;
-  const ids = ["orderId", "captureId", "authorizationId", "disputeId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
+  const ids = ["orderId", "captureId", "authorizationId", "disputeId", "refundId"].map((k) => (typeof d[k] === "string" ? `${k.replace("Id", "")} ${d[k]}` : null)).filter(Boolean);
   if (e.type.startsWith("dispute.") && typeof d.status === "string") ids.push(String(d.outcome ?? d.status).toLowerCase().replace(/_/g, " "));
+  if (e.type.startsWith("refund.") && typeof d.amountCents === "number") ids.unshift(formatUsd(d.amountCents));
   if (typeof d.debugId === "string") ids.push(`debug_id ${d.debugId}`);
   if (d.confirmedByRead === true) ids.push("reply lost; confirmed by reading the dispute");
+  if (d.confirmedBy === "webhook") ids.push("reply lost; confirmed by PayPal's webhook");
   if (typeof d.issue === "string") ids.push(String(d.issue));
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);
   if (e.type === "inspection.completed") ids.push(`${d.source} · ${d.model} · ${d.looks} looks · ${Math.round(Number(d.ms) / 100) / 10}s`);

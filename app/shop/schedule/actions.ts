@@ -7,10 +7,15 @@ import { polishMessages } from "@/lib/schedule/agent";
 import { interpretCommand } from "@/lib/schedule/commands";
 import * as schedule from "@/lib/schedule/service";
 import { UserError } from "@/lib/rentals/types";
+import { requireStaff } from "@/lib/staff-access";
 
-/** Same contract as the counter's actions: errors come back as text people can act on. */
+/**
+ * Same contract as the counter's actions: errors come back as text people can
+ * act on, and the staff check runs first (every schedule action is staff-only).
+ */
 async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
+    await requireStaff();
     const data = await fn();
     refresh();
     return { ok: true, data };

@@ -25,6 +25,12 @@ export async function POST(req: Request) {
     console.warn(`rejected unverified webhook ${event.id} (${event.event_type})`);
     return Response.json({ error: "signature verification failed" }, { status: 401 });
   }
-  const result = await applyPayPalWebhook(event);
-  return Response.json({ ok: true, result });
+  try {
+    const result = await applyPayPalWebhook(event);
+    return Response.json({ ok: true, result });
+  } catch (err) {
+    // Not a 2xx, so PayPal delivers the event again later.
+    console.error(`webhook ${event.id} (${event.event_type}) failed`, err);
+    return Response.json({ error: "could not apply the event; PayPal will retry" }, { status: 500 });
+  }
 }

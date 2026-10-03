@@ -119,3 +119,19 @@ export class UserError extends Error {
     this.name = "UserError";
   }
 }
+
+/**
+ * A PayPal refusal in words (paypalStep). `retryable` when sending the same
+ * request again later could succeed: no answer, a timeout, 429 or a 5xx.
+ */
+export class PayPalStepError extends UserError {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    /** PayPal's details[0].issue, when it gave one. */
+    readonly issue: string | null = null,
+  ) {
+    super(message);
+    this.name = "PayPalStepError";
+  }
+}

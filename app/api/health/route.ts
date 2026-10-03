@@ -1,4 +1,5 @@
 import { checkHealth } from "@/lib/health";
+import { clientAddressFrom } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,9 @@ export const dynamic = "force-dynamic";
  * database answers, 503 when it does not, so a new deploy only goes live once
  * it can reach Postgres. The body says which modes this deployment runs in.
  */
-export async function GET() {
+export async function GET(req: Request) {
   const health = await checkHealth();
-  return Response.json(health, { status: health.ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
+  // The caller's own address as the sign-in limiter sees it, to check TRUSTED_PROXY_HOPS after deploying.
+  const body = { ...health, staffAccess: { ...health.staffAccess, countedAs: clientAddressFrom(req.headers) } };
+  return Response.json(body, { status: health.ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }

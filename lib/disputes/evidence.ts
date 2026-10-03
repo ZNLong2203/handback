@@ -242,7 +242,11 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
   const right: [string, string][] = [
     ["Rental fee", `${usd(facts.money.feeCents)}${p.feeCaptureId ? ` · capture ${p.feeCaptureId}` : ""}`],
     ["Deposit hold", `${usd(facts.money.heldCents)}${p.authorizationId ? ` · authorization ${p.authorizationId}` : ""}`],
-    ["Settlement", p.settlementCaptureId ? `${usd(facts.money.capturedCents)} captured · capture ${p.settlementCaptureId}` : facts.money.settledAt ? "Hold released, nothing captured" : "Not settled"],
+    [
+      "Settlement",
+      (p.settlementCaptureId ? `${usd(facts.money.capturedCents)} captured · capture ${p.settlementCaptureId}` : facts.money.settledAt ? "Hold released, nothing captured" : "Not settled") +
+        (facts.money.refunds?.length ? ` · ${usd(facts.money.refunds.reduce((s, x) => s + x.cents, 0))} refunded since` : ""),
+    ],
     ["Booking order", p.bookingOrderId ?? "-"],
   ];
   const colW = (CONTENT - 16) / 2;

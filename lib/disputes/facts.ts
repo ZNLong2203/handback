@@ -41,13 +41,24 @@ export type EvidenceFacts = {
     settlementCaptureId: string | null;
     extraCaptureId: string | null;
   };
-  money: { feeCents: Cents; heldCents: Cents | null; capturedCents: Cents | null; releasedCents: Cents | null; extraCents: Cents | null; settledAt: string | null };
+  money: {
+    feeCents: Cents;
+    heldCents: Cents | null;
+    capturedCents: Cents | null;
+    releasedCents: Cents | null;
+    extraCents: Cents | null;
+    settledAt: string | null;
+    /** Refunds on PayPal after payment, oldest first; left out when there are none, so older packs hash the same. */
+    refunds?: FactRefund[];
+  };
   pickup: { sha256: string; takenAt: string; acknowledgedAt: string | null } | null;
   returned: { sha256: string; takenAt: string } | null;
   inspection: { source: Assessment["source"]; model: string; comparedAt: string; sentAt: string | null; answeredAt: string | null } | null;
   findings: EvidenceFinding[];
   audit: { entries: number; headHash: string | null; intact: boolean; brokenAtSeq: number | null };
 };
+
+export type FactRefund = { refundId: string | null; captureId: string; cents: Cents; at: string };
 
 export type EvidenceSource = {
   shop: { name: string; city: string };
@@ -58,6 +69,8 @@ export type EvidenceSource = {
   assessment: Assessment | null;
   events: AuditEvent[];
   dispute: EvidenceFacts["dispute"];
+  /** Refunds PayPal made or reported on the rental's captures (lib/rentals/refunds.ts, refunded ones only). */
+  refunds?: FactRefund[];
 };
 
 export function buildEvidenceFacts(s: EvidenceSource): EvidenceFacts {
@@ -86,6 +99,9 @@ export function buildEvidenceFacts(s: EvidenceSource): EvidenceFacts {
       releasedCents: r.releasedCents,
       extraCents: r.extraCents,
       settledAt: r.settledAt,
+      refunds: s.refunds?.length
+        ? [...s.refunds].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : (a.refundId ?? "") < (b.refundId ?? "") ? -1 : 1))
+        : undefined,
     },
     pickup: s.checkout ? { sha256: s.checkout.photoSha, takenAt: s.checkout.takenAt, acknowledgedAt: s.checkout.acknowledgedAt } : null,
     returned: s.checkin ? { sha256: s.checkin.photoSha, takenAt: s.checkin.takenAt } : null,
@@ -201,6 +217,13 @@ export function factList(f: EvidenceFacts): Fact[] {
       ? `${formatUsd(m.capturedCents)} captured from the deposit${f.paypal.settlementCaptureId ? ` (capture ${f.paypal.settlementCaptureId})` : ""} and ${formatUsd(m.releasedCents ?? 0)} released`
       : `the whole ${formatUsd(m.releasedCents ?? 0)} deposit released`;
     add("settlement", `Settled ${utc(m.settledAt)}: ${captured}${extra}.`);
+  }
+  if (m.refunds?.length) {
+    const which = (captureId: string) =>
+      captureId === f.paypal.feeCaptureId ? "the rental fee" : captureId === f.paypal.extraCaptureId ? "the charge above the deposit" : "the settlement capture";
+    const total = m.refunds.reduce((s, x) => s + x.cents, 0);
+    const list = m.refunds.map((x) => `${formatUsd(x.cents)} of ${which(x.captureId)} (capture ${x.captureId}${x.refundId ? `, refund ${x.refundId}` : ""}, ${utc(x.at)})`);
+    add("refunds", `Refunded to the customer through PayPal after payment, ${formatUsd(total)} in all: ${list.join("; ")}.`);
   }
   if (f.dispute) {
     const d = f.dispute;

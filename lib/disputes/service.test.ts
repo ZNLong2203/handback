@@ -126,6 +126,33 @@ describe("dispute desk (demo mode)", () => {
     expect((await types(id)).filter((t) => t === "dispute.evidence_sent")).toHaveLength(1);
   });
 
+  it("disputes only what is still kept after a refund, and the pack and summary say what was refunded", async () => {
+    const id = await settledRental();
+    const { refundCharge } = await import("@/lib/rentals/refunds");
+    const captureId = (await rental(id)).settlementCaptureId!;
+    const refund = await refundCharge(id, { captureId, cents: 1000, reason: "Goodwill", seq: 1 });
+    await desk.demoOpenDispute(id);
+    let d = (await deskFor(id))!;
+    // $35.00 taken, $10.00 refunded: $25.00 is still kept, and the stand-in disputes that less $15.00.
+    expect(d.dispute).toMatchObject({ amountCents: 1000 });
+
+    const sha = await desk.prepareEvidence(id);
+    expect(await desk.prepareEvidence(id)).toBe(sha);
+    d = (await deskFor(id))!;
+    expect(d.pack!.facts.money.refunds).toEqual([{ refundId: refund.refundId, captureId, cents: 1000, at: refund.createdAt }]);
+    expect(d.pack!.narrative.paragraphs.map((p) => p.text).join(" ")).toContain("$10.00 was refunded to the customer through PayPal");
+    expect(d.pack!.narrative.paragraphs.some((p) => p.cites.includes("refunds"))).toBe(true);
+  });
+
+  it("disputes the fee instead when the settlement's charge was refunded in full", async () => {
+    const id = await settledRental();
+    const { refundCharge } = await import("@/lib/rentals/refunds");
+    await refundCharge(id, { captureId: (await rental(id)).settlementCaptureId!, cents: 3500, reason: "All of it", seq: 1 });
+    // The fee is still kept, so the stand-in disputes that instead.
+    await desk.demoOpenDispute(id);
+    expect((await deskFor(id))!.dispute).toMatchObject({ transactionId: (await rental(id)).feeCaptureId });
+  });
+
   it("recommends an offer only where PayPal allows one, and accepting resolves for the customer", async () => {
     const id = await settledRental("contest");
     await desk.demoOpenDispute(id);

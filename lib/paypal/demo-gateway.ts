@@ -25,6 +25,7 @@ type DemoOrder = {
   savePayPal: boolean;
   authorizationId?: string;
   captureId?: string;
+  vaultId?: string;
 };
 type DemoAuth = Authorization & { capturedCents: number; reauthorized: boolean };
 type DemoCapture = { id: string; amountCents: number; refundedCents: number };
@@ -153,8 +154,17 @@ export class DemoDepositGateway implements DepositGateway {
       order.captureId = capture.id;
       const vaultId = this.id("DEMO-VAULT");
       this.state.vaults[vaultId] = "renter@example.com";
+      order.vaultId = vaultId;
       return { captureId: capture.id, status: "COMPLETED", capturedCents: order.totalCents, vaultId, payerEmail: "renter@example.com" };
     });
+  }
+
+  async getBookingOrder(orderId: string): Promise<BookingCapture | null> {
+    await this.ready();
+    const order = this.state.orders[orderId];
+    if (!order) throw fail(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID", "Order not found.");
+    if (!order.captureId) return null;
+    return { captureId: order.captureId, status: "COMPLETED", capturedCents: order.totalCents, vaultId: order.vaultId, payerEmail: "renter@example.com" };
   }
 
   async holdWithSavedWallet(req: SavedWalletRequest, requestId: string): Promise<Authorization> {
@@ -269,6 +279,15 @@ export class DemoDepositGateway implements DepositGateway {
     });
   }
 
+  /** Not PayPal API: the demo dispute stand-in reports money a dispute returned on a capture, so later refunds see less left. */
+  async recordDisputeRefund(captureId: string, cents: number): Promise<void> {
+    await this.ready();
+    const capture = this.state.captures[captureId];
+    if (!capture) return;
+    capture.refundedCents = Math.min(capture.amountCents, capture.refundedCents + cents);
+    await this.store.save(this.state);
+  }
+
   async refund(req: RefundRequest, requestId: string): Promise<RefundResult> {
     return this.once(requestId, () => {
       const capture = this.state.captures[req.captureId];
@@ -277,7 +296,7 @@ export class DemoDepositGateway implements DepositGateway {
         throw fail(422, "UNPROCESSABLE_ENTITY", "REFUND_AMOUNT_EXCEEDED", "Refund amount exceeds the refundable amount.");
       }
       capture.refundedCents += req.amountCents;
-      return { refundId: this.id("DEMO-REFUND"), status: "COMPLETED" };
+      return { refundId: this.id("DEMO-REFUND"), status: "COMPLETED", amountCents: req.amountCents };
     });
   }
 }

@@ -6,11 +6,13 @@ import { ScheduleBoard } from "@/components/schedule/schedule-board";
 import { Badge, Eyebrow } from "@/components/ui";
 import { polishMessages } from "@/lib/schedule/agent";
 import { loadScheduleView, prepareSchedule } from "@/lib/schedule/view";
+import { requireStaffPage } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Schedule" };
 
 export default async function SchedulePage() {
+  await requireStaffPage("/shop/schedule");
   await prepareSchedule();
   const view = await loadScheduleView();
   if (view.ai && view.pending.some((p) => p.messageSource === "template")) {

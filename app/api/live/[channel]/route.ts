@@ -1,16 +1,24 @@
 import { subscribe } from "@/lib/live";
+import { staffOnlyResponse } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Server-sent events for one rental, or "shop" for all of them. Each message
  * only says that something changed; the page re-renders from the database,
- * so nothing sensitive travels on this stream.
+ * so nothing sensitive travels on this stream. "shop" feeds only the counter's
+ * pages, so with SHOP_ACCESS_CODE set it needs the staff cookie. A rental's own
+ * channel stays open: the renter's page listens to it without one, and it
+ * carries an event name and a time, never data.
  */
 export async function GET(req: Request, ctx: RouteContext<"/api/live/[channel]">) {
   const { channel } = await ctx.params;
   if (channel !== "shop" && !/^R-[0-9A-Z]{6}$/.test(channel)) {
     return new Response("Not found", { status: 404 });
+  }
+  if (channel === "shop") {
+    const refused = await staffOnlyResponse();
+    if (refused) return refused;
   }
   const encoder = new TextEncoder();
   let cleanup = () => {};

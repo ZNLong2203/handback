@@ -20,6 +20,8 @@ export interface DepositGateway {
   createBookingOrder(req: BookingOrderRequest, requestId: string): Promise<Hold>;
   /** After the buyer approves: capture the fee and read back the saved-wallet token. */
   captureBookingOrder(orderId: string, requestId: string): Promise<BookingCapture>;
+  /** Reads a booking order back: its capture and saved-wallet token, or null while it has no capture. */
+  getBookingOrder(orderId: string): Promise<BookingCapture | null>;
   /** Pickup: hold the deposit on the saved wallet, buyer not present. */
   holdWithSavedWallet(req: SavedWalletRequest, requestId: string): Promise<Authorization>;
   /** Damage above the deposit: charge the saved wallet directly. */
@@ -122,10 +124,14 @@ export type Settlement = {
 export type RefundRequest = {
   captureId: string;
   amountCents: Cents;
+  /** Shown to the payer in their PayPal activity and PayPal's email; PayPal allows 255 characters. */
   noteToPayer: string;
+  /** PayPal allows 127 characters. */
+  invoiceId?: string;
 };
 
-export type RefundResult = { refundId: string; status: string };
+/** Payments v2 `refund`: status is COMPLETED, PENDING, FAILED or CANCELLED. */
+export type RefundResult = { refundId: string; status: string; amountCents: Cents };
 
 /** Honor period and reauthorization window, as enforced by the sandbox. */
 export const HONOR_PERIOD_DAYS = 3;

@@ -59,6 +59,19 @@ function toAuthorization(
   };
 }
 
+function bookingCapture(order: Order): BookingCapture | null {
+  const capture = order.purchaseUnits?.[0]?.payments?.captures?.[0];
+  if (!capture?.id || !capture.amount) return null;
+  const wallet = order.paymentSource?.paypal;
+  return {
+    captureId: capture.id,
+    status: capture.status ?? "PENDING",
+    capturedCents: fromPayPalValue(capture.amount.value),
+    vaultId: wallet?.attributes?.vault?.id,
+    payerEmail: wallet?.emailAddress,
+  };
+}
+
 function firstAuthorization(order: Order) {
   return order.purchaseUnits?.[0]?.payments?.authorizations?.[0];
 }
@@ -130,16 +143,14 @@ export class PayPalDepositGateway implements DepositGateway {
 
   async captureBookingOrder(orderId: string, requestId: string): Promise<BookingCapture> {
     const order = await call(() => this.orders.captureOrder({ id: orderId, paypalRequestId: requestId, prefer: PREFER }));
-    const capture = order.purchaseUnits?.[0]?.payments?.captures?.[0];
-    if (!capture?.id || !capture.amount) throw new Error("PayPal returned no capture for the booking");
-    const wallet = order.paymentSource?.paypal;
-    return {
-      captureId: capture.id,
-      status: capture.status ?? "PENDING",
-      capturedCents: fromPayPalValue(capture.amount.value),
-      vaultId: wallet?.attributes?.vault?.id,
-      payerEmail: wallet?.emailAddress,
-    };
+    const captured = bookingCapture(order);
+    if (!captured) throw new Error("PayPal returned no capture for the booking");
+    return captured;
+  }
+
+  /** Orders v2 GET: on 2026-10-03 the sandbox returned a captured booking order with its capture and `payment_source.paypal.attributes.vault`. */
+  async getBookingOrder(orderId: string): Promise<BookingCapture | null> {
+    return bookingCapture(await call(() => this.orders.getOrder({ id: orderId })));
   }
 
   /** Merchant-initiated: the buyer consented at booking and is not present now. */
@@ -327,10 +338,18 @@ export class PayPalDepositGateway implements DepositGateway {
         captureId: req.captureId,
         paypalRequestId: requestId,
         prefer: PREFER,
-        body: { amount: usd(req.amountCents), noteToPayer: req.noteToPayer.slice(0, 255) },
+        body: {
+          amount: usd(req.amountCents),
+          noteToPayer: req.noteToPayer.slice(0, 255),
+          ...(req.invoiceId ? { invoiceId: req.invoiceId.slice(0, 127) } : {}),
+        },
       }),
     );
     if (!refund.id) throw new Error("PayPal returned no refund");
-    return { refundId: refund.id, status: refund.status ?? "PENDING" };
+    return {
+      refundId: refund.id,
+      status: refund.status ?? "PENDING",
+      amountCents: refund.amount?.value ? fromPayPalValue(refund.amount.value) : req.amountCents,
+    };
   }
 }

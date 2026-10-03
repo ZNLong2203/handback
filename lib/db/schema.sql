@@ -172,6 +172,30 @@ create table if not exists dispute_actions (
   primary key (dispute_id, action, round)
 );
 
+-- Refunds of what a settlement took (lib/rentals/refunds.ts). The counter
+-- claims a numbered row before calling PayPal with PayPal-Request-Id
+-- refund:<rental id>:<seq>, so submitting the same form twice reuses the id
+-- and PayPal answers with the first refund. state: requested (sent, no answer
+-- recorded), done (PayPal returned refund_id) or refused. A refund PayPal
+-- reported by webhook that the counter did not make has no seq.
+create table if not exists refunds (
+  id text primary key,
+  rental_id text not null references rentals (id),
+  seq integer,
+  capture_id text not null,
+  amount_cents integer not null,
+  reason text,
+  state text not null,
+  refund_id text,
+  paypal_status text,
+  source text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists refunds_rental_seq on refunds (rental_id, seq);
+create unique index if not exists refunds_refund_id on refunds (refund_id);
+
 -- State of the in-memory PayPal stand-in, so demo mode survives restarts.
 create table if not exists demo_paypal (
   k text primary key,

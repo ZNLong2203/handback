@@ -54,7 +54,11 @@ const disputeStore: DemoDisputeStore = {
 export function disputeApi(): DisputeApi {
   if (globalForGateway.disputeApi) return globalForGateway.disputeApi;
   const { mode } = paypalConfig();
-  const api = mode === "demo" ? new DemoDisputeApi(() => new Date(), disputeStore) : new PayPalDisputeApi(mode);
+  const moneyBack = async (captureId: string, cents: number) => {
+    const gateway = depositGateway();
+    if (gateway instanceof DemoDepositGateway) await gateway.recordDisputeRefund(captureId, cents);
+  };
+  const api = mode === "demo" ? new DemoDisputeApi(() => new Date(), disputeStore, moneyBack) : new PayPalDisputeApi(mode);
   globalForGateway.disputeApi = api;
   return api;
 }

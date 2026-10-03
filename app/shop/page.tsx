@@ -7,10 +7,12 @@ import { catalogItem } from "@/lib/catalog";
 import { shortDate } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { formatUsd } from "@/lib/money";
+import { refundTotals } from "@/lib/rentals/refunds";
 import { listRentals } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
 import { handovers, type Handover } from "@/lib/schedule/handover";
+import { requireStaffPage } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Counter" };
@@ -23,12 +25,12 @@ const GROUPS: { title: string; hint: string; statuses: RentalStatus[] }[] = [
   { title: "Settled", hint: "Deposit charged or released", statuses: ["settled", "cancelled"] },
 ];
 
-function RentalRow({ r, unit }: { r: Rental; unit?: Handover }) {
+function RentalRow({ r, unit, refunded = 0 }: { r: Rental; unit?: Handover; refunded?: number }) {
   const item = catalogItem(r.itemId);
   const status = STATUS[r.status];
   const money =
     r.status === "settled"
-      ? `${formatUsd(r.releasedCents ?? 0)} released${r.capturedCents ? ` · ${formatUsd(r.capturedCents)} kept` : ""}`
+      ? `${formatUsd(r.releasedCents ?? 0)} released${r.capturedCents ? ` · ${formatUsd(r.capturedCents)} kept` : ""}${refunded ? ` · ${formatUsd(refunded)} refunded` : ""}`
       : r.authorizedCents
         ? `${formatUsd(r.authorizedCents)} held`
         : `${formatUsd(r.depositCents)} at pickup`;
@@ -58,12 +60,15 @@ function RentalRow({ r, unit }: { r: Rental; unit?: Handover }) {
 }
 
 export default async function Counter() {
-  const rentals = await listRentals(await getDb());
+  await requireStaffPage("/shop");
+  const db = await getDb();
+  const rentals = await listRentals(db);
   const units = await handovers(rentals);
+  const refunds = await refundTotals(db);
   const held = rentals.filter((r) => ["out", "inspecting", "customer_review", "responded"].includes(r.status)).reduce((s, r) => s + (r.authorizedCents ?? 0), 0);
   const settled = rentals.filter((r) => r.status === "settled");
   const released = settled.reduce((s, r) => s + (r.releasedCents ?? 0), 0);
-  const kept = settled.reduce((s, r) => s + (r.capturedCents ?? 0) + (r.extraCents ?? 0), 0);
+  const kept = settled.reduce((s, r) => s + (r.capturedCents ?? 0) + (r.extraCents ?? 0) - (refunds.get(r.id) ?? 0), 0);
   const attention = rentals.filter((r) => ["inspecting", "responded", "disputed"].includes(r.status)).length;
 
   return (
@@ -119,7 +124,7 @@ export default async function Counter() {
                 </div>
                 <ul className="space-y-2">
                   {list.map((r) => (
-                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} />
+                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} refunded={refunds.get(r.id)} />
                   ))}
                 </ul>
               </section>

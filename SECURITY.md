@@ -27,6 +27,8 @@ This is a one-person project with no bug bounty and no fixed response time. You 
 - A way to move money that skips the review: a capture without the customer's answer, a capture of more than the agreed charges, or a second capture from one settlement.
 - A webhook that gets past signature verification (`app/api/paypal/webhooks/route.ts`, `lib/paypal/webhooks.ts`, `lib/paypal/webhook-signature.ts`).
 - Calling the hold renewal job (`POST /api/jobs/renew-holds`) without `CRON_SECRET`.
+- With `SHOP_ACCESS_CODE` set: reaching a counter page, a staff server action, `/api/live/shop` or an evidence PDF without a valid staff cookie, forging a cookie, or learning the code from one.
+- A refund of more than is left on a capture, two refunds from one submit, or a refund while a PayPal dispute on the rental is open.
 - Reading or answering another customer's rental without their link.
 - A way for an assistant using the MCP endpoint (`app/api/mcp/route.ts`, `lib/mcp/`) to move money, answer a charge, settle, or get a renter's page link, or a hold or charge that the deposit mandate should have refused (`lib/rentals/mandate.ts`).
 - Secrets that reach the browser, the logs or the repository.
@@ -35,7 +37,9 @@ This is a one-person project with no bug bounty and no fixed response time. You 
 
 These are known and documented, so they do not need a report:
 
-- The counter pages (`/shop`) have no sign-in. Anyone who can reach a running copy can act as staff.
+- The counter has one shared access code when `SHOP_ACCESS_CODE` is set, and no per-person staff accounts: everyone who knows the code acts as "the counter", and the audit log cannot say which person held, settled, refunded or answered a dispute. Without `SHOP_ACCESS_CODE` (local runs, clones) anyone who can reach a running copy can act as staff.
+- Wrong access codes are counted in the web process, so a restart resets the counts. The limit per client (five per 15 minutes) is keyed on the address the nearest proxy appended to `X-Forwarded-For`; it protects only as far as that address does, and Render does not document how many entries its proxies add (`TRUSTED_PROXY_HOPS`, checked with `/api/health`). What bounds guessing is the ceiling for everyone, 100 per 15 minutes, together with a code of at least 12 characters (a shorter one closes the counter). That ceiling also means anyone can stop all new sign-ins for up to 15 minutes; browsers already signed in keep working. A signed-in browser stays signed in for 12 hours unless the code or `STAFF_COOKIE_SECRET` changes. Without `STAFF_COOKIE_SECRET`, a leaked cookie can be tested against guessed codes offline, slowed only by scrypt.
+- Photos are served to anyone who has their SHA-256, and a rental's live channel (`/api/live/R-…`, event names only) is open, because the renter's page uses both without a cookie.
 - A customer's page (`/r/<token>`) is protected only by the random token in its link (18 random bytes).
 - The audit log is tamper-evident, not tamper-proof: each entry's hash covers the previous one, but anyone with write access to the database can rewrite the whole chain.
 - The MCP endpoint (`/api/mcp`) has no sign-in and no rate limit, so anyone can create unpaid drafts there, as with the booking form. The assistant's name in a mandate is self-reported, and the mandate is hashed, not signed. [docs/agents.md](docs/agents.md#limits) lists the rest.
