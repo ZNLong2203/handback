@@ -1,7 +1,10 @@
+import { LogOut } from "lucide-react";
 import Link from "next/link";
+import { signOutAction } from "@/app/shop/sign-in/actions";
 import { aiConfigured } from "@/lib/inspection/run";
 import { paypalConfig } from "@/lib/paypal/config";
 import { SHOP } from "@/lib/shop";
+import { staffAccessCode } from "@/lib/staff-access";
 import { Logo } from "./brand";
 
 /** Tells anyone trying the demo which parts are real right now. */
@@ -87,6 +90,13 @@ export function ShopHeader({ live }: { live?: React.ReactNode }) {
           <div className="flex items-center gap-4 text-sm">
             {live}
             <span className="hidden text-muted sm:inline">{SHOP.name}</span>
+            {staffAccessCode() && (
+              <form action={signOutAction}>
+                <button type="submit" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium text-ink-soft hover:bg-line/50 hover:text-ink">
+                  <LogOut className="h-4 w-4" aria-hidden /> Sign out
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </header>

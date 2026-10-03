@@ -11,6 +11,7 @@ import { listRentals } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
 import { handovers, type Handover } from "@/lib/schedule/handover";
+import { requireStaffPage } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Counter" };
@@ -58,6 +59,7 @@ function RentalRow({ r, unit }: { r: Rental; unit?: Handover }) {
 }
 
 export default async function Counter() {
+  await requireStaffPage("/shop");
   const rentals = await listRentals(await getDb());
   const units = await handovers(rentals);
   const held = rentals.filter((r) => ["out", "inspecting", "customer_review", "responded"].includes(r.status)).reduce((s, r) => s + (r.authorizedCents ?? 0), 0);

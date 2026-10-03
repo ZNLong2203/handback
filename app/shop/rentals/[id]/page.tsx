@@ -23,6 +23,7 @@ import { awaitingResolution } from "@/lib/rentals/settlement";
 import { STATUS, STEPS, stepIndex } from "@/lib/rentals/status";
 import { loadRentalView, type RentalView } from "@/lib/rentals/view";
 import { appUrl } from "@/lib/shop";
+import { requireStaffPage } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ function Photo({ sha, label }: { sha: string; label: string }) {
 
 export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[id]">) {
   const { id } = await props.params;
+  await requireStaffPage(`/shop/rentals/${id}`);
   const view = await loadRentalView({ id });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;
