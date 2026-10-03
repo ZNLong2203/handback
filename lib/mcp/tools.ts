@@ -109,7 +109,7 @@ export const StatusOut = z.object({
     kept: Money.nullable(),
     released: Money.nullable(),
     chargedAboveHold: Money.nullable(),
-    /** Given back by the shop after settling, on PayPal; null when nothing was refunded. */
+    /** Refunded on PayPal after payment, of the fee or of what the settlement kept; null when nothing was. */
     refunded: Money.nullable(),
   }),
   /** Proposed charges the renter has to accept or question, on their own page; no tool can answer them. */

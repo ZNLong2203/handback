@@ -343,6 +343,12 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                 <dt className="text-muted">Fee paid</dt>
                 <dd className="tabular font-semibold">{formatUsd(rental.feeCents)}</dd>
               </div>
+              {view.feeRefundedCents > 0 && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted">Fee refunded</dt>
+                  <dd className="tabular font-semibold text-released">{formatUsd(view.feeRefundedCents)}</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-3">
                 <dt className="text-muted">PayPal saved</dt>
                 <dd className="font-semibold">{rental.vaultId ? "Yes" : "No"}</dd>

@@ -39,7 +39,10 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     dispute: disputes[0] ?? null,
     /** Refunds after settlement: the counter's and any PayPal reported by webhook. */
     refunds,
-    refundedCents: refundedCents(refunds),
+    /** Refunded of what the settlement took; the money bar and "kept" use this. */
+    refundedCents: refundedCents(refunds, [rental.settlementCaptureId, rental.extraCaptureId]),
+    /** Refunded of the booking fee (only PayPal's webhook reports these; the counter does not refund the fee). */
+    feeRefundedCents: refundedCents(refunds, [rental.feeCaptureId]),
     refundable: refundableCaptures(rental, refunds, returned),
     nextRefundSeq: nextRefundSeq(refunds),
     /** Counter refunds whose PayPal answer was lost. */

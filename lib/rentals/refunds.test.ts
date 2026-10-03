@@ -336,6 +336,17 @@ describe("PAYMENT.CAPTURE.REFUNDED", () => {
     expect(await events(rentalId, "refund.recorded")).toHaveLength(0);
   });
 
+  it("keeps a refund of the booking fee out of what the shop kept from the deposit", async () => {
+    const { rentalId } = await settledHood();
+    const fee = (await repo.rentalById(await getDb(), rentalId))!.feeCaptureId!;
+    expect(await applyPayPalWebhook(refundWebhook(`WH-${rentalId}-fee`, "FEE-REFUND-1", fee, "52.00"))).toBe("applied");
+    const v = await view(rentalId);
+    expect(v.feeRefundedCents).toBe(5200);
+    expect(v.refundedCents).toBe(0);
+    expect(v.refundable[0].leftCents).toBe(3500);
+    expect((await refunds.refundTotals(await getDb())).get(rentalId)).toBeUndefined();
+  });
+
   it("applies a delivery that failed when PayPal sends it again, instead of calling it a duplicate", async () => {
     const { rentalId, captureId } = await settledHood();
     const db = await getDb();

@@ -244,6 +244,12 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                   <dd className="tabular font-semibold text-charged">{formatUsd(l.cents)}</dd>
                 </div>
               ))}
+              {view.feeRefundedCents > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-muted">Rental fee refunded</dt>
+                  <dd className="tabular font-semibold text-released">−{formatUsd(view.feeRefundedCents)}</dd>
+                </div>
+              )}
               {view.refundedCents > 0 && (
                 <div className="flex justify-between">
                   <dt className="text-muted">Refunded by the shop afterwards</dt>

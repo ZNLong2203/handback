@@ -80,12 +80,20 @@ export const isRefunded = (r: StoredRefund) => r.state === "done" && r.paypalSta
 /** Counts against what is left to refund: refunded, or sent to PayPal with no answer recorded yet. */
 const isSpoken = (r: StoredRefund) => isRefunded(r) || r.state === "requested";
 
-export const refundedCents = (refunds: StoredRefund[]): Cents => refunds.filter(isRefunded).reduce((s, r) => s + r.amountCents, 0);
+/** Money refunded, on the given captures or on any. */
+export const refundedCents = (refunds: StoredRefund[], captureIds?: (string | null)[]): Cents =>
+  refunds.filter((r) => isRefunded(r) && (!captureIds || captureIds.includes(r.captureId))).reduce((s, r) => s + r.amountCents, 0);
 
-/** Refunded total per rental, for the counter's list. */
+/**
+ * Refunded per rental of what the settlement took (the settlement capture and
+ * the charge above the deposit), for the counter's list. A refund of the
+ * booking fee is not part of what the shop kept from the deposit.
+ */
 export async function refundTotals(db: Query): Promise<Map<string, Cents>> {
   const rows = await db.query<{ rental_id: string; cents: string | number }>(
-    "select rental_id, sum(amount_cents) as cents from refunds where state = 'done' and coalesce(paypal_status, '') not in ('FAILED', 'CANCELLED') group by rental_id",
+    `select f.rental_id, sum(f.amount_cents) as cents from refunds f join rentals r on r.id = f.rental_id
+     where f.state = 'done' and coalesce(f.paypal_status, '') not in ('FAILED', 'CANCELLED') and f.capture_id in (r.settlement_capture_id, r.extra_capture_id)
+     group by f.rental_id`,
   );
   return new Map(rows.map((r) => [r.rental_id, Number(r.cents)]));
 }
