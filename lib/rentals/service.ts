@@ -18,7 +18,7 @@ import { appendEvent, firstBrokenLink } from "./audit";
 import { buildMandate, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
 import { awaitingCustomer, awaitingResolution, isCharged, planSettlement } from "./settlement";
-import { UserError, type AuditEvent, type Phase, type Rental, type ReviewedFinding } from "./types";
+import { PayPalStepError, UserError, type AuditEvent, type Phase, type Rental, type ReviewedFinding } from "./types";
 
 const ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const newRentalId = () => `R-${[...randomBytes(6)].map((b) => ID_ALPHABET[b % 32]).join("")}`;
@@ -38,7 +38,7 @@ export async function paypalStep<T>(rentalId: string, step: string, fn: () => Pr
     const refusal = { step, status: err.status, name: err.errorName, issue: err.issue ?? null, debugId: err.debugId ?? null, message: err.message };
     await appendEvent(db, rentalId, "paypal", "paypal.error", refusal);
     publish(rentalId, "paypal.error");
-    throw new UserError(explainPayPalError(refusal));
+    throw new PayPalStepError(explainPayPalError(refusal), err.retryable || err.status === 0 || err.status === 408);
   }
 }
 

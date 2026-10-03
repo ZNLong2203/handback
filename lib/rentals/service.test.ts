@@ -18,6 +18,7 @@ type BookingOrderRequest = import("@/lib/paypal/gateway").BookingOrderRequest;
 const repo = await import("./repo");
 const svc = await import("./service");
 const { applyPayPalWebhook } = await import("./webhooks");
+const { PayPalError } = await import("@/lib/paypal/errors");
 
 async function bookedRental(itemId = "camera-kit") {
   const { startDate, endDate } = spacedDates();
@@ -338,6 +339,28 @@ describe("approving by redirect", () => {
     );
   }
 
+  /** PayPal's CHECKOUT.ORDER.APPROVED: the resource is the order, with no capture and no saved-wallet token. */
+  const approved = (eventId: string, orderId: string) => ({
+    id: eventId,
+    event_type: "CHECKOUT.ORDER.APPROVED",
+    resource: { id: orderId, status: "APPROVED", intent: "CAPTURE", payer: { payer_id: "DEMOPAYER" } },
+  });
+
+  /** Runs fn while counting booking captures sent to PayPal, and their request ids. */
+  async function countingCaptures<T>(fn: () => Promise<T>): Promise<{ result: T; requestIds: string[] }> {
+    const shared = globalThis as { depositGateway?: DepositGateway };
+    const real = shared.depositGateway!;
+    const requestIds: string[] = [];
+    shared.depositGateway = Object.assign(Object.create(real), {
+      captureBookingOrder: (orderId: string, requestId: string) => (requestIds.push(requestId), real.captureBookingOrder(orderId, requestId)),
+    });
+    try {
+      return { result: await fn(), requestIds };
+    } finally {
+      shared.depositGateway = real;
+    }
+  }
+
   it("captures the booking when PayPal sends the renter back, once, however often the page loads", async () => {
     const b = await draft();
     expect(await svc.returnFromPayPal(b.token, {})).toBe("none");
@@ -348,12 +371,23 @@ describe("approving by redirect", () => {
     expect(paid).toHaveLength(1);
   });
 
-  it("books once when two returns arrive at the same time", async () => {
+  it("books once when two returns, the in-page button and PayPal's webhook arrive at the same time", async () => {
     const b = await draft();
     const query = { token: b.orderId, PayerID: "DEMOPAYER" };
-    expect(await Promise.all([svc.returnFromPayPal(b.token, query), svc.returnFromPayPal(b.token, query)])).toEqual(["approved", "approved"]);
+    const { result, requestIds } = await countingCaptures(() =>
+      Promise.all([
+        svc.returnFromPayPal(b.token, query),
+        svc.returnFromPayPal(b.token, query),
+        svc.confirmBooking(b.orderId),
+        applyPayPalWebhook(approved(`WH-${b.rentalId}-approved`, b.orderId)),
+      ]),
+    );
+    expect(result).toEqual(["approved", "approved", { token: b.token, pending: false }, "applied"]);
+    // Every capture that reached PayPal used the one request id, so PayPal captures once.
+    expect(new Set(requestIds)).toEqual(new Set([`booking-capture:${b.rentalId}`]));
     const paid = (await repo.eventsFor(await getDb(), b.rentalId)).filter((e) => e.type === "booking.paid");
     expect(paid).toHaveLength(1);
+    expect(await rental(b.rentalId)).toMatchObject({ status: "booked", vaultId: expect.stringMatching(/^DEMO-VAULT-/) });
   });
 
   it("shows the renter PayPal's refusal, keeps the booking unpaid, and still books on the real approval", async () => {
@@ -460,5 +494,113 @@ describe("approving by redirect", () => {
     expect(await svc.returnFromPayPal(b.token, { token: b.orderId })).toBe("none");
     expect(await svc.returnFromPayPal("no-such-token", { token: b.orderId, PayerID: "X" })).toBe("none");
     expect((await rental(b.rentalId)).status).toBe("draft");
+  });
+});
+
+describe("CHECKOUT.ORDER.APPROVED", () => {
+  async function draft() {
+    return svc.startBooking(
+      { itemId: "drone-kit", name: "Sam Rivera", email: "sam@example.com", ...spacedDates(2) },
+      { party: "assistant", assistant: null },
+    );
+  }
+  const approved = (eventId: string, orderId: string) => ({
+    id: eventId,
+    event_type: "CHECKOUT.ORDER.APPROVED",
+    resource: { id: orderId, status: "APPROVED", intent: "CAPTURE" },
+  });
+  const types = async (rentalId: string) => (await repo.eventsFor(await getDb(), rentalId)).map((e) => e.type);
+
+  /** Runs fn counting PayPal's booking captures, optionally answered by `capture` instead of the stand-in; returns how often it was asked. */
+  async function withCapture(capture: ((orderId: string, requestId: string) => Promise<unknown>) | null, fn: () => Promise<void>): Promise<number> {
+    const shared = globalThis as { depositGateway?: DepositGateway };
+    const real = shared.depositGateway!;
+    let asked = 0;
+    shared.depositGateway = Object.assign(Object.create(real), {
+      captureBookingOrder: (orderId: string, requestId: string) => (asked++, capture ? capture(orderId, requestId) : real.captureBookingOrder(orderId, requestId)),
+    });
+    try {
+      await fn();
+    } finally {
+      shared.depositGateway = real;
+    }
+    return asked;
+  }
+
+  it("books a renter who approved and closed the window, once", async () => {
+    const b = await draft();
+    const asked = await withCapture(null, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-a1`, b.orderId))).toBe("applied");
+      // A redelivery of the same event, and the same approval under a new event id, change nothing.
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-a1`, b.orderId))).toBe("duplicate");
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-a2`, b.orderId))).toBe("applied");
+      // The renter comes back to the page later: already booked.
+      expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
+    });
+    expect(asked).toBe(1);
+    expect(await rental(b.rentalId)).toMatchObject({ status: "booked", vaultId: expect.stringMatching(/^DEMO-VAULT-/), feeCaptureId: expect.any(String) });
+    const log = await types(b.rentalId);
+    expect(log.filter((t) => t === "booking.paid")).toHaveLength(1);
+    expect(log.slice(-3)).toEqual(["webhook.received", "booking.paid", "webhook.received"]);
+  });
+
+  it("is ignored for an order no rental has", async () => {
+    expect(await applyPayPalWebhook(approved("WH-unknown-order", "NO-SUCH-ORDER"))).toBe("ignored");
+  });
+
+  it("does not capture for a rental that is no longer unpaid", async () => {
+    const b = await draft();
+    await (await getDb()).query("update rentals set status = 'cancelled' where id = $1", [b.rentalId]);
+    const asked = await withCapture(null, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-late`, b.orderId))).toBe("applied");
+    });
+    expect(asked).toBe(0);
+    expect((await rental(b.rentalId)).status).toBe("cancelled");
+    expect((await types(b.rentalId)).at(-1)).toBe("webhook.received");
+  });
+
+  it("does not capture again when the page already captured", async () => {
+    const b = await draft();
+    expect(await svc.returnFromPayPal(b.token, { token: b.orderId, PayerID: "DEMOPAYER" })).toBe("approved");
+    const asked = await withCapture(null, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-after`, b.orderId))).toBe("applied");
+    });
+    expect(asked).toBe(0);
+    expect((await types(b.rentalId)).filter((t) => t === "booking.paid")).toHaveLength(1);
+  });
+
+  it("does not capture while a pending fee capture waits for PayPal", async () => {
+    const b = await draft();
+    await (await getDb()).query("update rentals set fee_capture_id = $2 where id = $1", [b.rentalId, `PENDING-${b.rentalId}`]);
+    const asked = await withCapture(null, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${b.rentalId}-pending`, b.orderId))).toBe("applied");
+    });
+    expect(asked).toBe(0);
+    expect((await rental(b.rentalId)).status).toBe("draft");
+  });
+
+  it("keeps a refusal PayPal would repeat in the audit log, and lets PayPal redeliver after a failure that may pass", async () => {
+    const declined = await draft();
+    const refusal = async () => {
+      throw new PayPalError(422, "UNPROCESSABLE_ENTITY", "INSTRUMENT_DECLINED", "demo-declined", "The instrument presented was declined.");
+    };
+    await withCapture(refusal, async () => {
+      expect(await applyPayPalWebhook(approved(`WH-${declined.rentalId}-d`, declined.orderId))).toBe("applied");
+      expect(await applyPayPalWebhook(approved(`WH-${declined.rentalId}-d`, declined.orderId))).toBe("duplicate");
+    });
+    expect((await rental(declined.rentalId)).status).toBe("draft");
+    expect((await repo.eventsFor(await getDb(), declined.rentalId)).at(-1)).toMatchObject({ type: "paypal.error", data: { issue: "INSTRUMENT_DECLINED" } });
+
+    const flaky = await draft();
+    const outage = async () => {
+      throw new PayPalError(503, "SERVICE_UNAVAILABLE", undefined, "demo-503", "Service unavailable.");
+    };
+    await withCapture(outage, async () => {
+      await expect(applyPayPalWebhook(approved(`WH-${flaky.rentalId}-f`, flaky.orderId))).rejects.toThrow(/not answering/);
+    });
+    expect((await rental(flaky.rentalId)).status).toBe("draft");
+    // PayPal delivers the same event again; this time the capture goes through.
+    expect(await applyPayPalWebhook(approved(`WH-${flaky.rentalId}-f`, flaky.orderId))).toBe("applied");
+    expect((await rental(flaky.rentalId)).status).toBe("booked");
   });
 });

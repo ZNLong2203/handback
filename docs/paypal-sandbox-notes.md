@@ -176,3 +176,9 @@ Not seen in the sandbox: a `PENDING` or `FAILED` refund, a refund refused with `
 - `CHECKOUT.ORDER.APPROVED` (debug_id `f9888362e7320`): `resource_type` `checkout-order`. The resource is the order with `id`, `status` `APPROVED`, `intent`, `purchase_units`, `payer` and `links`. It has no captures and no `payment_source.paypal.attributes.vault`, so it cannot book a rental by itself: the saved-wallet token arrives only with the capture.
 
 Both samples write their links on `api.sandbox.paypal.com`.
+
+### Adding an event type to a registered webhook
+
+`scripts/register-webhook.ts` now adds missing event types to a URL that is already registered, with `PATCH /v1/notifications/webhooks/{id}` (`replace` on `/event_types`, the only operation the endpoint supports). Checked on a throwaway registration for an example.com URL, deleted afterwards: created with two event types (webhook `74W15631HG422952E`, debug_id `ca44b43b39fc3`), the script added the ten missing ones including `CHECKOUT.ORDER.APPROVED`, a GET showed all twelve (debug_id `ca44b43cc2c22`), a second run changed nothing, and the DELETE answered 204.
+
+Capturing a booking from a real `CHECKOUT.ORDER.APPROVED` delivery has not been seen: it needs a deployment with a public URL. The handler is tested against the simulator's payload shape above.
