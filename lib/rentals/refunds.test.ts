@@ -12,7 +12,8 @@ const { DemoDisputeApi } = await import("@/lib/paypal/demo-disputes");
 const { PayPalError } = await import("@/lib/paypal/errors");
 const gateway = new DemoDepositGateway();
 (globalThis as { depositGateway?: unknown }).depositGateway = gateway;
-(globalThis as { disputeApi?: unknown }).disputeApi = new DemoDisputeApi();
+// As in lib/paypal/index.ts: money a dispute returns lowers what the demo gateway lets the shop refund.
+(globalThis as { disputeApi?: unknown }).disputeApi = new DemoDisputeApi(undefined, undefined, (captureId, cents) => gateway.recordDisputeRefund(captureId, cents));
 
 const { getDb } = await import("@/lib/db/client");
 const { spacedDates } = await import("@/test/dates");
@@ -143,6 +144,55 @@ describe("refunds at the counter (demo mode)", () => {
     expect(second.requestIds).toEqual([`refund:${rentalId}:2`]);
     expect(second.result.refundId).not.toBe(result[0].refundId);
     expect((await view(rentalId)).refundedCents).toBe(1400);
+  });
+
+  it("refunds the charge above the deposit on its own capture, each capture bounded by what it took", async () => {
+    const { rentalId, captureId } = await settledHood();
+    const db = await getDb();
+    const r = (await repo.rentalById(db, rentalId))!;
+    // A settlement that also charged $50.00 above the deposit to the saved wallet.
+    const extra = await gateway.chargeSavedWallet({ vaultId: r.vaultId!, rentalId, amountCents: 5000, description: "Repairs above the deposit" }, `extra:${rentalId}`);
+    await db.query("update rentals set extra_capture_id = $2, extra_cents = 5000 where id = $1", [rentalId, extra.captureId]);
+    await expect(refunds.refundCharge(rentalId, { captureId: extra.captureId, cents: 5001, reason: "Too much", seq: 1 })).rejects.toThrow(
+      /At most \$50\.00 is left to refund on the charge above the deposit/,
+    );
+    const { requestIds } = await countingRefunds(() => refunds.refundCharge(rentalId, { captureId: extra.captureId, cents: 5000, reason: "Repair was cheaper", seq: 1 }));
+    expect(requestIds).toEqual([`refund:${rentalId}:1`]);
+    let v = await view(rentalId);
+    expect(v.refundable.map((c) => [c.captureId, c.leftCents])).toEqual([
+      [captureId, 3500],
+      [extra.captureId, 0],
+    ]);
+    await refunds.refundCharge(rentalId, { captureId, cents: 3500, reason: "And the hood too", seq: 2 });
+    v = await view(rentalId);
+    expect(v.refundedCents).toBe(8500);
+    expect(v.refundable.map((c) => c.leftCents)).toEqual([0, 0]);
+  });
+
+  it("counts money a resolved dispute gave back, so the renter never gets back more than was taken", async () => {
+    const { rentalId, captureId } = await settledHood();
+    // The renter disputes $20.00 of the $35.00 and the shop accepts the claim: PayPal refunds $20.00.
+    await desk.demoOpenDispute(rentalId);
+    await desk.acceptClaim(rentalId);
+    let v = await view(rentalId);
+    expect(v.rental.status).toBe("settled");
+    expect(v.dispute).toMatchObject({ status: "RESOLVED", outcome: "RESOLVED_BUYER_FAVOUR", refundedCents: 2000 });
+    expect(v.refundable).toEqual([expect.objectContaining({ captureId, capturedCents: 3500, disputeCents: 2000, refundedCents: 0, leftCents: 1500 })]);
+
+    const { requestIds } = await countingRefunds(async () => {
+      await expect(refunds.refundCharge(rentalId, { captureId, cents: 3500, reason: "After the dispute", seq: 1 })).rejects.toThrow(
+        /At most \$15\.00 is left to refund on the charge from the deposit \(\$35\.00 taken, \$0\.00 refunded, \$20\.00 returned through the PayPal dispute\)/,
+      );
+    });
+    expect(requestIds).toEqual([]);
+    // The demo stand-in enforces PayPal's own cap too.
+    await expect(gateway.refund({ captureId, amountCents: 1600, noteToPayer: "x" }, `probe:${rentalId}`)).rejects.toMatchObject({ issue: "REFUND_AMOUNT_EXCEEDED" });
+
+    await refunds.refundCharge(rentalId, { captureId, cents: 1500, reason: "The rest", seq: 1 });
+    // If PayPal also reports the dispute's $20.00 as a refund, it is not counted a second time.
+    expect(await applyPayPalWebhook(refundWebhook(`WH-${rentalId}-dispute-money`, "DISPUTE-REFUND-1", captureId, "20.00"))).toBe("applied");
+    v = await view(rentalId);
+    expect(v.refundable[0]).toMatchObject({ disputeCents: 2000, leftCents: 0 });
   });
 
   it("is refused while a PayPal dispute on the rental is open, and points to the dispute desk", async () => {

@@ -269,6 +269,15 @@ export class DemoDepositGateway implements DepositGateway {
     });
   }
 
+  /** Not PayPal API: the demo dispute stand-in reports money a dispute returned on a capture, so later refunds see less left. */
+  async recordDisputeRefund(captureId: string, cents: number): Promise<void> {
+    await this.ready();
+    const capture = this.state.captures[captureId];
+    if (!capture) return;
+    capture.refundedCents = Math.min(capture.amountCents, capture.refundedCents + cents);
+    await this.store.save(this.state);
+  }
+
   async refund(req: RefundRequest, requestId: string): Promise<RefundResult> {
     return this.once(requestId, () => {
       const capture = this.state.captures[req.captureId];

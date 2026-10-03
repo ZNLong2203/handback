@@ -1,4 +1,4 @@
-import { toPayPalValue, type Cents } from "@/lib/money";
+import { fromPayPalValue, toPayPalValue, type Cents } from "@/lib/money";
 import {
   actionLink,
   DisputeActionUnavailable,
@@ -57,9 +57,15 @@ export class DemoDisputeApi implements DisputeApi {
   private state: DemoDisputeState = { seq: 0, disputes: {} };
   private loaded: Promise<void> | undefined;
 
+  /**
+   * `moneyBack` is told when a decision for the buyer returns money on a
+   * capture, so the demo gateway lowers what is left to refund on it, as
+   * PayPal does.
+   */
   constructor(
     private readonly now: () => Date = () => new Date(),
     private readonly store: DemoDisputeStore = { load: async () => null, save: async () => {} },
+    private readonly moneyBack: (captureId: string, cents: Cents) => Promise<void> = async () => {},
   ) {}
 
   private async ready() {
@@ -231,8 +237,10 @@ export class DemoDisputeApi implements DisputeApi {
       : this.resolve(cur, "RESOLVED_BUYER_FAVOUR", cur.dispute_amount.value, "15.00", "RECOVER_FROM_SELLER");
   }
 
-  private resolve(cur: Dispute, outcome: string, refunded: string | null, fee: string | null, adjudication: string | null = null): Promise<ActionReceipt> {
+  private async resolve(cur: Dispute, outcome: string, refunded: string | null, fee: string | null, adjudication: string | null = null): Promise<ActionReceipt> {
     const at = this.now().toISOString();
+    const captureId = cur.disputed_transactions?.[0]?.seller_transaction_id;
+    if (refunded && captureId) await this.moneyBack(captureId, fromPayPalValue(refunded));
     const usd = (value: string) => ({ currency_code: "USD", value });
     const held = (cur.fund_movements ?? []).find((m) => m.reason === "HOLD_PLACED");
     const moves = refunded
