@@ -14,6 +14,8 @@ const SECRETS = {
   GEMINI_API_KEY: "gemini-key-value",
   RENDER_API_KEY: "render-key-value",
   CRON_SECRET: "cron-secret-value",
+  SHOP_ACCESS_CODE: "shop-access-code-value",
+  STAFF_COOKIE_SECRET: "staff-cookie-secret-value",
   DATABASE_URL: "postgresql://handback:db-password-value@dpg-example-a/handback",
 };
 
@@ -35,6 +37,7 @@ describe("checkHealth", () => {
       ai: { mode: "gemini", model: "gemini-3.8-flash" },
       jobs: { runner: "render-workflows", slug: "handback-workflows", lastSkippedRun: null },
       build: { commit: "0123456789abcdef0123456789abcdef01234567", branch: "main" },
+      staffAccess: { mode: "code", signInLocked: false },
     });
     const body = JSON.stringify(health);
     for (const value of Object.values(SECRETS)) expect(body).not.toContain(value);
@@ -62,5 +65,12 @@ describe("checkHealth", () => {
     expect(other.database.error).toBe("unreachable");
     expect(JSON.stringify(other)).not.toContain("dpg-secret-host");
     expect(other).toMatchObject({ paypal: { mode: "demo" }, ai: { mode: "recorded-replies", model: null }, jobs: { runner: "web" }, build: { commit: null } });
+  });
+
+  it("says whether the counter needs a code, and closes it when the code is too short", async () => {
+    Object.assign(process.env, { DATABASE_URL: "memory", SHOP_ACCESS_CODE: "" });
+    expect((await checkHealth(async () => {})).staffAccess).toEqual({ mode: "open", signInLocked: false });
+    process.env.SHOP_ACCESS_CODE = "1234";
+    expect((await checkHealth(async () => {})).staffAccess).toEqual({ mode: "misconfigured", signInLocked: false });
   });
 });

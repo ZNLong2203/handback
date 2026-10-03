@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { ModeStrip } from "@/components/headers";
 import { Logo } from "@/components/brand";
 import { StaffSignIn } from "@/components/staff-sign-in";
-import { Card, Eyebrow } from "@/components/ui";
-import { isPublicDemo, isStaff, safeNext, staffAccessCode } from "@/lib/staff-access";
+import { Card, Eyebrow, Notice } from "@/components/ui";
+import { isPublicDemo, isStaff, safeNext, staffAccess } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Counter sign-in", robots: { index: false } };
@@ -13,7 +13,8 @@ export const metadata = { title: "Counter sign-in", robots: { index: false } };
 export default async function StaffSignInPage(props: PageProps<"/shop/sign-in">) {
   const { next: raw } = await props.searchParams;
   const next = safeNext(typeof raw === "string" ? raw : null);
-  if (!staffAccessCode() || (await isStaff())) redirect(next);
+  const access = staffAccess();
+  if (access.mode === "open" || (access.mode === "code" && (await isStaff()))) redirect(next);
 
   return (
     <>
@@ -30,7 +31,15 @@ export default async function StaffSignInPage(props: PageProps<"/shop/sign-in">)
               ? "Staff only. The code is in the Devpost testing instructions."
               : "Staff only. Ask the shop for the counter's access code."}
           </p>
-          <StaffSignIn next={next} />
+          {access.mode === "misconfigured" ? (
+            <div className="mt-6">
+              <Notice tone="charged" title="The counter is closed">
+                Its access code is not set up correctly, so nobody can sign in. {access.problem}
+              </Notice>
+            </div>
+          ) : (
+            <StaffSignIn next={next} />
+          )}
           <p className="mt-5 text-xs leading-relaxed text-muted">
             The code is shared by the shop&apos;s staff; it opens the counter on this device for 12 hours. Renting something?{" "}
             <Link href="/rent" className="font-medium text-ink underline underline-offset-2">

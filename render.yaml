@@ -60,10 +60,15 @@ services:
         sync: false
       - key: CRON_SECRET
         generateValue: true
-      # The counter's shared access code (/shop/sign-in). Leave it empty only for
-      # a copy nobody else can reach: without it the counter is open.
+      # The counter's shared access code (/shop/sign-in), at least 12 characters.
+      # Leave it empty only for a copy nobody else can reach: without it the
+      # counter is open. A shorter code closes the counter to everyone.
       - key: SHOP_ACCESS_CODE
         sync: false
+      # Mixed into the staff cookie's key, so a leaked cookie cannot be checked
+      # against guessed codes offline.
+      - key: STAFF_COOKIE_SECRET
+        generateValue: true
       # "true" on the copy for hackathon judges: the sign-in page then says the
       # code is in the Devpost testing instructions.
       - key: PUBLIC_DEMO
