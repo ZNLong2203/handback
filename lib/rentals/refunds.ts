@@ -20,11 +20,18 @@ type Row = Record<string, unknown>;
  * in PayPal's email.
  *
  * Each refund the counter starts gets the rental's next refund number, and
- * PayPal-Request-Id `refund:<rental id>:<number>`. The number is claimed in a
- * `refunds` row before PayPal is called and the counter page carries it in its
- * form, so a second submit of the same form (a double click, a retry after a
- * lost reply) reuses that request id and PayPal answers with the first refund,
- * while a later refund gets the next number and a new id.
+ * PayPal-Request-Id `refund:<rental id>:<number>` and invoice_id
+ * `<rental id>-refund-<number>`. The number is claimed in a `refunds` row
+ * before PayPal is called and the counter page carries it in its form, so a
+ * second submit of the same form (a double click) reuses that request id and
+ * PayPal answers with the first refund, while a later refund gets the next
+ * number and a new id.
+ *
+ * When PayPal's answer is lost, the row stays 'requested' and its amount stays
+ * reserved. The counter offers to send that refund again, unchanged, for an
+ * hour (RESEND_WINDOW_MS): PayPal keeps request ids for a limited time, after
+ * which a resend could refund twice. PayPal's PAYMENT.CAPTURE.REFUNDED names
+ * the invoice id, which completes the row whenever it arrives.
  */
 
 export type RefundState = "requested" | "done" | "refused";
@@ -131,18 +138,28 @@ export function refundableCaptures(rental: Rental, refunds: StoredRefund[], disp
     });
 }
 
-/**
- * The refund number the counter's form carries. While a refund is waiting for
- * PayPal's answer (the reply was lost), it is that refund's number, so sending
- * it again asks PayPal about the same refund; otherwise the next one.
- */
+/** The refund number the counter's form carries for a new refund. A refund waiting for PayPal's answer is sent again with its own number (resendRefund). */
 export function nextRefundSeq(refunds: StoredRefund[]): number {
-  const waiting = refunds.find((r) => r.source === "counter" && r.state === "requested");
-  if (waiting?.seq) return waiting.seq;
   return Math.max(0, ...refunds.map((r) => r.seq ?? 0)) + 1;
 }
 
 export const refundRequestId = (rentalId: string, seq: number) => `refund:${rentalId}:${seq}`;
+export const refundInvoiceId = (rentalId: string, seq: number) => `${rentalId}-refund-${seq}`;
+
+/**
+ * How long after the first send a refund whose answer was lost may be sent
+ * again with the same request id. Payments v2 does not say how long PayPal
+ * keeps a PayPal-Request-Id; Orders v2 keeps them for 6 hours. One hour stays
+ * well inside that.
+ */
+export const RESEND_WINDOW_MS = 60 * 60 * 1000;
+
+/** Counter refunds whose PayPal answer was lost, and whether they may still be sent again. */
+export function waitingRefunds(refunds: StoredRefund[], now = Date.now()): (StoredRefund & { seq: number; resendable: boolean })[] {
+  return refunds
+    .filter((r): r is StoredRefund & { seq: number } => r.source === "counter" && r.state === "requested" && r.seq !== null)
+    .map((r) => ({ ...r, resendable: now - Date.parse(r.createdAt) < RESEND_WINDOW_MS }));
+}
 
 /** Whether PayPal definitely did not refund: a 4xx it would answer the same way again. Timeouts, conflicts and 5xx may have landed. */
 const definitelyRefused = (err: PayPalError) => err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status);
@@ -189,6 +206,11 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
       }
       if (same.state === "done") return { kind: "done" as const, refund: same };
       if (same.state === "refused") throw new UserError("PayPal refused this refund. Reload the page to try again.");
+      if (Date.now() - Date.parse(same.createdAt) >= RESEND_WINDOW_MS) {
+        throw new UserError(
+          `Refund ${same.seq} was sent to PayPal more than an hour ago and its answer was lost. Sending it again now could refund twice, so check the capture in PayPal. When PayPal reports the refund, it is recorded here.`,
+        );
+      }
       return { kind: "send" as const, id: same.id };
     }
     if (input.seq !== nextRefundSeq(refunds)) throw new UserError("This page is out of date. Reload it before refunding again.");
@@ -215,7 +237,7 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
     refund = await paypalStep(rentalId, "refund a charge", async () => {
       try {
         return await depositGateway().refund(
-          { captureId: input.captureId, amountCents: input.cents, noteToPayer: reason, invoiceId: `${rentalId}-refund-${input.seq}` },
+          { captureId: input.captureId, amountCents: input.cents, noteToPayer: reason, invoiceId: refundInvoiceId(rentalId, input.seq) },
           requestId,
         );
       } catch (err) {
@@ -259,6 +281,14 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
   return recorded;
 }
 
+/** Sends a refund whose PayPal answer was lost again, unchanged: same capture, amount, reason and request id. */
+export async function resendRefund(rentalId: string, seq: number): Promise<StoredRefund> {
+  const row = (await refundsFor(await getDb(), rentalId)).find((r) => r.seq === seq && r.source === "counter");
+  if (!row) throw new UserError("That refund is not on this rental.");
+  if (row.state !== "requested") return row;
+  return refundCharge(rentalId, { captureId: row.captureId, cents: row.amountCents, reason: row.reason ?? "", seq });
+}
+
 // ─── PayPal's webhook ───────────────────────────────────────
 
 /** The refund resource of a PAYMENT.CAPTURE.REFUNDED webhook (Payments v2 `refund`). */
@@ -266,6 +296,7 @@ export type RefundResource = {
   id?: string;
   status?: string;
   amount?: { value?: string; currency_code?: string };
+  invoice_id?: string;
   note_to_payer?: string;
   links?: { href?: string; rel?: string }[];
 };
@@ -284,9 +315,10 @@ export async function rentalIdForRefund(db: Query, refundId: string): Promise<st
 /**
  * Applies a verified PAYMENT.CAPTURE.REFUNDED inside the webhook's
  * transaction. A refund the app already recorded is matched on PayPal's
- * refund id and counted once; only its status is updated. A refund made
- * elsewhere (PayPal's own dashboard, for example) is recorded without a refund
- * number. Returns the live event to publish, if anything changed.
+ * refund id and counted once; only its status is updated. A counter refund
+ * whose answer was lost is matched on its invoice id and completed. A refund
+ * made elsewhere (PayPal's own dashboard, for example) is recorded without a
+ * refund number. Returns the live event to publish, if anything changed.
  */
 export async function recordRefundWebhook(tx: Query, rental: Rental, resource: RefundResource, webhookEventId: string): Promise<string | null> {
   if (!resource.id) return null;
@@ -304,6 +336,32 @@ export async function recordRefundWebhook(tx: Query, rental: Rental, resource: R
   const ours = [rental.feeCaptureId, rental.settlementCaptureId, rental.extraCaptureId].filter(Boolean);
   if (!captureId || !ours.includes(captureId) || !resource.amount?.value || (resource.amount.currency_code ?? "USD") !== "USD") return null;
   const amountCents = fromPayPalValue(resource.amount.value);
+
+  const seq = new RegExp(`^${rental.id}-refund-(\\d+)$`).exec(resource.invoice_id ?? "")?.[1];
+  const waiting = seq
+    ? await tx.query<Row>("select * from refunds where rental_id = $1 and seq = $2 and source = 'counter' and state <> 'done'", [rental.id, Number(seq)])
+    : [];
+  if (waiting.length > 0) {
+    const row = toRefund(waiting[0]);
+    await tx.query("update refunds set state = 'done', refund_id = $2, paypal_status = $3, amount_cents = $4, updated_at = now() where id = $1", [
+      row.id,
+      resource.id,
+      resource.status ?? null,
+      amountCents,
+    ]);
+    await appendEvent(tx, rental.id, "staff", "refund.issued", {
+      refundId: resource.id,
+      captureId,
+      amountCents,
+      status: resource.status ?? null,
+      reason: row.reason,
+      refundNumber: row.seq,
+      requestId: refundRequestId(rental.id, row.seq!),
+      confirmedBy: "webhook",
+      webhookEventId,
+    });
+    return "refund.issued";
+  }
   await tx.query(
     "insert into refunds (id, rental_id, seq, capture_id, amount_cents, reason, state, refund_id, paypal_status, source) values ($1, $2, null, $3, $4, $5, 'done', $6, $7, 'webhook')",
     [randomUUID(), rental.id, captureId, amountCents, resource.note_to_payer ?? null, resource.id, resource.status ?? null],

@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 import * as desk from "@/lib/disputes/service";
 import { after } from "next/server";
 import { parseUsdInput } from "@/lib/money";
-import { refundCharge } from "@/lib/rentals/refunds";
+import { refundCharge, resendRefund } from "@/lib/rentals/refunds";
 import * as svc from "@/lib/rentals/service";
 import { polishMessages } from "@/lib/schedule/agent";
 import { UserError, type Phase } from "@/lib/rentals/types";
@@ -129,6 +129,13 @@ export async function refundAction(rentalId: string, input: { captureId: string;
     const cents = parseUsdInput(String(input?.amount ?? ""));
     if (cents === null) throw new UserError("Enter the amount in dollars and cents, for example 12.50.");
     await refundCharge(String(rentalId), { captureId: String(input?.captureId ?? ""), cents, reason: String(input?.reason ?? ""), seq: Number(input?.seq) });
+  });
+}
+
+/** Sends a refund whose PayPal answer was lost again, unchanged, within the hour PayPal surely keeps its request id. */
+export async function resendRefundAction(rentalId: string, seq: number) {
+  return asStaff(async () => {
+    await resendRefund(String(rentalId), Number(seq));
   });
 }
 

@@ -22,6 +22,7 @@ function detail(e: AuditEvent): string | null {
   if (e.type.startsWith("refund.") && typeof d.amountCents === "number") ids.unshift(formatUsd(d.amountCents));
   if (typeof d.debugId === "string") ids.push(`debug_id ${d.debugId}`);
   if (d.confirmedByRead === true) ids.push("reply lost; confirmed by reading the dispute");
+  if (d.confirmedBy === "webhook") ids.push("reply lost; confirmed by PayPal's webhook");
   if (typeof d.issue === "string") ids.push(String(d.issue));
   if (typeof d.sha256 === "string") ids.push(`sha256 ${d.sha256.slice(0, 12)}…`);
   if (e.type === "inspection.completed") ids.push(`${d.source} · ${d.model} · ${d.looks} looks · ${Math.round(Number(d.ms) / 100) / 10}s`);

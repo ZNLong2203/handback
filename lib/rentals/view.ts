@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { disputesFor } from "@/lib/disputes/repo";
 import { firstBrokenLink } from "./audit";
 import { openMandate } from "./mandate";
-import { disputeReturns, nextRefundSeq, refundableCaptures, refundedCents, refundsFor } from "./refunds";
+import { disputeReturns, nextRefundSeq, refundableCaptures, refundedCents, refundsFor, waitingRefunds } from "./refunds";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
 import { planSettlement } from "./settlement";
 
@@ -42,6 +42,8 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     refundedCents: refundedCents(refunds),
     refundable: refundableCaptures(rental, refunds, returned),
     nextRefundSeq: nextRefundSeq(refunds),
+    /** Counter refunds whose PayPal answer was lost. */
+    waitingRefunds: waitingRefunds(refunds),
   };
 }
 

@@ -223,18 +223,64 @@ describe("refunds at the counter (demo mode)", () => {
     await expect(refunds.refundCharge(rentalId, { captureId, cents: 500, reason: "Second try", seq: 2 })).rejects.toThrow();
     lost.mockRestore();
     let v = await view(rentalId);
-    expect(v.nextRefundSeq).toBe(2);
+    // Its amount stays reserved, and it can be sent again on its own; new refunds get new numbers.
     expect(v.refundable[0].leftCents).toBe(3000);
+    expect(v.waitingRefunds).toEqual([expect.objectContaining({ seq: 2, amountCents: 500, resendable: true })]);
+    expect(v.nextRefundSeq).toBe(3);
     await expect(refunds.refundCharge(rentalId, { captureId, cents: 600, reason: "Changed my mind", seq: 2 })).rejects.toThrow(/still waiting for PayPal's answer/);
+    await refunds.refundCharge(rentalId, { captureId, cents: 700, reason: "Another one", seq: 3 });
 
-    const { requestIds } = await countingRefunds(() => refunds.refundCharge(rentalId, { captureId, cents: 500, reason: "Second try", seq: 2 }));
+    const { requestIds } = await countingRefunds(() => refunds.resendRefund(rentalId, 2));
     expect(requestIds).toEqual([`refund:${rentalId}:2`]);
     v = await view(rentalId);
-    expect(v.refundedCents).toBe(500);
+    expect(v.refundedCents).toBe(1200);
+    expect(v.waitingRefunds).toEqual([]);
     expect(v.refunds.map((r) => [r.seq, r.state])).toEqual([
       [1, "refused"],
       [2, "done"],
+      [3, "done"],
     ]);
+  });
+
+  /** Refunds seq 1 for `cents` on the stand-in, but PayPal's answer never arrives. Returns PayPal's refund id. */
+  async function lostReply(rentalId: string, captureId: string, cents: number): Promise<string> {
+    const real = gateway.refund.bind(gateway);
+    let refundId = "";
+    const lost = vi.spyOn(gateway, "refund").mockImplementationOnce(async (req, requestId) => {
+      refundId = (await real(req, requestId)).refundId;
+      throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, "socket hang up");
+    });
+    await expect(refunds.refundCharge(rentalId, { captureId, cents, reason: "Lost in the post", seq: 1 })).rejects.toThrow();
+    lost.mockRestore();
+    return refundId;
+  }
+
+  it("offers a refund whose answer was lost again even when nothing else is left to refund", async () => {
+    const { rentalId, captureId } = await settledHood();
+    await lostReply(rentalId, captureId, 3500);
+    let v = await view(rentalId);
+    expect(v.refundable[0].leftCents).toBe(0);
+    expect(v.waitingRefunds).toEqual([expect.objectContaining({ seq: 1, amountCents: 3500, resendable: true })]);
+    const { requestIds } = await countingRefunds(() => refunds.resendRefund(rentalId, 1));
+    expect(requestIds).toEqual([`refund:${rentalId}:1`]);
+    v = await view(rentalId);
+    expect(v.refunds).toEqual([expect.objectContaining({ seq: 1, state: "done", amountCents: 3500 })]);
+    expect(v.refundedCents).toBe(3500);
+  });
+
+  it("stops offering a resend an hour after the first send, and lets PayPal's webhook settle it", async () => {
+    const { rentalId, captureId } = await settledHood();
+    const refundId = await lostReply(rentalId, captureId, 2000);
+    await (await getDb()).query("update refunds set created_at = now() - interval '61 minutes' where rental_id = $1", [rentalId]);
+    expect((await view(rentalId)).waitingRefunds).toEqual([expect.objectContaining({ seq: 1, resendable: false })]);
+    const { requestIds } = await countingRefunds(async () => {
+      await expect(refunds.resendRefund(rentalId, 1)).rejects.toThrow(/more than an hour ago.*check the capture in PayPal/);
+    });
+    expect(requestIds).toEqual([]);
+
+    const hook = refundWebhook(`WH-${rentalId}-late`, refundId, captureId, "20.00");
+    expect(await applyPayPalWebhook({ ...hook, resource: { ...hook.resource, invoice_id: `${rentalId}-refund-1` } })).toBe("applied");
+    expect((await view(rentalId)).refunds).toEqual([expect.objectContaining({ seq: 1, state: "done", refundId })]);
   });
 });
 
@@ -266,6 +312,28 @@ describe("PAYMENT.CAPTURE.REFUNDED", () => {
     expect(v.nextRefundSeq).toBe(1);
     expect(await events(rentalId, "refund.recorded")).toHaveLength(1);
     expect(await applyPayPalWebhook(refundWebhook("WH-nobody", "OUTSIDE-REFUND-2", "NOT-OURS", "5.00"))).toBe("ignored");
+  });
+
+  it("completes a counter refund whose answer was lost, matched on its invoice id, instead of counting it again", async () => {
+    const { rentalId, captureId } = await settledHood();
+    const real = gateway.refund.bind(gateway);
+    let refundId = "";
+    const lost = vi.spyOn(gateway, "refund").mockImplementationOnce(async (req, requestId) => {
+      refundId = (await real(req, requestId)).refundId;
+      throw new PayPalError(0, "NETWORK_ERROR", undefined, undefined, "socket hang up");
+    });
+    await expect(refunds.refundCharge(rentalId, { captureId, cents: 2000, reason: "Part of it", seq: 1 })).rejects.toThrow();
+    lost.mockRestore();
+
+    const hook = refundWebhook(`WH-${rentalId}-lost`, refundId, captureId, "20.00");
+    expect(await applyPayPalWebhook({ ...hook, resource: { ...hook.resource, invoice_id: `${rentalId}-refund-1` } })).toBe("applied");
+    const v = await view(rentalId);
+    expect(v.refunds).toEqual([expect.objectContaining({ seq: 1, source: "counter", state: "done", refundId, amountCents: 2000 })]);
+    expect(v.refundable[0].leftCents).toBe(1500);
+    expect(v.waitingRefunds).toEqual([]);
+    expect(v.nextRefundSeq).toBe(2);
+    expect(await events(rentalId, "refund.issued")).toEqual([expect.objectContaining({ data: expect.objectContaining({ refundId, confirmedBy: "webhook" }) })]);
+    expect(await events(rentalId, "refund.recorded")).toHaveLength(0);
   });
 
   it("counts a refund once when PayPal's webhook arrives before PayPal's reply is recorded", async () => {

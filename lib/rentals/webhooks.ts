@@ -22,6 +22,7 @@ export type PayPalWebhookEvent = {
     disputed_transactions?: { seller_transaction_id?: string }[];
     supplementary_data?: { related_ids?: { authorization_id?: string; order_id?: string } };
     amount?: { value?: string; currency_code?: string };
+    invoice_id?: string;
     note_to_payer?: string;
     links?: { href?: string; rel?: string }[];
   };

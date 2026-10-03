@@ -1,7 +1,7 @@
 import { ArrowLeft, CheckCircle2, ExternalLink, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { demoOpenDisputeAction, findDisputesAction, holdDepositAction, inspectAction, sendToCustomerAction, settleAction } from "@/app/actions";
+import { demoOpenDisputeAction, findDisputesAction, holdDepositAction, inspectAction, resendRefundAction, sendToCustomerAction, settleAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { DisputePanel } from "@/components/dispute-panel";
 import { ShopHeader } from "@/components/headers";
@@ -264,15 +264,32 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               {(view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
                 <div className="mt-5 space-y-3 border-t border-line pt-4">
                   <h3 className="font-semibold">Refunds</h3>
+                  {view.waitingRefunds.map((r) => (
+                    <div key={r.id} className="space-y-2 rounded-2xl bg-held-soft p-4 text-sm">
+                      <p>
+                        Refund {r.seq}: <span className="tabular font-semibold">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
+                        {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}. It was sent to PayPal, but PayPal&apos;s answer
+                        was lost, so it may or may not have gone through.
+                      </p>
+                      {r.resendable ? (
+                        <ActionButton action={resendRefundAction.bind(null, rental.id, r.seq)} variant="outline" size="sm" pendingLabel="Asking PayPal…">
+                          Send refund {r.seq} again, unchanged
+                        </ActionButton>
+                      ) : (
+                        <p className="text-muted">
+                          Sent more than an hour ago, so sending it again could refund twice. Check the capture in PayPal; when PayPal reports the refund,
+                          it is recorded here.
+                        </p>
+                      )}
+                    </div>
+                  ))}
                   {view.refunds
-                    .filter((r) => r.state !== "refused")
+                    .filter((r) => r.state === "done")
                     .map((r) => (
                       <div key={r.id} className="text-sm">
                         <p>
                           <span className="tabular font-semibold text-released">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
-                          {r.state === "requested"
-                            ? ": sent to PayPal, no answer recorded yet. Send the same refund again to ask PayPal."
-                            : r.paypalStatus === "PENDING"
+                          {r.paypalStatus === "PENDING"
                               ? ": PayPal is processing it."
                               : r.paypalStatus === "FAILED" || r.paypalStatus === "CANCELLED"
                                 ? `: PayPal reports it ${r.paypalStatus.toLowerCase()}.`
