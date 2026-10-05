@@ -23,6 +23,17 @@ Design consequences:
 - The settlement amount is clamped to the authorized amount before calling PayPal. Damage above the deposit is collected separately (saved PayPal via Vault, or an invoice), never by over-capturing.
 - The reauthorization job runs on day 4 of a rental, not before the 3-day honor period ends, and runs at most once per authorization.
 
+### When "Day 4" starts
+
+PayPal's message does not say which clock it counts days on. On 2026-10-02 we placed four holds to find out (`scripts/seed-aged-holds.ts`): card authorizations `22P94183G62255736` (02:20:09 UTC) and two others, and saved-wallet authorization `23P06853KG4097455` (02:42:21 UTC). Each attempt below used a fresh `PayPal-Request-Id`; a refused reauthorization does not use up the one that is allowed.
+
+| When (UTC) | Hours since the hold | Day 4 already, if days are counted in... | `22P94183G62255736` (card) | `23P06853KG4097455` (saved wallet) |
+|---|---|---|---|---|
+| 2026-10-04 17:46 | 63.4 / 63.1 | Pacific time (the holds were made on Oct 1 there) | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f380396957161` | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f9278187bda36` |
+| 2026-10-05 00:13 | 69.9 / 69.5 | UTC | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f213524dff930` | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f765941252d7b` |
+
+Both holds stayed `CREATED`, expiring 2026-10-31. So "Day 4" is not the fourth calendar day in Pacific time or in UTC; the refusals are consistent with a 72-hour honor period. `lib/rentals/jobs.ts` already renews no earlier than 3 days after the hold, so nothing changes. A try after 72 hours follows below.
+
 ## 2026-10-02: save PayPal at booking, hold the deposit at pickup
 
 The deposit should start its 29-day validity when the item leaves the shop, not when the booking is made, so the flow was changed and re-verified. `scripts/spike-vault.ts` approves the sandbox buyer's checkout with Playwright, then runs every later step through the API with no buyer present.
