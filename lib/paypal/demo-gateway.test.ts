@@ -92,6 +92,17 @@ describe("DemoDepositGateway", () => {
     expect(await issueOf(gateway.reauthorize(auth.authorizationId, 38000, "re-2"))).toBe("REAUTHORIZATION_NOT_ALLOWED");
   });
 
+  it("counts the 72 hours and keeps the original expiry, as the sandbox did", async () => {
+    const { gateway, advanceDays } = setup();
+    const auth = await authorized(gateway);
+    advanceDays(3 - 5 / 1440);
+    expect(await issueOf(gateway.reauthorize(auth.authorizationId, 38000, "re-early"))).toBe("REAUTHORIZATION_TOO_SOON");
+    advanceDays(10 / 1440);
+    const fresh = await gateway.reauthorize(auth.authorizationId, 38000, "re-on-time");
+    expect(fresh.expiresAt).toBe(auth.expiresAt);
+    expect((await gateway.getAuthorization(auth.authorizationId)).status).toBe("CREATED");
+  });
+
   it("refunds no more than was captured", async () => {
     const { gateway } = setup();
     const auth = await authorized(gateway);

@@ -32,7 +32,24 @@ PayPal's message does not say which clock it counts days on. On 2026-10-02 we pl
 | 2026-10-04 17:46 | 63.4 / 63.1 | Pacific time (the holds were made on Oct 1 there) | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f380396957161` | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f9278187bda36` |
 | 2026-10-05 00:13 | 69.9 / 69.5 | UTC | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f213524dff930` | `422 REAUTHORIZATION_TOO_SOON`, debug_id `f765941252d7b` |
 
-Both holds stayed `CREATED`, expiring 2026-10-31. So "Day 4" is not the fourth calendar day in Pacific time or in UTC; the refusals are consistent with a 72-hour honor period. `lib/rentals/jobs.ts` already renews no earlier than 3 days after the hold, so nothing changes. A try after 72 hours follows below.
+Both holds stayed `CREATED`, expiring 2026-10-31. So "Day 4" is not the fourth calendar day in Pacific time or in UTC.
+
+Then around the 72-hour mark (`.data/probe` scripts, not committed; each reauthorization followed by a $35.00 capture of the new authorization with `final_capture: true`):
+
+| When (UTC) | Authorization | Hours since the hold | Result |
+|---|---|---|---|
+| 2026-10-05 02:37:22 | `22P94183G62255736` (card) | 72.29 | Reauthorized: new authorization `9S8496849U052102C`, `CREATED`, $300.00, `expiration_time` 2026-10-31T02:20:10Z. Capture `8KV95255CP281400L` `COMPLETED`, $35.00 kept, $265.00 released; the new authorization became `CAPTURED` |
+| 2026-10-05 02:37:26 | `23P06853KG4097455` (saved wallet) | 71.92 | `422 REAUTHORIZATION_TOO_SOON`, debug_id `ca4590b7a286c` |
+| 2026-10-05 02:37:31 | `7MA84605SX516861A` (card, kept to test a late void) | 72.29 | Void accepted; status `VOIDED` |
+| 2026-10-05 02:45:11 | `23P06853KG4097455` (saved wallet) | 72.05 | Reauthorized: new authorization `87X80973W3181205B`, `CREATED`, $300.00, `expiration_time` 2026-10-31T02:42:22Z. Capture `9BE23410F63016619` `COMPLETED`, $35.00 kept, $265.00 released |
+
+What this settles:
+
+- The honor period is 72 hours from the hold, to within minutes: the same saved-wallet hold was refused at 71.92 hours and reauthorized at 72.05. Cards and saved wallets behave the same. `renewalDueAt` in `lib/rentals/jobs.ts` already waits 3 days, and the hourly cron job runs at :17, so it does not land on the boundary.
+- A reauthorization does not extend the hold's life: the new authorization expires when the original would have, 29 days after the first hold (2026-10-31), not 29 days after the renewal. `renewDueHolds` stores PayPal's `expiration_time` for the new authorization, so the counter shows the right date. The demo stand-in now gives the new authorization the original expiry too (`lib/paypal/demo-gateway.ts`).
+- Right after the reauthorization the original authorization still reads `CREATED`. The app never touches it again; captures go to the new one.
+- A new authorization captures like the original: a partial `final_capture` keeps the charge and releases the rest.
+- A hold can be voided after its honor period.
 
 ## 2026-10-02: save PayPal at booking, hold the deposit at pickup
 

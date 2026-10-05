@@ -274,7 +274,10 @@ export class DemoDepositGateway implements DepositGateway {
       auth.reauthorized = true;
       const fresh = this.newAuth(amountCents, auth.vaultId);
       fresh.reauthorized = true;
-      auth.status = "VOIDED";
+      // Measured in the sandbox (docs/paypal-sandbox-notes.md): the new authorization
+      // keeps the original's expiry, 29 days after the first hold, and the original
+      // still reads CREATED right after it is reauthorized.
+      fresh.expiresAt = auth.expiresAt;
       return this.view(fresh);
     });
   }

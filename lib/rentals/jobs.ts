@@ -13,10 +13,12 @@ const ACTIVE = ["out", "inspecting", "customer_review", "responded"];
 type HoldRow = { id: string; authorization_id: string; authorized_cents: number; authorized_at: Date | string; end_date: Date | string };
 
 /**
- * When to renew a deposit hold. PayPal allows one reauthorization, from day 4
- * to day 29, and a renewed hold gets a fresh 3-day honor period. Renewing on
- * day 4 would waste it on a two-week rental, so the renewal waits for the day
- * before the item is due back, and never comes before day 4.
+ * When to renew a deposit hold. PayPal allows one reauthorization, from 72
+ * hours after the hold (measured in the sandbox: refused at 71.9 hours,
+ * accepted at 72.3) to day 29, and a renewed hold gets a fresh 3-day honor
+ * period but keeps the original expiry. Renewing on day 4 would waste the
+ * honor period on a two-week rental, so the renewal waits for the day before
+ * the item is due back, and never comes before day 4.
  */
 export function renewalDueAt(authorizedAt: Date, endDate: string): Date {
   const earliest = new Date(authorizedAt.getTime() + HONOR_PERIOD_DAYS * DAY_MS);
