@@ -198,6 +198,20 @@ async function discard(rentalId: string): Promise<void> {
   });
 }
 
+const globalForSeed = globalThis as unknown as { handbackInsightsSeed?: Promise<string[]> };
+
+/**
+ * For the page: one seeding at a time in this process, and every request
+ * that arrives meanwhile waits for it, so no request renders the history
+ * half-booked. Once it is done, later calls only find the marker.
+ */
+export function seedInsightsHistoryOnce(now = new Date()): Promise<string[]> {
+  globalForSeed.handbackInsightsSeed ??= seedInsightsHistory(now).finally(() => {
+    globalForSeed.handbackInsightsSeed = undefined;
+  });
+  return globalForSeed.handbackInsightsSeed;
+}
+
 /** Loads the plan once per database, in demo mode only: it books through the PayPal stand-in. */
 export async function seedInsightsHistory(now = new Date()): Promise<string[]> {
   if (paypalConfig().mode !== "demo") return [];

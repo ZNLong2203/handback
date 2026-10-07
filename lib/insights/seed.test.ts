@@ -18,7 +18,7 @@ const { dropDemoStandIns, depositGateway } = await import("@/lib/paypal");
 const { WIPED_TABLES, resetDemo } = await import("@/lib/demo-reset/reset");
 const { seedCounter } = await import("@/lib/seed/run");
 const { seedDemoSchedule, SEED_PLAN } = await import("@/lib/schedule/seed");
-const { seedInsightsHistory, INSIGHTS_PLAN, STAGING_DAYS } = await import("./seed");
+const { seedInsightsHistory, seedInsightsHistoryOnce, INSIGHTS_PLAN, STAGING_DAYS } = await import("./seed");
 const { loadInsights } = await import("./load");
 const { toRental } = await import("@/lib/rentals/repo");
 const { returnDays } = await import("@/lib/schedule/repo");
@@ -114,6 +114,13 @@ describe("the dashboard's sample history next to the other demo seeds", () => {
     // Nothing is left booked far ahead, where the plans were walked through.
     const far = addDaysIso(todayIso(), STAGING_DAYS - 1);
     expect((await historyRentals()).filter((r) => r.start_date >= far)).toEqual([]);
+  }, SLOW);
+
+  it("makes a page request that arrives during the seeding wait for all of it", async () => {
+    const [first, second] = await Promise.all([seedInsightsHistoryOnce(), seedInsightsHistoryOnce()]);
+    expect(first).toHaveLength(INSIGHTS_PLAN.length);
+    expect(second).toBe(first);
+    expect(await seedInsightsHistoryOnce()).toEqual([]);
   }, SLOW);
 
   it("with a key set: recorded replies, the stand-in's clock with the moved-back holds, and the renewal that is due", async () => {

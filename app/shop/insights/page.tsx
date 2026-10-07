@@ -4,7 +4,7 @@ import { InsightsBoard } from "@/components/insights/insights-board";
 import { Badge, Eyebrow } from "@/components/ui";
 import { agentRefusal, scriptedAgent } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
-import { seedInsightsHistory } from "@/lib/insights/seed";
+import { seedInsightsHistoryOnce } from "@/lib/insights/seed";
 import { studioData } from "@/lib/insights/studio-data";
 import { paypalConfig } from "@/lib/paypal/config";
 import { clientAddress, requireStaffPage } from "@/lib/staff-access";
@@ -15,7 +15,7 @@ export const metadata = { title: "Insights" };
 export default async function InsightsPage() {
   await requireStaffPage("/shop/insights");
   const demo = paypalConfig().mode === "demo";
-  if (demo) await seedInsightsHistory();
+  if (demo) await seedInsightsHistoryOnce();
   const now = new Date();
   const data = await loadInsights(now);
   const spec = studioData(data);
