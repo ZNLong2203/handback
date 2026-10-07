@@ -130,6 +130,8 @@ async function seedOne(p: Plan, now: Date): Promise<string> {
     const settled = returned + (p.settleMinutes ?? 15) * 60_000;
     await db.query("update rentals set settled_at = $2 where id = $1", [rentalId, iso(settled)]);
     await db.query("update refunds set created_at = $2 where rental_id = $1", [rentalId, iso(settled + 2 * DAY)]);
+    // A damaged return blocked its unit for the repair from the day it was settled; that day is in the past too.
+    await db.query("update blocks set start_date = start_date + $2::int, end_date = end_date + $2::int where rental_id = $1", [rentalId, p.to]);
   }
   return rentalId;
 }

@@ -68,14 +68,25 @@ function Photo({ sha, label }: { sha: string; label: string }) {
 }
 
 /** Refunds of what the shop took: a settlement's charges, or the fee of a cancelled booking. */
-function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean }) {
+/** A refund the dashboard agent drafted (?refund=<cents>&capture=<id>&reason=...): it only fills in the form below. */
+type RefundDraft = { captureId: string; cents: number; reason: string } | null;
+
+function refundDraft(q: Record<string, string | string[] | undefined>): RefundDraft {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const cents = Number(one(q.refund));
+  const captureId = one(q.capture);
+  if (!Number.isSafeInteger(cents) || cents <= 0 || !captureId) return null;
+  return { captureId, cents, reason: (one(q.reason) ?? "").slice(0, 200) };
+}
+
+function Refunds({ view, disputeOpen, draft }: { view: RentalView; disputeOpen: boolean; draft: RefundDraft }) {
   const { rental } = view;
   const refundLeft = view.refundable.some((c) => c.leftCents > 0);
   const captureLabel = (captureId: string) =>
     view.refundable.find((c) => c.captureId === captureId)?.label ?? (captureId === rental.feeCaptureId ? "the rental fee" : `capture ${captureId}`);
   return (
     (view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
-      <div className="mt-5 space-y-3 border-t border-line pt-4">
+      <div id="refunds" className="mt-5 scroll-mt-24 space-y-3 border-t border-line pt-4">
         <h3 className="font-semibold">Refunds</h3>
         {view.waitingRefunds.map((r) => (
           <div key={r.id} className="space-y-2 rounded-2xl bg-held-soft p-4 text-sm">
@@ -120,7 +131,7 @@ function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean
             the case.
           </p>
         ) : refundLeft ? (
-          <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} />
+          <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} draft={draft} />
         ) : null}
       </div>
     )
@@ -130,6 +141,7 @@ function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean
 export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[id]">) {
   const { id } = await props.params;
   await requireStaffPage(`/shop/rentals/${id}`);
+  const draft = refundDraft(await props.searchParams);
   const view = await loadRentalView({ id });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;
@@ -248,7 +260,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               <h2 className="font-display text-2xl font-bold">Cancelled</h2>
               {rental.cancelReason && <p className="mt-1 text-sm text-muted">&ldquo;{rental.cancelReason}&rdquo;</p>}
               <CancellationReceipt rental={rental} refunds={view.refunds} fee={view.feeCapture} audience="staff" />
-              <Refunds view={view} disputeOpen={disputeOpen} />
+              <Refunds view={view} disputeOpen={disputeOpen} draft={draft} />
             </Card>
           )}
 
@@ -388,7 +400,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               {desk?.dispute.outcome === "RESOLVED_BUYER_FAVOUR" && (
                 <p className="mt-3 text-sm text-charged">After the dispute, PayPal refunded {formatUsd(desk.dispute.refundedCents ?? desk.dispute.amountCents ?? 0)} of this to the customer.</p>
               )}
-              <Refunds view={view} disputeOpen={disputeOpen} />
+              <Refunds view={view} disputeOpen={disputeOpen} draft={draft} />
               {!desk && (
                 <div className="mt-5 flex flex-wrap items-start gap-3 border-t border-line pt-4">
                   {paypalMode === "demo" ? (

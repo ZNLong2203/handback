@@ -19,8 +19,7 @@ export default async function InsightsPage() {
   const now = new Date();
   const data = await loadInsights(now);
   const spec = studioData(data);
-  // The deposit desk agent is wired in with its server routes; until then the dashboard runs without AI.
-  const ai = false && insightsAiConfigured();
+  const ai = insightsAiConfigured();
   // A front-end licence key reaches the browser by design; it is set on the host, never in the repository.
   const licenseKey = process.env.AG_STUDIO_LICENSE_KEY?.trim() || null;
 

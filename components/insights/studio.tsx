@@ -146,6 +146,13 @@ export default function InsightsStudio(props: StudioProps) {
   const modules = useMemo(() => (ai ? [AgStudioAiModule] : []), [ai]);
   const panels = useMemo(() => ({ edit: { right: ai ? (["ai", "edit", "data", "filters"] as const) : (["edit", "data", "filters"] as const) }, view: { right: ["filters"] as const } }), [ai]);
 
+  // Entering edit mode opens the agent's panel (or the widget panel without AI) and folds the rest, so the canvas keeps its room.
+  useEffect(() => {
+    if (!api || mode !== "edit") return;
+    const state = api.getState();
+    api.setState({ ...state, panels: { ...state.panels, ai: { collapsed: !ai }, edit: { collapsed: ai }, data: { collapsed: true } } });
+  }, [api, mode, ai]);
+
   // Our page tabs drive Studio's selected page; a page change made inside Studio (or by the agent) drives the tabs.
   useEffect(() => {
     if (!api) return;

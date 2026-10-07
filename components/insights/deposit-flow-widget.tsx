@@ -88,8 +88,7 @@ export default function DepositFlowWidget(params: AgWidgetParams<DepositFlowWidg
   }, [selections]);
 
   // Room for the first column's labels on the left and the last column's on the right.
-  const labelRoom = Math.min(170, Math.max(110, box.width * 0.2));
-  const pad = { top: 8, bottom: 8, left: labelRoom, right: labelRoom };
+  const pad = { top: 8, bottom: 8, left: Math.min(140, Math.max(105, box.width * 0.15)), right: Math.min(185, Math.max(150, box.width * 0.22)) };
   const layout = useMemo(() => {
     if (!flows || box.width < 50 || box.height < 50) return null;
     return layoutSankey(flows, { width: Math.max(10, box.width - pad.left - pad.right), height: Math.max(10, box.height - pad.top - pad.bottom) }, { order: ORDER, nodeWidth: 12, gap: 16, minNodeHeight: 30 });
