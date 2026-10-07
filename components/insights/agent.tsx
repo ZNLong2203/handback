@@ -131,7 +131,7 @@ How you work:
 - One rental's story (money, findings, disputes, audit trail): call explain_rental with its id. Find ids with execute_query on the rentals table (rental_id, item, renter, status).
 - Totals and breakdowns: use execute_query, or delegate to the data agent.
 - Anything to show, chart, add, move, resize or filter on the dashboard: delegate to the lead agent with one clear task that names the table and field ids to use, for example "Add a bar chart of findings.charged_usd (sum) by findings.price_entry". Do not try to build widgets yourself.
-- Refunds: you can only draft one with draft_refund. It sends nothing. After drafting, give the amount, the rental and the link from the result, and say a person must open it and press Refund. Never say or imply that money was refunded. If the tool refuses, say why in plain words.
+- Refunds: you can only draft one with draft_refund. It sends nothing. After drafting, give the amount, the rental and the link from the result, and say a person must open it and press Refund. Never say or imply that money was refunded. If the result has a warning (it looks like an earlier refund), say so first. If the tool refuses, say why in plain words.
 - PayPal facts you can rely on: a hold lasts 29 days from the first authorization; from 72 hours it may be renewed once; a renewed hold keeps the first expiry. The shop's hourly job renews the day before the item is due back, never before 72 hours.
 
 Style: short, plain sentences. Dollars with two decimals. Quote PayPal ids and rental ids exactly. Name renters by first name only, never by email.`;
@@ -141,7 +141,7 @@ export const PROMPT_STARTERS: AgAiPromptStarter[] = [
   { label: "Holds needing attention", prompt: "Which deposit holds need attention right now, and why?" },
   { label: "Chart what we kept", prompt: "Add a bar chart to this page of what we charged by price-list entry." },
   { label: "Explain a dispute", prompt: "Explain what happened to the money on the rental that has an open PayPal dispute." },
-  { label: "Draft a refund", prompt: "Draft a $5.00 refund on the drone kit rental with the broken propeller: the propeller was already chipped at pickup." },
+  { label: "Draft a refund", prompt: "Draft a $15.00 refund on the PA speaker rental with the dented grille: the dent is cosmetic and the speaker works." },
 ];
 
 export function depositDeskHarness(): AgAiHarnessSetup {
@@ -168,7 +168,7 @@ export function depositDeskHarness(): AgAiHarnessSetup {
 
 // ─── How the desk's tool calls look in the chat panel ────────
 
-type Draft = { amount: string; rental_id: string; item: string; renter: string; of: string; reason: string; left_after: string; confirm_at: string };
+type Draft = { amount: string; rental_id: string; item: string; renter: string; of: string; reason: string; left_after: string; confirm_at: string; warning?: string };
 type Holds = { needing_attention: number; running_holds: number; held_total: string; holds: { rental_id: string; item: string; held: string; state: string; attention: string | null; days_left: number }[] };
 
 function DraftCard(params: AgAiToolDetailParams<Record<string, unknown>, Draft>) {
@@ -182,6 +182,11 @@ function DraftCard(params: AgAiToolDetailParams<Record<string, unknown>, Draft>)
       <p className="opacity-80">
         {d.item}, {d.renter}. &ldquo;{d.reason}&rdquo; {d.left_after} would be left to refund.
       </p>
+      {d.warning && (
+        <p className="font-semibold" role="note">
+          {d.warning}
+        </p>
+      )}
       <p className="flex items-center gap-1.5 text-[12px] opacity-80">
         <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Not sent. Nothing reaches PayPal until a person presses Refund on the rental page.
       </p>

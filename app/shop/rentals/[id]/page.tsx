@@ -27,6 +27,7 @@ import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice, cx } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { loadDisputeDesk } from "@/lib/disputes/service";
+import { readDraft, type RefundDraft } from "@/lib/insights/draft-link";
 import { paypalConfig } from "@/lib/paypal/config";
 import { formatUsd } from "@/lib/money";
 import { samplesFor } from "@/lib/samples";
@@ -67,19 +68,13 @@ function Photo({ sha, label }: { sha: string; label: string }) {
   );
 }
 
-/** Refunds of what the shop took: a settlement's charges, or the fee of a cancelled booking. */
-/** A refund the dashboard agent drafted (?refund=<cents>&capture=<id>&reason=...): it only fills in the form below. */
-type RefundDraft = { captureId: string; cents: number; reason: string } | null;
-
-function refundDraft(q: Record<string, string | string[] | undefined>): RefundDraft {
-  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-  const cents = Number(one(q.refund));
-  const captureId = one(q.capture);
-  if (!Number.isSafeInteger(cents) || cents <= 0 || !captureId) return null;
-  return { captureId, cents, reason: (one(q.reason) ?? "").slice(0, 200) };
-}
-
-function Refunds({ view, disputeOpen, draft }: { view: RentalView; disputeOpen: boolean; draft: RefundDraft }) {
+/**
+ * Refunds of what the shop took: a settlement's charges, or the fee of a
+ * cancelled booking. `draft` is a refund the dashboard's deposit desk
+ * drafted, from a signed link (lib/insights/draft-link.ts): it only fills
+ * the form in.
+ */
+function Refunds({ view, disputeOpen, draft }: { view: RentalView; disputeOpen: boolean; draft: RefundDraft | null }) {
   const { rental } = view;
   const refundLeft = view.refundable.some((c) => c.leftCents > 0);
   const captureLabel = (captureId: string) =>
@@ -141,7 +136,7 @@ function Refunds({ view, disputeOpen, draft }: { view: RentalView; disputeOpen: 
 export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[id]">) {
   const { id } = await props.params;
   await requireStaffPage(`/shop/rentals/${id}`);
-  const draft = refundDraft(await props.searchParams);
+  const draft = readDraft(id, await props.searchParams);
   const view = await loadRentalView({ id });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;

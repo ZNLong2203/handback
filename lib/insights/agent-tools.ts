@@ -9,6 +9,7 @@ import { cancelledAfterPayment, disputeReturns, refundableCaptures, refundsFor, 
 import { eventsFor, latestAssessment, rentalById, toRental } from "@/lib/rentals/repo";
 import { isCharged } from "@/lib/rentals/settlement";
 import { eventLabel, STATUS } from "@/lib/rentals/status";
+import { signDraft } from "./draft-link";
 import { findingOutcome, holdRow, originalHoldTime, renterFirstName, settlementMoney } from "./model";
 
 /**
@@ -222,7 +223,8 @@ export async function draftRefund(args: z.infer<(typeof TOOL_ARGS)["draft_refund
   if (rental.status !== "settled" && !cancelledAfterPayment(rental)) {
     throw new ToolRefusal(`Only a settled rental, or a booking cancelled after it was paid, can be refunded; ${rental.id} is ${STATUS[rental.status].label.toLowerCase()}.`);
   }
-  const captures = refundableCaptures(rental, await refundsFor(db, rental.id), await disputeReturns(db, rental.id));
+  const refunds = await refundsFor(db, rental.id);
+  const captures = refundableCaptures(rental, refunds, await disputeReturns(db, rental.id));
   const capture = args.capture_id ? captures.find((c) => c.captureId === args.capture_id) : (captures.find((c) => c.leftCents >= args.amount_cents) ?? captures[0]);
   if (!capture) {
     throw new ToolRefusal(args.capture_id ? `Capture ${args.capture_id} is not one the counter can refund on ${rental.id}.` : `${rental.id} took nothing that can be refunded here.`);
@@ -231,7 +233,25 @@ export async function draftRefund(args: z.infer<(typeof TOOL_ARGS)["draft_refund
   if (args.amount_cents > capture.leftCents) {
     throw new ToolRefusal(`At most ${formatUsd(capture.leftCents)} is left to refund on ${capture.label} (${formatUsd(capture.capturedCents)} taken). Draft ${formatUsd(capture.leftCents)} or less.`);
   }
-  const query = new URLSearchParams({ refund: String(args.amount_cents), capture: capture.captureId, reason: args.reason });
+  // Earlier refunds on the rental, and whether this draft looks like one of them (the same amount on the same charge, or the same reason).
+  const words = (t: string | null) => (t ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const draftWords = words(args.reason);
+  const earlier = refunds
+    .filter((r) => r.state !== "refused")
+    .map((r) => {
+      const same = words(r.reason);
+      const sameReason = Boolean(same && draftWords && (same === draftWords || same.includes(draftWords) || draftWords.includes(same)));
+      return {
+        amount: formatUsd(r.amountCents),
+        of: r.captureId === rental.feeCaptureId ? "the rental fee" : r.captureId === rental.extraCaptureId ? "the charge above the deposit" : "the charge from the deposit",
+        on: r.createdAt.slice(0, 10),
+        state: r.state === "requested" ? "sent, no answer from PayPal yet" : (r.paypalStatus ?? r.state),
+        same_amount_and_charge: r.amountCents === args.amount_cents && r.captureId === capture.captureId,
+        same_reason: sameReason,
+      };
+    });
+  const repeats = earlier.filter((e) => e.same_amount_and_charge || e.same_reason);
+  const query = signDraft(rental.id, { captureId: capture.captureId, cents: args.amount_cents, reason: args.reason });
   return {
     status: "draft, not sent",
     rental_id: rental.id,
@@ -243,7 +263,11 @@ export async function draftRefund(args: z.infer<(typeof TOOL_ARGS)["draft_refund
     capture_id: capture.captureId,
     left_after: formatUsd(capture.leftCents - args.amount_cents),
     reason: args.reason,
-    confirm_at: `/shop/rentals/${rental.id}?${query.toString()}#refunds`,
+    earlier_refunds: earlier,
+    ...(repeats.length
+      ? { warning: `This looks like a refund already made on ${rental.id} (${repeats.map((e) => `${e.amount} of ${e.of} on ${e.on}`).join("; ")}). Check it is not the same money before anyone sends it.` }
+      : {}),
+    confirm_at: `/shop/rentals/${rental.id}?${query}#refunds`,
     next_step: "Nothing was sent to PayPal. A person opens the rental, checks the filled-in refund form and presses Refund, then confirms.",
   };
 }

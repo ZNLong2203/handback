@@ -50,6 +50,7 @@ const repo = await import("@/lib/rentals/repo");
 const { refundCharge } = await import("@/lib/rentals/refunds");
 const desk = await import("@/lib/disputes/service");
 const { runAgentTool } = await import("@/lib/insights/agent-tools");
+const { readDraft } = await import("@/lib/insights/draft-link");
 const { issueStaffToken } = await import("@/lib/staff-access");
 const { safeError, createTurnLimiter, createTokenBudget, geminiParams, tokenBudget, LLM_PER_SESSION, TOKENS_PER_HOUR, MAX_OUTPUT_TOKENS } = await import("@/lib/insights/llm");
 const { LlmRequestSchema, LLM_LIMITS } = await import("@/lib/insights/gemini");
@@ -287,6 +288,23 @@ describe("the deposit desk's tools", () => {
       result: { status: "draft, not sent", amount: "$25.00", left_after: "$0.00", capture_id: rental.settlementCaptureId, confirm_at: expect.stringContaining(`/shop/rentals/${id}?refund=2500&capture=`) },
     });
     expect(await footprint()).toEqual(before);
+  });
+
+  it("gives a signed link the rental page reads, and warns when a draft repeats an earlier refund", async () => {
+    const id = await settled("Lena Fischer");
+    const capture = (await repo.rentalById(await getDb(), id))!.settlementCaptureId!;
+    const fresh = await runAgentTool("draft_refund", { rental_id: id, amount_cents: 700, reason: "The hood was in the bag." });
+    expect(fresh.ok && (fresh.result as { warning?: string }).warning).toBeFalsy();
+    const link = new URL((fresh as { result: { confirm_at: string } }).result.confirm_at, "http://localhost");
+    expect(readDraft(id, Object.fromEntries(link.searchParams))).toEqual({ captureId: capture, cents: 700, reason: "The hood was in the bag." });
+
+    await refundCharge(id, { captureId: capture, cents: 1000, reason: "Hood found in the bag", seq: 1 });
+    const sameAmount = await runAgentTool("draft_refund", { rental_id: id, amount_cents: 1000, reason: "Sorry for the trouble" });
+    expect(sameAmount).toMatchObject({ ok: true, result: { warning: expect.stringMatching(/looks like a refund already made .*\$10\.00 of the charge from the deposit/), earlier_refunds: [expect.objectContaining({ amount: "$10.00", same_amount_and_charge: true, same_reason: false })] } });
+    const sameReason = await runAgentTool("draft_refund", { rental_id: id, amount_cents: 200, reason: "hood found in the bag!" });
+    expect(sameReason).toMatchObject({ ok: true, result: { warning: expect.any(String), earlier_refunds: [expect.objectContaining({ same_reason: true })] } });
+    // The earlier reason itself is not passed to the model.
+    expect(JSON.stringify(sameReason)).not.toContain("Hood found in the bag");
   });
 
   it("refuses a draft while a PayPal dispute is open, before settling, and for an unknown rental", async () => {
