@@ -3,7 +3,8 @@
 import { refresh } from "next/cache";
 import * as desk from "@/lib/disputes/service";
 import { after } from "next/server";
-import { parseUsdInput } from "@/lib/money";
+import { formatUsd, parseUsdInput } from "@/lib/money";
+import { cancelAsRenter, cancelAtCounter, clearHoldClaim, type CancelResult } from "@/lib/rentals/cancel";
 import { refundCharge, resendRefund } from "@/lib/rentals/refunds";
 import * as svc from "@/lib/rentals/service";
 import { polishMessages } from "@/lib/schedule/agent";
@@ -70,6 +71,26 @@ export async function respondAction(token: string, answers: { findingId: string;
   return run(() => svc.respondAsCustomer(token, answers));
 }
 
+/** What a cancel button says afterwards: nothing when it all went through, else what is still waiting. */
+function cancelOutcome(r: CancelResult): string | undefined {
+  if (!r.cancelled) return "This booking was already cancelled.";
+  if (r.refundProblem) return `Cancelled. The refund has not gone through yet: ${r.refundProblem}`;
+  if (r.refund && r.refund.state !== "done") return `Cancelled. The refund of ${formatUsd(r.refund.amountCents)} was sent to PayPal; its answer has not arrived yet.`;
+  return undefined;
+}
+
+/**
+ * The renter cancels on their own page. `shown` is what the page showed
+ * them: whether the fee was paid, and the refund. If either changed since,
+ * nothing is cancelled and they see the new amount.
+ */
+export async function cancelBookingAction(token: string, shown: { paid: boolean; refundCents: number }) {
+  return run(async () => {
+    if (typeof shown?.paid !== "boolean" || !Number.isSafeInteger(shown?.refundCents)) throw new UserError("This page is out of date. Reload it and try again.");
+    return cancelOutcome(await cancelAsRenter(String(token), { paid: shown.paid, refundCents: shown.refundCents }));
+  });
+}
+
 // ─── Counter ────────────────────────────────────────────────
 
 export async function addPhotoAction(form: FormData) {
@@ -130,6 +151,25 @@ export async function refundAction(rentalId: string, input: { captureId: string;
     if (cents === null) throw new UserError("Enter the amount in dollars and cents, for example 12.50.");
     await refundCharge(String(rentalId), { captureId: String(input?.captureId ?? ""), cents, reason: String(input?.reason ?? ""), seq: Number(input?.seq) });
   });
+}
+
+/** The counter cancels a booking before pickup, refunding the amount typed (from $0.00 up to the fee left), with a reason the renter sees. */
+export async function cancelAtCounterAction(rentalId: string, input: { amount: string; reason: string; paid: boolean }) {
+  return asStaff(async () => {
+    const cents = parseUsdInput(String(input?.amount ?? ""));
+    if (cents === null) throw new UserError("Enter the refund in dollars and cents, for example 45.00, or 0.");
+    if (typeof input?.paid !== "boolean") throw new UserError("This page is out of date. Reload it and try again.");
+    return cancelOutcome(await cancelAtCounter(String(rentalId), { refundCents: cents, reason: String(input?.reason ?? ""), paid: input.paid }));
+  });
+}
+
+/**
+ * After a deposit hold's answer was lost: staff confirm, having looked the
+ * rental's deposit invoice up in PayPal, that no hold is open, so the
+ * booking can be cancelled.
+ */
+export async function clearHoldClaimAction(rentalId: string) {
+  return asStaff(() => clearHoldClaim(String(rentalId)));
 }
 
 /** Sends a refund whose PayPal answer was lost again, unchanged, within the hour PayPal surely keeps its request id. */

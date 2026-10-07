@@ -1,9 +1,10 @@
 import { CheckCircle2, Clock3, Receipt } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { acknowledgeCheckoutAction } from "@/app/actions";
+import { acknowledgeCheckoutAction, cancelBookingAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { ApproveBooking } from "@/components/approve-booking";
+import { CancellationReceipt } from "@/components/cancellation-receipt";
 import { StoreHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -14,6 +15,8 @@ import { Badge, Card, Eyebrow, Notice } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { utc } from "@/lib/disputes/facts";
 import { formatUsd } from "@/lib/money";
+import { quoteCancellation } from "@/lib/rentals/cancel";
+import { termsSentences } from "@/lib/rentals/cancellation";
 import { captureRefusal, returnFromPayPal } from "@/lib/rentals/service";
 import { feePending, STATUS } from "@/lib/rentals/status";
 import { loadRentalView } from "@/lib/rentals/view";
@@ -47,6 +50,8 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const settled = rental.status === "settled" || rental.status === "disputed";
   const dispute = view.dispute;
   const evidenceSent = Boolean(dispute && view.events.some((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === dispute.id));
+  const cancellable = rental.status === "booked" || (rental.status === "draft" && !processing);
+  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute, events: view.events }, "renter", new Date()) : null;
 
   return (
     <>
@@ -115,7 +120,20 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
           </ApproveBooking>
         )}
 
-        {rental.status === "cancelled" && (
+        {rental.status === "cancelled" && rental.cancelledAt && (
+          <Card className="p-6">
+            <h2 className="font-semibold">{rental.cancelledBy === "staff" ? `${SHOP.name} cancelled this booking` : "You cancelled this booking"}</h2>
+            {rental.cancelReason && <p className="mt-2 text-sm text-ink-soft">&ldquo;{rental.cancelReason}&rdquo;</p>}
+            <CancellationReceipt rental={rental} refunds={view.refunds} fee={view.feeCapture} audience="renter" />
+            <p className="mt-4 text-sm text-ink-soft">
+              <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
+                Book the {item.name.toLowerCase()} again
+              </Link>
+            </p>
+          </Card>
+        )}
+
+        {rental.status === "cancelled" && !rental.cancelledAt && (
           <Card className="p-6">
             <h2 className="font-semibold">This booking was not paid</h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-soft">
@@ -139,6 +157,44 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
               At pickup the shop photographs the item with you and holds the {formatUsd(rental.depositCents)} deposit on your PayPal. A hold is not a
               charge. Keep this page: it updates by itself at every step.
             </p>
+          </Card>
+        )}
+
+        {cancel && (
+          <Card className="p-6">
+            <h2 className="font-semibold">Need to cancel?</h2>
+            {cancel.paid ? (
+              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-ink-soft">
+                {termsSentences(cancel.terms, rental.feeCents).map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-ink-soft">Nothing has been paid yet, so cancelling costs nothing. The dates are freed for someone else.</p>
+            )}
+            {cancel.blocked ? (
+              <p className="mt-3 text-sm font-medium text-ink-soft">{cancel.blocked}</p>
+            ) : (
+              <>
+                {cancel.paid && (
+                  <p className="mt-3 text-sm">
+                    If you cancel now, you get back <span className="tabular font-semibold text-released">{formatUsd(cancel.refundCents)}</span> of the{" "}
+                    {formatUsd(rental.feeCents)} rental fee
+                    {cancel.policy.until ? ` (this amount holds until ${shortDate(cancel.policy.until)}, ${cancel.policy.until.slice(11, 16)} UTC)` : ""}. No deposit
+                    has been held, so there is nothing else to release.
+                  </p>
+                )}
+                <ActionButton
+                  className="mt-4"
+                  variant="outline"
+                  action={cancelBookingAction.bind(null, token, { paid: cancel.paid, refundCents: cancel.refundCents })}
+                  confirmLabel={cancel.refundCents > 0 ? `Yes, cancel and refund ${formatUsd(cancel.refundCents)}` : "Yes, cancel my booking"}
+                  pendingLabel="Cancelling…"
+                >
+                  Cancel this booking
+                </ActionButton>
+              </>
+            )}
           </Card>
         )}
 
@@ -218,7 +274,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
           ))}
 
         {view.refunds
-          .filter((r) => r.state === "done" && r.paypalStatus !== "FAILED" && r.paypalStatus !== "CANCELLED")
+          .filter((r) => rental.status !== "cancelled" && r.state === "done" && r.paypalStatus !== "FAILED" && r.paypalStatus !== "CANCELLED")
           .map((r) => (
             <Notice key={r.id} tone="released" title={`The shop refunded ${formatUsd(r.amountCents)} to you`}>
               {r.reason ? <span className="mb-1 block">&ldquo;{r.reason}&rdquo;</span> : null}

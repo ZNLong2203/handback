@@ -7,6 +7,7 @@ import { CATALOG } from "@/lib/catalog";
 import { addDaysIso, todayIso } from "@/lib/dates";
 import { formatUsd } from "@/lib/money";
 import { paypalConfig } from "@/lib/paypal/config";
+import { policySentences } from "@/lib/rentals/cancellation";
 import { firstFreeStay } from "@/lib/schedule/assign";
 import { spanLabel } from "@/lib/schedule/spans";
 import { SHOP } from "@/lib/shop";
@@ -58,6 +59,7 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
               dailyCents={item.dailyCents}
               depositCents={item.depositCents}
               maxDays={SHOP.maxRentalDays}
+              lastPickup={addDaysIso(today, SHOP.maxDaysAhead)}
               today={today}
               initial={free ?? { start: today, end: addDaysIso(today, FIRST_STAY_DAYS) }}
               paypal={cfg.mode === "demo" ? null : { clientId: cfg.clientId, environment: cfg.mode === "live" ? "production" : "sandbox" }}
@@ -90,6 +92,15 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
                 ))}
               </tbody>
             </table>
+          </Card>
+          <Card className="p-5">
+            <Eyebrow>If you cancel before pickup</Eyebrow>
+            <ul className="mt-2 space-y-1 text-sm text-ink-soft">
+              {policySentences().map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">You cancel on your own rental page; the refund goes back to your PayPal. These terms are fixed in your booking when you pay.</p>
           </Card>
         </div>
       </main>

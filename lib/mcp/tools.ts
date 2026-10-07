@@ -4,8 +4,9 @@ import { CATALOG } from "@/lib/catalog";
 import { todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { formatUsd, type Cents } from "@/lib/money";
+import { cancellationTerms } from "@/lib/rentals/cancellation";
 import { DepositMandateSchema, mandateExpiry, mandateTerms } from "@/lib/rentals/mandate";
-import { refundedCents, refundsFor } from "@/lib/rentals/refunds";
+import { cancelledAfterPayment, isRefunded, refundedCents, refundsFor, type StoredRefund } from "@/lib/rentals/refunds";
 import { latestAssessment, rentalByStatusToken } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
@@ -14,11 +15,11 @@ import { RENTAL_STATUSES, UserError, type Rental } from "@/lib/rentals/types";
 import { SHOP } from "@/lib/shop";
 
 // The tools an assistant gets. They read the catalog, price a rental, start
-// a booking and report on it. None of them moves money or answers for the
-// renter: the renter approves the fee in PayPal and answers charges on their
-// own page, and the counter holds and settles the deposit. The assistant
-// never gets the renter's page token; it follows the rental with a status
-// token that can only read.
+// a booking and report on it. None of them moves money, cancels or answers
+// for the renter: the renter approves the fee in PayPal, answers charges and
+// cancels on their own page, and the counter holds and settles the deposit.
+// The assistant never gets the renter's page token; it follows the rental
+// with a status token that can only read.
 
 /** Money for assistants: exact cents to compute with, and the amount as people read it. */
 const Money = z.object({ cents: z.number().int(), usd: z.string() });
@@ -112,6 +113,19 @@ export const StatusOut = z.object({
     /** Refunded on PayPal after payment, of the fee or of what the settlement kept; null when nothing was. */
     refunded: Money.nullable(),
   }),
+  /** Set once the renter or the shop cancelled the booking before pickup; no tool can cancel. */
+  cancellation: z
+    .object({
+      at: z.string(),
+      by: z.enum(["renter", "shop"]),
+      /** The shop's reason, when the shop cancelled. */
+      reason: z.string().nullable(),
+      feePaid: z.boolean(),
+      feeRefund: Money,
+      /** Against the refund the cancellation decided. refunded: all of it went back; processing: PayPal accepted it and has not finished; waiting: sent, no answer recorded yet; refused: PayPal refused or failed it, so the shop has to send it again; none: nothing to refund. */
+      refundStatus: z.enum(["refunded", "processing", "waiting", "refused", "none"]),
+    })
+    .nullable(),
   /** Proposed charges the renter has to accept or question, on their own page; no tool can answer them. */
   waitingForRenter: z.array(z.object({ findingId: z.string(), item: z.string(), description: z.string(), charge: z.string(), price: Money })),
   mandateSha256: z.string().nullable(),
@@ -143,7 +157,12 @@ export function quoteRental(args: z.infer<typeof QuoteArgs>): z.infer<typeof Quo
     payNow: money(q.feeCents),
     depositHold: money(q.depositCents),
     priceList: q.item.prices.map((p) => ({ id: p.id, label: p.label, kind: p.kind, price: money(p.cents) })),
-    terms: mandateTerms({ feeCents: q.feeCents, hold: { maxCents: q.depositCents, starts: "at_pickup" }, expiresAt: mandateExpiry(q.startDate) }),
+    terms: mandateTerms({
+      feeCents: q.feeCents,
+      hold: { maxCents: q.depositCents, starts: "at_pickup" },
+      expiresAt: mandateExpiry(q.startDate),
+      cancellation: cancellationTerms(q.startDate),
+    }),
   };
 }
 
@@ -181,10 +200,42 @@ function nextStepFor(rental: Rental): string {
       "opened after they paid; the shop can show them its link again. No tool can answer for them.",
     responded: "The renter has answered. A person at the shop settles next; nothing more is needed from the renter.",
     settled: "Settled. Nothing more to do.",
-    cancelled: "This booking was cancelled; nothing more happens on it. The renter can book again.",
+    cancelled: rental.cancelledAt
+      ? `The ${rental.cancelledBy === "staff" ? "shop" : "renter"} cancelled this booking before pickup; nothing more happens on it and the unit is free again. The renter can book again.`
+      : "PayPal declined the payment, so the booking was cancelled with nothing charged. The renter can book again.",
     disputed: "The renter opened a PayPal dispute about this rental; PayPal handles it from here.",
   };
   return steps[rental.status];
+}
+
+/**
+ * Where the cancellation's refund stands: counted against what the
+ * cancellation decided, so a refund PayPal reported from its own dashboard
+ * that covers it counts, and an answer that is still missing shows as
+ * waiting only while nothing else covered it.
+ */
+function cancellationOut(rental: Rental, refunds: StoredRefund[]): NonNullable<z.infer<typeof StatusOut>["cancellation"]> {
+  const fee = refunds.filter((r) => r.captureId === rental.feeCaptureId);
+  const decided = rental.cancelRefundCents ?? 0;
+  const back = refundedCents(fee);
+  const refundStatus =
+    decided === 0 && back === 0
+      ? "none"
+      : back >= decided
+        ? fee.some((r) => isRefunded(r) && r.paypalStatus === "PENDING")
+          ? "processing"
+          : "refunded"
+        : fee.some((r) => r.state === "requested")
+          ? "waiting"
+          : "refused";
+  return {
+    at: rental.cancelledAt!,
+    by: rental.cancelledBy === "staff" ? "shop" : "renter",
+    reason: rental.cancelReason,
+    feePaid: cancelledAfterPayment(rental),
+    feeRefund: money(decided),
+    refundStatus,
+  };
 }
 
 export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.infer<typeof StatusOut>> {
@@ -198,7 +249,9 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
   const settled = rental.settledAt !== null;
   const holding = !settled && rental.authorizationId !== null && rental.authorizedCents !== null;
   const processing = feePending(rental);
-  const refunded = settled ? refundedCents(await refundsFor(db, rental.id)) : 0;
+  const cancelled = rental.status === "cancelled" && rental.cancelledAt !== null;
+  const refunds = settled || cancelled ? await refundsFor(db, rental.id) : [];
+  const refunded = refundedCents(refunds);
   return {
     rentalId: rental.id,
     item: { id: rental.itemId, name: item?.name ?? rental.itemId },
@@ -211,7 +264,7 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
     approveUrl: rental.status === "draft" && !processing ? rental.approveUrl : null,
     amounts: {
       fee: money(rental.feeCents),
-      feePaid: rental.feeCaptureId !== null && rental.status !== "draft" && rental.status !== "cancelled",
+      feePaid: rental.feeCaptureId !== null && rental.status !== "draft" && (rental.status !== "cancelled" || cancelled),
       feePending: processing,
       depositHold: money(rental.depositCents),
       heldNow: holding ? money(rental.authorizedCents!) : null,
@@ -220,6 +273,7 @@ export async function rentalStatus(args: z.infer<typeof StatusArgs>): Promise<z.
       chargedAboveHold: settled && rental.extraCents ? money(rental.extraCents) : null,
       refunded: refunded > 0 ? money(refunded) : null,
     },
+    cancellation: cancelled ? cancellationOut(rental, refunds) : null,
     waitingForRenter: assessment
       ? awaitingCustomer(assessment.findings).map((f) => ({
           findingId: f.id,

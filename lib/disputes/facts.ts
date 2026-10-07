@@ -56,9 +56,29 @@ export type EvidenceFacts = {
   inspection: { source: Assessment["source"]; model: string; comparedAt: string; sentAt: string | null; answeredAt: string | null } | null;
   findings: EvidenceFinding[];
   audit: { entries: number; headHash: string | null; intact: boolean; brokenAtSeq: number | null };
+  /** Set when the booking was cancelled before pickup; left out otherwise, so older packs hash the same. */
+  cancellation?: FactCancellation;
 };
 
 export type FactRefund = { refundId: string | null; captureId: string; cents: Cents; at: string };
+
+/** A booking cancelled before pickup, as the rental's record and its deposit mandate state it. */
+export type FactCancellation = {
+  at: string;
+  by: "renter" | "staff";
+  /** The reason the counter gave the customer. */
+  reason: string | null;
+  /** The cancellation terms that applied: the share of the fee refunded before each moment. */
+  terms: { before: string; percent: number }[];
+  /** "mandate": fixed in the deposit mandate the customer approved in PayPal at booking; "policy": the shop's policy, for bookings whose mandate carries no terms. */
+  termsFrom: "mandate" | "policy";
+  /** The mandate's SHA-256, as the audit log recorded it at booking, when the terms come from it. */
+  mandateSha256: string | null;
+  /** The policy's share at the moment of cancelling. */
+  policyPercent: number;
+  /** The part of the fee the cancellation decided to refund. */
+  refundCents: Cents;
+};
 
 export type EvidenceSource = {
   shop: { name: string; city: string };
@@ -71,6 +91,7 @@ export type EvidenceSource = {
   dispute: EvidenceFacts["dispute"];
   /** Refunds PayPal made or reported on the rental's captures (lib/rentals/refunds.ts, refunded ones only). */
   refunds?: FactRefund[];
+  cancellation?: FactCancellation;
 };
 
 export function buildEvidenceFacts(s: EvidenceSource): EvidenceFacts {
@@ -122,8 +143,22 @@ export function buildEvidenceFacts(s: EvidenceSource): EvidenceFacts {
       charged: isCharged(f),
     })),
     audit: { entries: s.events.length, headHash: head?.hash ?? null, intact: broken === null, brokenAtSeq: broken },
+    ...(s.cancellation ? { cancellation: s.cancellation } : {}),
   };
 }
+
+/** What was refunded of the rental fee, by the refunds in the facts. */
+export function feeRefunded(f: EvidenceFacts): Cents {
+  return (f.money.refunds ?? []).filter((x) => x.captureId === f.paypal.feeCaptureId).reduce((s, x) => s + x.cents, 0);
+}
+
+/** The cancellation terms as one clause: "100% of the fee if cancelled before 2026-10-09 00:00 UTC; 50% ...". */
+export function termsClause(c: FactCancellation): string {
+  return `${c.terms.map((t) => `${t.percent}% of the fee back if cancelled before ${utc(t.before)}`).join("; ")}; nothing from then on`;
+}
+
+/** Who cancelled, in the pack's words. */
+export const canceller = (f: EvidenceFacts) => (f.cancellation?.by === "staff" ? f.shop.split(",")[0] : f.rental.customer);
 
 // ─── Wording shared by the PDF, the narrative and PayPal's notes ────
 
@@ -181,7 +216,16 @@ export function factList(f: EvidenceFacts): Fact[] {
   const out: Fact[] = [];
   const add = (id: string, text: string) => out.push({ id, text });
   const r = f.rental;
-  add("rental", `Rental ${r.id}: ${r.item}, rented by ${r.customer} from ${f.shop}, picked up ${r.startDate} and due back ${r.endDate} (${r.days} day${r.days === 1 ? "" : "s"}).`);
+  const days = `${r.days} day${r.days === 1 ? "" : "s"}`;
+  const pickedUp = Boolean(f.pickup || f.paypal.authorizationId || f.money.settledAt);
+  add(
+    "rental",
+    f.cancellation
+      ? `Rental ${r.id}: ${r.item}, booked by ${r.customer} from ${f.shop} for ${r.startDate} to ${r.endDate} (${days}), and cancelled before pickup, so the item never left the shop.`
+      : pickedUp
+        ? `Rental ${r.id}: ${r.item}, rented by ${r.customer} from ${f.shop}, picked up ${r.startDate} and due back ${r.endDate} (${days}).`
+        : `Rental ${r.id}: ${r.item}, booked by ${r.customer} from ${f.shop} for ${r.startDate} to ${r.endDate} (${days}); not picked up when this pack was made.`,
+  );
   add("fee", `Rental fee ${formatUsd(f.money.feeCents)} paid with PayPal at booking${f.paypal.feeCaptureId ? ` (capture ${f.paypal.feeCaptureId})` : ""}.`);
   if (f.money.heldCents !== null && f.paypal.authorizationId) {
     const renewed = f.paypal.previousAuthorizationId ? `, renewed from authorization ${f.paypal.previousAuthorizationId}` : "";
@@ -224,6 +268,21 @@ export function factList(f: EvidenceFacts): Fact[] {
     const total = m.refunds.reduce((s, x) => s + x.cents, 0);
     const list = m.refunds.map((x) => `${formatUsd(x.cents)} of ${which(x.captureId)} (capture ${x.captureId}${x.refundId ? `, refund ${x.refundId}` : ""}, ${utc(x.at)})`);
     add("refunds", `Refunded to the customer through PayPal after payment, ${formatUsd(total)} in all: ${list.join("; ")}.`);
+  }
+  if (f.cancellation) {
+    const c = f.cancellation;
+    const terms =
+      c.termsFrom === "mandate"
+        ? `The cancellation terms were fixed in the deposit mandate the customer approved in PayPal at booking${c.mandateSha256 ? ` (SHA-256 ${c.mandateSha256})` : ""}: ${termsClause(c)}.`
+        : `This booking's deposit mandate carries no cancellation terms, so the shop's cancellation policy applied to its pickup day: ${termsClause(c)}.`;
+    const decided =
+      c.by === "renter"
+        ? `Cancelling then gave back ${c.policyPercent}% of the fee, ${formatUsd(c.refundCents)}.`
+        : `The shop chose to refund ${formatUsd(c.refundCents)} of the fee${c.reason ? `, with this reason to the customer: "${c.reason}"` : ""}.`;
+    add(
+      "cancellation",
+      `${c.by === "staff" ? "The shop" : r.customer} cancelled the booking at ${utc(c.at)}, before pickup; no deposit was held. ${terms} ${decided} After the refunds in this pack, the shop kept ${formatUsd(Math.max(0, m.feeCents - feeRefunded(f)))} of the ${formatUsd(m.feeCents)} fee.`,
+    );
   }
   if (f.dispute) {
     const d = f.dispute;

@@ -9,11 +9,11 @@ The assistant never moves money. The person approves the rental fee in PayPal th
 | Tool | What it does | Changes anything |
 |---|---|---|
 | `list_items` | The rental items with daily rate, deposit hold and what comes in the box, plus today's date at the shop | No |
-| `quote_rental(itemId, startDate, endDate)` | The fee paid at booking, the deposit held at pickup, the repair price list, and the terms the renter will agree to. Amounts are computed by the server (`quoteRental` in `lib/rentals/service.ts`) | No |
+| `quote_rental(itemId, startDate, endDate)` | The fee paid at booking, the deposit held at pickup, the repair price list, and the terms the renter will agree to, cancellation terms included. Amounts are computed by the server (`quoteRental` in `lib/rentals/service.ts`); pickups can be at most 120 days ahead | No |
 | `create_booking(itemId, startDate, endDate, name, email, assistant?)` | Creates an unpaid booking, its deposit mandate and a PayPal order for the fee. Returns the rental id, `approveUrl` (PayPal's `payer-action` link, for the renter), `statusToken` (for `get_rental_status`), the mandate and its SHA-256 | Creates an unpaid draft. No money moves |
-| `get_rental_status(statusToken)` | Status, what is paid, held, kept or released, and any proposed charges waiting for the renter. Takes the `statusToken` from `create_booking`; the renter's page token does not work here | No |
+| `get_rental_status(statusToken)` | Status, what is paid, held, kept, released or refunded, any proposed charges waiting for the renter, and a cancellation with its fee refund and where PayPal is with it. Takes the `statusToken` from `create_booking`; the renter's page token does not work here | No |
 
-There is no tool to approve a payment, hold a deposit, accept or question a charge, or settle, and no reply contains the renter's page link: PayPal opens that page for the renter after they approve. Tool annotations say the same thing to clients: the three read tools are `readOnlyHint: true`, and `create_booking` is `destructiveHint: false, idempotentHint: false` (each call creates a new booking).
+There is no tool to approve a payment, cancel a booking, hold a deposit, accept or question a charge, or settle, and no reply contains the renter's page link: PayPal opens that page for the renter after they approve. The renter cancels there, and the status token does not work as that page's token. Tool annotations say the same thing to clients: the three read tools are `readOnlyHint: true`, and `create_booking` is `destructiveHint: false, idempotentHint: false` (each call creates a new booking).
 
 ## Where money moves
 
@@ -21,6 +21,7 @@ There is no tool to approve a payment, hold a deposit, accept or question a char
 2. **Pickup.** The counter photographs the item and holds the deposit on the saved wallet (`intent: AUTHORIZE` with the vault id; the renter is not present). The hold is checked against the mandate first.
 3. **Return.** Two AI looks compare the photos and propose charges from the mandate's price list; staff keep or waive each one. The renter accepts or questions every kept charge on their own page.
 4. **Settlement.** The counter settles: one final capture of the charges, and PayPal releases the rest of the hold. Every charge is checked against the mandate first.
+5. **Cancelling, before pickup.** The renter can cancel on their own page and gets back the share of the fee the mandate's cancellation terms give at that moment, as a Payments v2 refund of the fee capture. The counter can cancel too, refunding any amount up to the fee. No tool cancels, and get_rental_status reports the cancellation and its refund.
 
 ```mermaid
 sequenceDiagram
@@ -129,13 +130,14 @@ Every booking, from an assistant or from the website, gets a deposit mandate. It
 | `priceList` | The repair price list at the time of booking. The return inspection prices findings from this list, so later changes to the shop's prices do not apply to this rental |
 | `expiresAt` | 29 days after the scheduled pickup date, the life of a PayPal authorization placed at pickup. Nothing can be held or charged under the mandate after it. Rentals last at most 21 days, so this leaves at least 8 days after the scheduled return to settle; a late pickup does not move it |
 | `createdAt` | When it was issued |
+| `cancellation` | Version 2 only. `feeRefund`: the share of the fee (`percent`) refunded when the renter cancels `before` each moment, earliest first, fixed from the shop's policy (`CANCELLATION_POLICY` in `lib/shop.ts`) to this booking's pickup day in UTC. From the last moment, the start of the pickup day, nothing. Cancelling uses these terms, so a later change to the policy does not reach the booking |
 
-Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is shorter than a real one):
+Bookings made since the cancellation terms were added get version 2; earlier ones keep version 1, which has no `cancellation` field. Their stored text is never rewritten and still verifies against its hash, and cancelling one applies the shop's policy as it is now to its pickup day. Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is shorter than a real one):
 
 ```json
 {
   "type": "handback.deposit-mandate",
-  "version": 1,
+  "version": 2,
   "rentalId": "R-TEST01",
   "shop": { "name": "Kestrel Camera Rentals", "city": "Austin, TX" },
   "item": { "id": "drone-kit", "name": "Folding camera drone kit" },
@@ -151,11 +153,17 @@ Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is s
     { "id": "propeller-damage", "label": "Replace damaged propeller", "kind": "damage", "cents": 1400 }
   ],
   "expiresAt": "2026-11-01T00:00:00.000Z",
-  "createdAt": "2026-10-02T12:00:00.000Z"
+  "createdAt": "2026-10-02T12:00:00.000Z",
+  "cancellation": {
+    "feeRefund": [
+      { "before": "2026-10-02T00:00:00.000Z", "percent": 100 },
+      { "before": "2026-10-03T00:00:00.000Z", "percent": 50 }
+    ]
+  }
 }
 ```
 
-**Hash.** The stored text is canonical JSON: object keys sorted, no whitespace (`canonicalJson` in `lib/rentals/audit.ts`). Its SHA-256 is stored next to it on the rental (`mandate_json`, `mandate_sha256`) and goes into the audit chain as the `mandate.issued` event, so the chain commits to it. The fixture above hashes to `5231c681c64edc9fa0a394faadc306c5e5ab3e6d4fb3a8d9086518f0c3887974`; a test pins that value. To check a mandate yourself, save its JSON and run:
+**Hash.** The stored text is canonical JSON: object keys sorted, no whitespace (`canonicalJson` in `lib/rentals/audit.ts`). Its SHA-256 is stored next to it on the rental (`mandate_json`, `mandate_sha256`) and goes into the audit chain as the `mandate.issued` event, so the chain commits to it. The fixture above hashes to `5421facd22f49cb95452e5202c11fde1983ae35dfdfb77df06d2b93c9a8f05ac`; a test pins that value. The same booking as a version 1 mandate (`"version": 1`, no `cancellation`) hashes to `5231c681c64edc9fa0a394faadc306c5e5ab3e6d4fb3a8d9086518f0c3887974`, the value pinned before version 2, and another test checks that it still opens as intact. To check a mandate yourself, save its JSON and run:
 
 ```sh
 node -e 'const c=v=>Array.isArray(v)?`[${v.map(c)}]`:v&&typeof v=="object"?`{${Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+c(v[k]))}}`:JSON.stringify(v);process.stdout.write(c(JSON.parse(require("fs").readFileSync(0,"utf8"))))' < mandate.json | shasum -a 256
@@ -163,7 +171,7 @@ node -e 'const c=v=>Array.isArray(v)?`[${v.map(c)}]`:v&&typeof v=="object"?`{${O
 
 **Where it shows up.** `create_booking` returns it to the assistant. The renter's page shows it in plain sentences, with the price list and the exact JSON with its hash: open before payment, folded away afterwards. The page PayPal's cancel link leads to shows it open, next to the way back to PayPal. The timeline records who it was issued to.
 
-**What enforces it.** `holdDeposit` and `settle` check it before calling PayPal (`mandateViolations` in `lib/rentals/mandate.ts`). They refuse a hold above `maxCents`, a charge whose price-list entry or amount differs from the mandate's, a charge the renter has not answered, and anything after `expiresAt`. They refuse everything when the stored mandate is not the one recorded in the audit chain at booking: edited, re-sealed with a new hash, swapped for another rental's, or removed. They also refuse when the rental's audit chain no longer verifies (`firstBrokenLink` in `lib/rentals/audit.ts`), so editing the hash recorded at booking does not help either, even with that entry re-hashed. A refusal is written to the audit log as `mandate.refused`. Giving a deposit back never needs the mandate.
+**What enforces it.** `holdDeposit` and `settle` check it before calling PayPal (`mandateViolations` in `lib/rentals/mandate.ts`). They refuse a hold above `maxCents`, a charge whose price-list entry or amount differs from the mandate's, a charge the renter has not answered, and anything after `expiresAt`. They refuse everything when the stored mandate is not the one recorded in the audit chain at booking: edited, re-sealed with a new hash, swapped for another rental's, or removed. They also refuse when the rental's audit chain no longer verifies (`firstBrokenLink` in `lib/rentals/audit.ts`), so editing the hash recorded at booking does not help either, even with that entry re-hashed. A refusal is written to the audit log as `mandate.refused`. Giving a deposit back never needs the mandate. Cancelling reads the mandate's cancellation terms (`termsFor` in `lib/rentals/cancel.ts`) for what the renter gets back, but only from a mandate that passes the same check (`mandateOnRecord` in `lib/rentals/mandate.ts`); otherwise it applies the shop's policy as it is now to the pickup day. The counter may refund any amount up to the fee.
 
 ## Approval by redirect
 
@@ -182,7 +190,7 @@ In demo mode (no PayPal keys) the approval link opens `/demo/paypal`, a page lab
 
 ## Tests and checks
 
-- `lib/mcp/server.test.ts`: the SDK client talks to the HTTP handler in demo mode. It covers the tool list and annotations, quotes, errors the assistant can act on, a booking that moves no money, status through to settlement by status token, replies that never contain the renter's token, the renter's token refused as a status token, and the `Origin` check.
+- `lib/mcp/server.test.ts`: the SDK client talks to the HTTP handler in demo mode. It covers the tool list and annotations, quotes (with the cancellation terms), errors the assistant can act on, a booking that moves no money, status through to settlement by status token, a cancellation reported with its refund while no tool and no status token can cancel, replies that never contain the renter's token, the renter's token refused as a status token, and the `Origin` check.
 - `lib/rentals/mandate.test.ts`: mandate contents, a pinned hash, key-order independence, tamper detection and the enforcement rules.
 - `lib/rentals/service.test.ts`: the mandate on web and assistant bookings, blocked charges, pricing from the mandate, the redirect return (approve, reload, two returns, the in-page button and the `CHECKOUT.ORDER.APPROVED` webhook at once, the webhook alone, a pending capture completed or denied by webhook, a cancel URL without the renter's token, a PayPal refusal).
 - `e2e/agent-booking.spec.ts`: Playwright books over MCP and checks that no reply leads to the renter's page. A phone leaves the demo stand-in once, reads the mandate on the cancel page, approves, and lands booked on its own page, whose token the status tool refuses.
@@ -190,7 +198,7 @@ In demo mode (no PayPal keys) the approval link opens `/demo/paypal`, a page lab
 
 ## Limits
 
-- The counter pages under `/shop` show each rental's renter link and the buttons that hold, decide on, settle and refund a deposit. A rental id, which `create_booking` returns and the renter's page shows, opens that rental there. With `SHOP_ACCESS_CODE` set they, and the counter's server actions, need the staff cookie from `/shop/sign-in`; without it (local runs, clones) they are open to whoever can reach them. It is one shared code, not staff accounts. The MCP endpoint, the booking pages and the renter pages are the parts meant for the public.
+- The counter pages under `/shop` show each rental's renter link and the buttons that hold, decide on, settle and refund a deposit, and cancel a booking. A rental id, which `create_booking` returns and the renter's page shows, opens that rental there. With `SHOP_ACCESS_CODE` set they, and the counter's server actions, need the staff cookie from `/shop/sign-in`; without it (local runs, clones) they are open to whoever can reach them. It is one shared code, not staff accounts. The MCP endpoint, the booking pages and the renter pages are the parts meant for the public.
 - The renter's page is a bearer link: whoever has `/r/<token>` can do there what the renter can, including answering charges. PayPal opens it for whoever approves the payment, which takes the payer's PayPal login (in demo mode, no login).
 - The endpoint has no rate limit. Anyone can create unpaid drafts, as with the booking form.
 - The assistant's name in the mandate is whatever it says it is.

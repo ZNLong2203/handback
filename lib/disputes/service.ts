@@ -24,15 +24,16 @@ import {
 import type { PayPalMode } from "@/lib/paypal/config";
 import { loadPhoto } from "@/lib/photos";
 import { appendEvent } from "@/lib/rentals/audit";
+import { termsFor } from "@/lib/rentals/cancel";
 import { disputeReturns, isRefunded, refundableCaptures, refundsFor, type StoredRefund } from "@/lib/rentals/refunds";
 import { eventsFor, inspectionsFor, latestAssessment } from "@/lib/rentals/repo";
 import { mustRental, paypalStep } from "@/lib/rentals/service";
 import { isCharged } from "@/lib/rentals/settlement";
-import { UserError, type Rental } from "@/lib/rentals/types";
+import { UserError, type AuditEvent, type Rental } from "@/lib/rentals/types";
 import type { RentalView } from "@/lib/rentals/view";
 import { SHOP } from "@/lib/shop";
 import { factsSha, packFileName, paypalNotes, renderEvidencePdf, sha256Hex, type PackPhotos } from "./evidence";
-import { buildEvidenceFacts, type EvidenceFacts, type EvidenceSource } from "./facts";
+import { buildEvidenceFacts, type EvidenceFacts, type EvidenceSource, type FactCancellation } from "./facts";
 import { writeNarrative, type Narrative } from "./narrative";
 import { recommend, type Recommendation } from "./recommend";
 import { recordDispute, type RecordResult } from "./record";
@@ -98,6 +99,28 @@ export async function findDisputes(rentalId: string): Promise<number> {
 
 // ─── The evidence pack ──────────────────────────────────────
 
+/**
+ * A booking cancelled before pickup, for the evidence facts: who and when,
+ * the terms that applied (from the deposit mandate the renter approved when
+ * it verifies, as cancelling used them) and what the cancellation decided.
+ */
+function cancellationFact(rental: Rental, events: AuditEvent[]): FactCancellation | undefined {
+  if (rental.status !== "cancelled" || !rental.cancelledAt) return undefined;
+  const { terms, fromMandate } = termsFor(rental, events);
+  const cancelled = events.findLast((e) => e.type === "booking.cancelled");
+  const recorded = events.find((e) => e.type === "mandate.issued")?.data.sha256;
+  return {
+    at: rental.cancelledAt,
+    by: rental.cancelledBy === "staff" ? "staff" : "renter",
+    reason: rental.cancelReason,
+    terms: terms.feeRefund,
+    termsFrom: fromMandate ? "mandate" : "policy",
+    mandateSha256: fromMandate && typeof recorded === "string" ? recorded : null,
+    policyPercent: Number(cancelled?.data.policyPercent ?? 0),
+    refundCents: rental.cancelRefundCents ?? 0,
+  };
+}
+
 /** Refunds as the evidence facts record them: the ones PayPal made or reported. */
 const factRefunds = (refunds: StoredRefund[]) => refunds.filter(isRefunded).map((r) => ({ refundId: r.refundId, captureId: r.captureId, cents: r.amountCents, at: r.createdAt }));
 
@@ -119,6 +142,7 @@ async function sourceFor(rental: Rental, stored: StoredDispute): Promise<Evidenc
     events,
     dispute: disputeFacts(stored),
     refunds: factRefunds(refunds),
+    cancellation: cancellationFact(rental, events),
   };
 }
 
@@ -418,6 +442,7 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
 
   const charged = (view.assessment?.findings ?? []).filter(isCharged);
   const sum = (fs: typeof charged) => fs.reduce((s, f) => s + (f.price?.cents ?? 0), 0);
+  const cancellation = cancellationFact(rental, view.events);
   const tx = stored.transactionId;
   const disputedCapture = tx && tx === rental.settlementCaptureId ? "settlement" : tx && tx === rental.feeCaptureId ? "fee" : tx && tx === rental.extraCaptureId ? "extra" : "unknown";
   const knownCents = disputedCapture === "settlement" ? rental.capturedCents : disputedCapture === "fee" ? rental.feeCents : disputedCapture === "extra" ? rental.extraCents : null;
@@ -436,6 +461,17 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
       disputedCapture,
       acceptedCents: sum(charged.filter((f) => f.customer === "accept")),
       upheldCents: sum(charged.filter((f) => f.customer === "contest")),
+      ...(cancellation && view.feeCapture
+        ? {
+            cancellation: {
+              by: cancellation.by,
+              termsInMandate: cancellation.termsFrom === "mandate",
+              feeCents: view.feeCapture.capturedCents,
+              refundedCents: view.feeCapture.refundedCents + view.feeCapture.disputeCents,
+              keptCents: view.feeCapture.leftCents,
+            },
+          }
+        : {}),
     },
   });
 
@@ -450,6 +486,7 @@ export async function loadDisputeDesk(view: RentalView, now = new Date()): Promi
     events: view.events,
     dispute: disputeFacts(stored),
     refunds: factRefunds(view.refunds),
+    cancellation,
   });
   const sent = view.events
     .filter((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === stored.id)

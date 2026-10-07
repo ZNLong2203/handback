@@ -3,20 +3,20 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { CATALOG, catalogItem, type RentalItem } from "@/lib/catalog";
-import { isIsoDay, rentalDays, todayIso } from "@/lib/dates";
+import { addDaysIso, isIsoDay, rentalDays, todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { inspectReturn } from "@/lib/inspection/run";
 import { publish } from "@/lib/live";
 import { formatUsd, type Cents } from "@/lib/money";
 import { depositGateway, PayPalError } from "@/lib/paypal";
-import type { BookingCapture } from "@/lib/paypal/gateway";
+import type { Authorization, BookingCapture } from "@/lib/paypal/gateway";
 import { loadPhoto, storePhoto } from "@/lib/photos";
 import { sampleFile } from "@/lib/samples";
 import { afterSettlement } from "@/lib/schedule/agent";
 import { assignUnitForBooking, confirmUnitBeforePayment } from "@/lib/schedule/assign";
 import { appUrl, SHOP } from "@/lib/shop";
-import { appendEvent, firstBrokenLink } from "./audit";
-import { buildMandate, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
+import { appendEvent } from "./audit";
+import { buildMandate, mandateOnRecord, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandatedCharge, type MandateIssuer } from "./mandate";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByOrder, rentalByToken, updateRental } from "./repo";
 import { awaitingCustomer, awaitingResolution, isCharged, planSettlement } from "./settlement";
 import { PayPalStepError, UserError, type AuditEvent, type Phase, type Rental, type ReviewedFinding } from "./types";
@@ -61,6 +61,8 @@ function explainPayPalError(err: PayPalRefusal): string {
       return `The deposit hold has expired. Place a new hold before settling${ref}.`;
     case "REAUTHORIZATION_TOO_SOON":
       return `A hold can only be renewed from day 4 of the rental${ref}.`;
+    case "DUPLICATE_INVOICE_ID":
+      return `PayPal already has a payment with this invoice id: an earlier attempt went through, but its answer was lost. Find the invoice in PayPal before trying again${ref}.`;
     default:
       if (err.status === 429 || err.status >= 500) return `PayPal is not answering right now. Try again in a moment; nothing was charged twice${ref}.`;
       return `PayPal could not complete "${err.step}": ${err.message}${ref}`;
@@ -91,18 +93,9 @@ function expectStatus(rental: Rental, allowed: Rental["status"][], action: strin
  */
 async function assertWithinMandate(rental: Rental, step: string, act: { holdCents?: Cents; charges?: MandatedCharge[] }) {
   const db = await getDb();
-  const events = await eventsFor(db, rental.id);
-  const issued = events.find((e) => e.type === "mandate.issued");
-  const recorded = typeof issued?.data.sha256 === "string" ? issued.data.sha256 : null;
-  if (!recorded && !rental.mandateJson && !rental.mandateSha256) return;
-  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
-  const broken = firstBrokenLink(events);
-  const problems =
-    broken !== null
-      ? [`The rental's audit log was changed after the fact (entry ${broken} no longer matches), so the mandate it recorded cannot be trusted.`]
-      : opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id
-        ? mandateViolations(opened.mandate, { at: new Date(), ...act })
-        : ["The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it."];
+  const record = mandateOnRecord(rental, await eventsFor(db, rental.id));
+  if (record.kind === "none") return;
+  const problems = record.kind === "trusted" ? mandateViolations(record.mandate, { at: new Date(), ...act }) : [record.problem];
   if (problems.length === 0) return;
   await appendEvent(db, rental.id, "system", "mandate.refused", { step, problems });
   publish(rental.id, "mandate.refused");
@@ -130,6 +123,9 @@ export function quoteRental(input: { itemId: string; startDate: string; endDate:
   if (!item) throw new UserError(`There is no rental item "${input.itemId}".`);
   if (!isIsoDay(input.startDate) || !isIsoDay(input.endDate)) throw new UserError("Give the dates as real days, YYYY-MM-DD.");
   if (input.startDate < today) throw new UserError("Pick a pickup date from today on.");
+  if (input.startDate > addDaysIso(today, SHOP.maxDaysAhead)) {
+    throw new UserError(`Bookings open ${SHOP.maxDaysAhead} days ahead: pick a pickup date up to ${addDaysIso(today, SHOP.maxDaysAhead)}.`);
+  }
   let days: number;
   try {
     days = rentalDays(input.startDate, input.endDate);
@@ -247,15 +243,31 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
   if (rental.feeCaptureId) return { token: rental.token, pending: true };
 
   await confirmUnitBeforePayment(rental.id);
+  // Claim the capture under the row lock, so cancelling the unpaid booking
+  // cannot slip in while PayPal answers (cancel.ts waits for the claim).
+  const claim = await claimRequest(rental.id, "capture_requested_at", (r) => (r.status !== "draft" ? "gone" : r.fee_capture_id ? "pending" : null));
+  if (claim === "gone") return { token: rental.token, pending: false };
+  if (claim === "pending") return { token: rental.token, pending: true };
   let paid: BookingCapture;
   let readBack = false;
+  const seen: { refusal: PayPalError | null } = { refusal: null };
   try {
-    paid = await paypalStep(rental.id, "capture the rental fee", () => depositGateway().captureBookingOrder(orderId, `booking-capture:${rental.id}`));
+    paid = await paypalStep(rental.id, "capture the rental fee", () =>
+      depositGateway()
+        .captureBookingOrder(orderId, `booking-capture:${rental.id}`)
+        .catch((err: unknown) => {
+          if (PayPalError.is(err)) seen.refusal = err;
+          throw err;
+        }),
+    );
   } catch (err) {
     // An earlier capture went through but its answer never reached us, and
     // PayPal no longer recognises the request id: read the order back and
     // record that capture, rather than leave a paid renter unpaid.
-    if (!(err instanceof PayPalStepError && err.issue === "ORDER_ALREADY_CAPTURED")) throw err;
+    if (!(err instanceof PayPalStepError && err.issue === "ORDER_ALREADY_CAPTURED")) {
+      if (claim.mine && seen.refusal?.definitelyRefused) await releaseClaim(rental.id, "capture_requested_at");
+      throw err;
+    }
     const found = await paypalStep(rental.id, "read the captured booking order", () => depositGateway().getBookingOrder(orderId));
     if (!found) throw err;
     paid = found;
@@ -273,6 +285,8 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
       return rows.length > 0;
     });
     if (recorded) publish(rental.id, "booking.pending");
+    // Only after a stale claim was cleared mid-capture (cancel.ts): record it on the cancelled booking.
+    else await (await import("./cancel")).refundCaptureAfterCancel(rental.id, paid);
     return { token: rental.token, pending: true };
   }
   if (paid.status !== "COMPLETED") {
@@ -297,7 +311,41 @@ export async function confirmBooking(orderId: string): Promise<{ token: string; 
     return moved;
   });
   if (booked) publish(rental.id, "booking.paid");
+  // Only after a stale claim was cleared mid-capture (cancel.ts): the booking was cancelled, so give the payment back.
+  else await (await import("./cancel")).refundCaptureAfterCancel(rental.id, paid);
   return { token: rental.token, pending: false };
+}
+
+type ClaimColumn = "capture_requested_at" | "hold_requested_at";
+
+/**
+ * Marks a PayPal call about to be sent, under the rental's row lock. `check`
+ * sees the locked row and returns a reason to stop, or null to go on. The
+ * result says whether this call set the mark: only that call may clear it
+ * on a definite refusal, since an earlier one whose answer was lost may
+ * have gone through.
+ */
+async function claimRequest<R extends string>(
+  rentalId: string,
+  column: ClaimColumn,
+  check: (row: { status: string; fee_capture_id: string | null }) => R | null,
+): Promise<R | { mine: boolean }> {
+  const db = await getDb();
+  return db.tx(async (tx) => {
+    const [row] = await tx.query<{ status: string; fee_capture_id: string | null; claimed: unknown }>(
+      `select status, fee_capture_id, ${column} as claimed from rentals where id = $1 for update`,
+      [rentalId],
+    );
+    const stop = check(row);
+    if (stop !== null) return stop;
+    if (row.claimed !== null) return { mine: false };
+    await tx.query(`update rentals set ${column} = now() where id = $1`, [rentalId]);
+    return { mine: true };
+  });
+}
+
+async function releaseClaim(rentalId: string, column: ClaimColumn) {
+  await (await getDb()).query(`update rentals set ${column} = null where id = $1`, [rentalId]);
 }
 
 const declinedMessage = (status: string) => `PayPal did not take the payment (capture ${status}), so nothing was charged.`;
@@ -376,7 +424,15 @@ export async function addPhoto(rentalId: string, phase: Phase, source: { bytes: 
 
 // ─── Pickup ─────────────────────────────────────────────────
 
-/** Holds the deposit on the customer's saved PayPal wallet: the 29-day clock starts now, at pickup. */
+/**
+ * Holds the deposit on the customer's saved PayPal wallet: the 29-day clock
+ * starts now, at pickup. Before PayPal is called the pickup is claimed under
+ * the rental's row lock (hold_requested_at), so a cancellation racing it
+ * either lands first, and the hold is refused before PayPal, or waits for
+ * PayPal's answer and is refused itself (cancel.ts). A definite refusal from
+ * PayPal frees the claim again; an answer that never came keeps it, and
+ * pressing Hold again asks PayPal with the same request id.
+ */
 export async function holdDeposit(rentalId: string): Promise<void> {
   const rental = await mustRental(rentalId);
   expectStatus(rental, ["booked"], "hold the deposit");
@@ -387,27 +443,66 @@ export async function holdDeposit(rentalId: string): Promise<void> {
   const item = catalogItem(rental.itemId);
   await assertWithinMandate(rental, "hold the deposit", { holdCents: rental.depositCents });
 
-  const auth = await paypalStep(rentalId, "hold the deposit", () =>
-    depositGateway().holdWithSavedWallet(
-      { vaultId: rental.vaultId!, rentalId, amountCents: rental.depositCents, description: `Refundable deposit: ${item.name}` },
-      `deposit:${rentalId}`,
-    ),
-  );
-  await db.tx(async (tx) => {
-    await updateRental(tx, rentalId, {
-      status: "out",
-      authorization_id: auth.authorizationId,
-      authorized_cents: auth.amountCents,
-      authorized_at: auth.createdAt,
-      authorization_expires_at: auth.expiresAt ?? null,
+  const claim = await claimRequest(rentalId, "hold_requested_at", (row) => (row.status === "booked" ? null : row.status));
+  if (typeof claim === "string") {
+    throw new UserError(claim === "cancelled" ? "This booking has just been cancelled, so no deposit was held." : `Can't hold the deposit while the rental is ${claim.replace("_", " ")}.`);
+  }
+  const seen: { refusal: PayPalError | null } = { refusal: null };
+  let auth: Authorization;
+  try {
+    auth = await paypalStep(rentalId, "hold the deposit", async () => {
+      try {
+        return await depositGateway().holdWithSavedWallet(
+          { vaultId: rental.vaultId!, rentalId, amountCents: rental.depositCents, description: `Refundable deposit: ${item.name}` },
+          `deposit:${rentalId}`,
+        );
+      } catch (err) {
+        if (PayPalError.is(err)) seen.refusal = err;
+        throw err;
+      }
     });
-    await appendEvent(tx, rentalId, "paypal", "deposit.held", {
-      authorizationId: auth.authorizationId,
-      amountCents: auth.amountCents,
-      expiresAt: auth.expiresAt ?? null,
-    });
+  } catch (err) {
+    // Free the claim only when this press set it and PayPal surely placed no
+    // hold. A duplicate invoice id means an earlier hold for this rental went
+    // through: its answer was lost and PayPal no longer knows the request id.
+    if (claim.mine && seen.refusal?.definitelyRefused && seen.refusal.issue !== "DUPLICATE_INVOICE_ID") await releaseClaim(rentalId, "hold_requested_at");
+    throw err;
+  }
+  const held = await db.tx(async (tx) => {
+    const moved = await updateRental(
+      tx,
+      rentalId,
+      {
+        status: "out",
+        authorization_id: auth.authorizationId,
+        authorized_cents: auth.amountCents,
+        authorized_at: auth.createdAt,
+        authorization_expires_at: auth.expiresAt ?? null,
+      },
+      "booked",
+    );
+    if (moved) {
+      await appendEvent(tx, rentalId, "paypal", "deposit.held", {
+        authorizationId: auth.authorizationId,
+        amountCents: auth.amountCents,
+        expiresAt: auth.expiresAt ?? null,
+      });
+    }
+    return moved;
   });
-  publish(rentalId, "deposit.held");
+  if (held) {
+    publish(rentalId, "deposit.held");
+    return;
+  }
+  // A second press of the same button: PayPal answered both with the one hold.
+  const now = await mustRental(rentalId);
+  if (now.authorizationId === auth.authorizationId) return;
+  // Not reachable while cancelling waits for the claim above; if the booking
+  // was cancelled anyway, give the hold PayPal just placed straight back.
+  await paypalStep(rentalId, "release the deposit", () => depositGateway().release(auth.authorizationId, `release:${rentalId}`));
+  await appendEvent(db, rentalId, "paypal", "deposit.released", { authorizationId: auth.authorizationId, capturedCents: 0, releasedCents: auth.amountCents, reason: "cancelled" });
+  publish(rentalId, "deposit.released");
+  throw new UserError(`The rental is ${now.status} now, so the hold PayPal had just placed was released.`);
 }
 
 /** The customer confirms, on their own phone, that the pickup photos show the item as they received it. */

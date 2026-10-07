@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { disputesFor } from "@/lib/disputes/repo";
 import { firstBrokenLink } from "./audit";
 import { openMandate } from "./mandate";
-import { disputeReturns, nextRefundSeq, refundableCaptures, refundedCents, refundsFor, waitingRefunds } from "./refunds";
+import { disputeReturns, feeCapture, nextRefundSeq, refundableCaptures, refundedCents, refundsFor, waitingRefunds } from "./refunds";
 import { eventsFor, inspectionsFor, latestAssessment, rentalById, rentalByToken } from "./repo";
 import { planSettlement } from "./settlement";
 
@@ -41,8 +41,12 @@ export async function loadRentalView(by: { id: string } | { token: string }) {
     refunds,
     /** Refunded of what the settlement took; the money bar and "kept" use this. */
     refundedCents: refundedCents(refunds, [rental.settlementCaptureId, rental.extraCaptureId]),
-    /** Refunded of the booking fee (only PayPal's webhook reports these; the counter does not refund the fee). */
+    /** Refunded of the booking fee: on cancelling, by the counter after a cancellation, or outside the app (PayPal's webhook). */
     feeRefundedCents: refundedCents(refunds, [rental.feeCaptureId]),
+    /** The fee's capture and what is left to refund on it; null while unpaid. */
+    feeCapture: feeCapture(rental, refunds, returned),
+    /** A PayPal dispute on the rental is still open. */
+    openDispute: disputes.some((d) => d.status !== "RESOLVED"),
     refundable: refundableCaptures(rental, refunds, returned),
     nextRefundSeq: nextRefundSeq(refunds),
     /** Counter refunds whose PayPal answer was lost. */

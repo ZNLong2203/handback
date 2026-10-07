@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DEFAULT_VISION_MODEL } from "@/lib/inspection/compare";
 import { jsonSchemaFor } from "@/lib/inspection/schema";
 import { formatUsd } from "@/lib/money";
-import { factList, type EvidenceFacts, type Fact } from "./facts";
+import { canceller, factList, feeRefunded, utc, type EvidenceFacts, type Fact } from "./facts";
 
 /** What the model must return: short paragraphs, each naming the facts it uses. */
 export const NarrativeSchema = z.object({
@@ -67,7 +67,11 @@ Rules:
 - Use only these facts. Add nothing else, and do not guess at anyone's intent or honesty.
 - Copy every number, amount, date, time and id exactly as it appears in a fact, and list that fact's id in "cites" for the paragraph.
 - Write 2 or 3 short paragraphs, ${MAX_WORDS - 20} words at most in total, in plain English.
-- Follow the order of events: the pickup photo and the customer's confirmation, the return and the comparison, what the customer was shown and how they answered, and what PayPal captured and released.
+- ${
+    facts.some((f) => f.id === "cancellation")
+      ? "Follow the order of events: the booking and the fee, the cancellation terms and how the customer agreed to them, the cancellation before pickup, and what was refunded. The item was never picked up, so say nothing about a pickup or a return."
+      : "Follow the order of events: the pickup photo and the customer's confirmation, the return and the comparison, what the customer was shown and how they answered, and what PayPal captured and released."
+  }
 - Long hashes are already printed elsewhere in the pack; leave them out.
 - State the record. Do not argue for an outcome.`;
 }
@@ -78,6 +82,7 @@ export function templateNarrative(f: EvidenceFacts, note: string | null = null):
   const cite = (...wanted: string[]) => wanted.filter((id) => ids.has(id));
   const paragraphs: NarrativeBody["paragraphs"] = [];
   const r = f.rental;
+  if (f.cancellation) return cancelledNarrative(f, cite, note);
 
   const p1 = [`${r.customer} rented the ${r.item.toLowerCase()} (rental ${r.id}), picked up ${r.startDate} and due back ${r.endDate}.`];
   if (f.pickup) p1.push(`The shop photographed it at pickup${f.pickup.acknowledgedAt ? ", and the customer confirmed that photo on their own phone before leaving" : ""}.`);
@@ -115,6 +120,35 @@ export function templateNarrative(f: EvidenceFacts, note: string | null = null):
   p3.push(`Every step above is in Handback's hash-chained audit log, which was ${f.audit.intact ? "intact" : "found broken"} when this pack was made.`);
   paragraphs.push({ text: p3.join(" "), cites: cite("settlement", "refunds", "audit") });
   return { paragraphs, source: "template", model: null, note };
+}
+
+/** A booking cancelled before pickup: the booking, the terms, the cancellation and the refunds. Nothing about a pickup or a return. */
+function cancelledNarrative(f: EvidenceFacts, cite: (...ids: string[]) => string[], note: string | null): Narrative {
+  const r = f.rental;
+  const c = f.cancellation!;
+  const refunded = feeRefunded(f);
+  const p1 = `${r.customer} booked the ${r.item.toLowerCase()} (rental ${r.id}) for ${r.startDate} to ${r.endDate} and paid the ${formatUsd(f.money.feeCents)} rental fee with PayPal.`;
+  const terms =
+    c.termsFrom === "mandate"
+      ? "The cancellation terms were part of the deposit mandate the customer approved in PayPal at booking."
+      : "The booking's mandate carried no cancellation terms, so the shop's cancellation policy applied.";
+  const decided =
+    c.by === "renter" ? `Under those terms, cancelling then gave back ${c.policyPercent}% of the fee, ${formatUsd(c.refundCents)}.` : `The shop chose to refund ${formatUsd(c.refundCents)} of the fee.`;
+  const p2 = `${canceller(f)} cancelled the booking at ${utc(c.at)}, before pickup, so the item never left the shop and no deposit was held. ${terms} ${decided}`;
+  const p3 = [
+    refunded > 0 ? `${formatUsd(refunded)} was refunded to the customer through PayPal, and the shop kept ${formatUsd(Math.max(0, f.money.feeCents - refunded))}.` : `Nothing was refunded, and the shop kept ${formatUsd(f.money.feeCents)}.`,
+    `Every step above is in Handback's hash-chained audit log, which was ${f.audit.intact ? "intact" : "found broken"} when this pack was made.`,
+  ].join(" ");
+  return {
+    paragraphs: [
+      { text: p1, cites: cite("rental", "fee") },
+      { text: p2, cites: cite("rental", "cancellation") },
+      { text: p3, cites: cite("cancellation", "refunds", "audit") },
+    ],
+    source: "template",
+    model: null,
+    note,
+  };
 }
 
 /** The conversation so far: the prompt, then any rejected reply and the reason it was rejected. */

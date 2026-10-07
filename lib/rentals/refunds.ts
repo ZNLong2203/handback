@@ -15,9 +15,11 @@ type Row = Record<string, unknown>;
 
 /**
  * Refunds of the money a settlement took: the final capture from the deposit
- * hold, and the charge above the deposit on the saved wallet. Staff refund
- * part or all of one capture, with a reason the renter sees on their page and
- * in PayPal's email.
+ * hold, and the charge above the deposit on the saved wallet; and, once a
+ * paid booking is cancelled, of the rental fee (cancel.ts refunds the part
+ * its policy or the counter decides, through the same claim and send). Staff
+ * refund part or all of one capture, with a reason the renter sees on their
+ * page and in PayPal's email.
  *
  * Each refund the counter starts gets the rental's next refund number, and
  * PayPal-Request-Id `refund:<rental id>:<number>` and invoice_id
@@ -89,6 +91,19 @@ export const refundedCents = (refunds: StoredRefund[], captureIds?: (string | nu
  * the charge above the deposit), for the counter's list. A refund of the
  * booking fee is not part of what the shop kept from the deposit.
  */
+export async function feeRefundTotals(db: Query): Promise<Map<string, { refundedCents: Cents; waitingCents: Cents }>> {
+  const rows = await db.query<{ rental_id: string; refunded: string | number; waiting: string | number }>(
+    `select f.rental_id,
+            sum(case when f.state = 'done' and coalesce(f.paypal_status, '') not in ('FAILED', 'CANCELLED') then f.amount_cents else 0 end) as refunded,
+            sum(case when f.state = 'requested' then f.amount_cents else 0 end) as waiting
+     from refunds f join rentals r on r.id = f.rental_id
+     where f.capture_id = r.fee_capture_id
+     group by f.rental_id`,
+  );
+  return new Map(rows.map((r) => [r.rental_id, { refundedCents: Number(r.refunded), waitingCents: Number(r.waiting) }]));
+}
+
+/** Refunded per rental of what the settlement took; see feeRefundTotals for the fee. */
 export async function refundTotals(db: Query): Promise<Map<string, Cents>> {
   const rows = await db.query<{ rental_id: string; cents: string | number }>(
     `select f.rental_id, sum(f.amount_cents) as cents from refunds f join rentals r on r.id = f.rental_id
@@ -118,8 +133,31 @@ export async function disputeReturns(db: Query, rentalId: string): Promise<Map<s
   return new Map(rows.map((r) => [r.transaction_id, Number(r.cents)]));
 }
 
+/** True for a booking the renter or the counter cancelled after the fee was captured. */
+export const cancelledAfterPayment = (rental: Rental) => rental.status === "cancelled" && rental.cancelledAt !== null && rental.feeCaptureId !== null;
+
+type Capture = { captureId: string; label: string; capturedCents: Cents };
+
+/** What is left to refund on one capture; see refundableCaptures. */
+function leftOn(c: Capture, refunds: StoredRefund[], disputes: Map<string, Cents>): RefundableCapture {
+  const on = refunds.filter((r) => r.captureId === c.captureId);
+  const counter = on.filter((r) => r.seq !== null && isSpoken(r)).reduce((s, r) => s + r.amountCents, 0);
+  const reported = on.filter((r) => r.seq === null && isRefunded(r)).reduce((s, r) => s + r.amountCents, 0);
+  const dispute = disputes.get(c.captureId) ?? 0;
+  const outside = Math.max(reported, dispute);
+  // outside >= dispute, so refunded + dispute = everything that went back.
+  return { ...c, refundedCents: counter + outside - dispute, disputeCents: dispute, leftCents: Math.max(0, c.capturedCents - counter - outside) };
+}
+
+/** The rental fee's capture with what is left to refund on it, or null before the fee was captured. */
+export function feeCapture(rental: Rental, refunds: StoredRefund[], disputes: Map<string, Cents> = new Map()): RefundableCapture | null {
+  if (!rental.feeCaptureId) return null;
+  return leftOn({ captureId: rental.feeCaptureId, label: "the rental fee", capturedCents: rental.feeCents }, refunds, disputes);
+}
+
 /**
- * The captures a settlement made, with what is left to refund on each:
+ * The captures a settlement made, or the fee capture of a booking cancelled
+ * after payment, with what is left to refund on each:
  * what was captured, less the counter's refunds and the money that went back
  * outside the counter. That outside money is reported two ways, by
  * PAYMENT.CAPTURE.REFUNDED (rows without a refund number) and by a dispute's
@@ -129,21 +167,14 @@ export async function disputeReturns(db: Query, rentalId: string): Promise<Map<s
  * same money twice.
  */
 export function refundableCaptures(rental: Rental, refunds: StoredRefund[], disputes: Map<string, Cents> = new Map()): RefundableCapture[] {
+  if (cancelledAfterPayment(rental)) return [feeCapture(rental, refunds, disputes)!];
   const captures = [
     { captureId: rental.settlementCaptureId, label: "the charge from the deposit", capturedCents: rental.capturedCents ?? 0 },
     { captureId: rental.extraCaptureId, label: "the charge above the deposit", capturedCents: rental.extraCents ?? 0 },
   ];
   return captures
-    .filter((c): c is typeof c & { captureId: string } => Boolean(c.captureId) && c.capturedCents > 0)
-    .map((c) => {
-      const on = refunds.filter((r) => r.captureId === c.captureId);
-      const counter = on.filter((r) => r.seq !== null && isSpoken(r)).reduce((s, r) => s + r.amountCents, 0);
-      const reported = on.filter((r) => r.seq === null && isRefunded(r)).reduce((s, r) => s + r.amountCents, 0);
-      const dispute = disputes.get(c.captureId) ?? 0;
-      const outside = Math.max(reported, dispute);
-      // outside >= dispute, so refunded + dispute = everything that went back.
-      return { ...c, refundedCents: counter + outside - dispute, disputeCents: dispute, leftCents: Math.max(0, c.capturedCents - counter - outside) };
-    });
+    .filter((c): c is Capture => Boolean(c.captureId) && c.capturedCents > 0)
+    .map((c) => leftOn(c, refunds, disputes));
 }
 
 /** The refund number the counter's form carries for a new refund. A refund waiting for PayPal's answer is sent again with its own number (resendRefund). */
@@ -169,13 +200,11 @@ export function waitingRefunds(refunds: StoredRefund[], now = Date.now()): (Stor
     .map((r) => ({ ...r, resendable: now - Date.parse(r.createdAt) < RESEND_WINDOW_MS }));
 }
 
-/** Whether PayPal definitely did not refund: a 4xx it would answer the same way again. Timeouts, conflicts and 5xx may have landed. */
-const definitelyRefused = (err: PayPalError) => err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status);
-
 export type RefundInput = { captureId: string; cents: number; reason: string; seq: number };
 
 /**
- * Refunds part or all of one of the settlement's captures. Refused while a
+ * Refunds part or all of one of the settlement's captures, or of the fee of a
+ * booking cancelled after it was paid. Refused while a
  * PayPal dispute on the rental is open: money given back then belongs in the
  * dispute (an offer or an accepted claim), where PayPal counts it.
  */
@@ -198,10 +227,10 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
         "The customer has an open PayPal dispute on this rental, so refund through the dispute desk on this page: offer part back or accept the claim. PayPal then counts the money toward the case.",
       );
     }
-    if (rental.status !== "settled") throw new UserError("Only a settled rental can be refunded.");
+    if (rental.status !== "settled" && !cancelledAfterPayment(rental)) throw new UserError("Only a settled rental, or a booking cancelled after it was paid, can be refunded.");
     const refunds = await refundsFor(tx, rentalId);
     const capture = refundableCaptures(rental, refunds, await disputeReturns(tx, rentalId)).find((c) => c.captureId === input.captureId);
-    if (!capture) throw new UserError("Choose a charge this rental's settlement took: only those can be refunded here.");
+    if (!capture) throw new UserError("Choose a charge this rental's settlement took, or the fee of a cancelled booking: only those can be refunded here.");
 
     const same = refunds.find((r) => r.seq === input.seq);
     if (same) {
@@ -229,20 +258,46 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
           : `At most ${formatUsd(capture.leftCents)} is left to refund on ${capture.label} (${formatUsd(capture.capturedCents)} taken, ${formatUsd(capture.refundedCents)} refunded${capture.disputeCents ? `, ${formatUsd(capture.disputeCents)} returned through the PayPal dispute` : ""}).`,
       );
     }
-    const id = randomUUID();
-    await tx.query(
-      "insert into refunds (id, rental_id, seq, capture_id, amount_cents, reason, state, source) values ($1, $2, $3, $4, $5, $6, 'requested', 'counter')",
-      [id, rentalId, input.seq, input.captureId, input.cents, reason],
-    );
-    return { kind: "send" as const, id };
+    return { kind: "send" as const, id: await claimRefund(tx, rentalId, { ...input, reason }) };
   });
   if (claim.kind === "done") return claim.refund;
+  return sendRefund(rentalId, { id: claim.id, ...input, reason }, "staff");
+}
 
+/**
+ * Claims refund number `seq` in a 'requested' row, inside the caller's
+ * transaction and under its row lock, before PayPal is called. The amount
+ * counts as refunded from here on, so nothing else can refund it twice.
+ */
+export async function claimRefund(tx: Query, rentalId: string, input: RefundInput): Promise<string> {
+  const id = randomUUID();
+  await tx.query(
+    "insert into refunds (id, rental_id, seq, capture_id, amount_cents, reason, state, source) values ($1, $2, $3, $4, $5, $6, 'requested', 'counter')",
+    [id, rentalId, input.seq, input.captureId, input.cents, input.reason],
+  );
+  return id;
+}
+
+/**
+ * Sends a claimed refund to PayPal with PayPal-Request-Id refund:<rental>:<seq>
+ * and invoice_id <rental>-refund-<seq>, and records PayPal's answer. A
+ * definite refusal frees the number; anything else leaves the row
+ * 'requested', to be sent again unchanged (resendRefund) or completed by
+ * PayPal's webhook.
+ */
+export async function sendRefund(
+  rentalId: string,
+  input: RefundInput & { id: string },
+  actor: "staff" | "customer",
+  step = "refund a charge",
+): Promise<StoredRefund> {
+  const db = await getDb();
+  const { reason } = input;
   const requestId = refundRequestId(rentalId, input.seq);
   const seen: { refusal: PayPalError | null } = { refusal: null };
   let refund: RefundResult;
   try {
-    refund = await paypalStep(rentalId, "refund a charge", async () => {
+    refund = await paypalStep(rentalId, step, async () => {
       try {
         return await depositGateway().refund(
           { captureId: input.captureId, amountCents: input.cents, noteToPayer: reason, invoiceId: refundInvoiceId(rentalId, input.seq) },
@@ -257,8 +312,8 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
     // A definite refusal frees the number, so the next try gets a new request
     // id. Anything else may have landed: the row stays 'requested', and sending
     // the same refund again reuses the request id.
-    if (seen.refusal && definitelyRefused(seen.refusal)) {
-      await db.query("update refunds set state = 'refused', updated_at = now() where id = $1 and state = 'requested'", [claim.id]);
+    if (seen.refusal?.definitelyRefused) {
+      await db.query("update refunds set state = 'refused', updated_at = now() where id = $1 and state = 'requested'", [input.id]);
     }
     throw err;
   }
@@ -269,10 +324,10 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
     await tx.query("delete from refunds where refund_id = $1 and seq is null", [refund.refundId]);
     const rows = await tx.query<Row>(
       "update refunds set state = 'done', refund_id = $2, paypal_status = $3, amount_cents = $4, updated_at = now() where id = $1 and state <> 'done' returning *",
-      [claim.id, refund.refundId, refund.status, refund.amountCents],
+      [input.id, refund.refundId, refund.status, refund.amountCents],
     );
     if (rows.length > 0) {
-      await appendEvent(tx, rentalId, "staff", "refund.issued", {
+      await appendEvent(tx, rentalId, actor, "refund.issued", {
         refundId: refund.refundId,
         captureId: input.captureId,
         amountCents: refund.amountCents,
@@ -283,7 +338,7 @@ export async function refundCharge(rentalId: string, input: RefundInput): Promis
       });
       return toRefund(rows[0]);
     }
-    return toRefund((await tx.query<Row>("select * from refunds where id = $1", [claim.id]))[0]);
+    return toRefund((await tx.query<Row>("select * from refunds where id = $1", [input.id]))[0]);
   });
   publish(rentalId, "refund.issued");
   return recorded;

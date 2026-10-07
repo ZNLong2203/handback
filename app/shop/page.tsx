@@ -8,7 +8,7 @@ import { catalogItem } from "@/lib/catalog";
 import { shortDate } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { formatUsd } from "@/lib/money";
-import { refundTotals } from "@/lib/rentals/refunds";
+import { feeRefundTotals, refundTotals } from "@/lib/rentals/refunds";
 import { listRentals } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
@@ -23,14 +23,28 @@ const GROUPS: { title: string; hint: string; statuses: RentalStatus[] }[] = [
   { title: "Picking up", hint: "Paid; photograph and hold the deposit", statuses: ["booked"] },
   { title: "Out now", hint: "Deposit held on PayPal", statuses: ["out"] },
   { title: "With the customer", hint: "Waiting for their answers", statuses: ["customer_review"] },
-  { title: "Settled", hint: "Deposit charged or released", statuses: ["settled", "cancelled"] },
+  { title: "Settled", hint: "Deposit charged or released", statuses: ["settled"] },
+  { title: "Cancelled", hint: "Before pickup; the unit is free again", statuses: ["cancelled"] },
 ];
 
-function RentalRow({ r, unit, refunded = 0 }: { r: Rental; unit?: Handover; refunded?: number }) {
+/** A cancelled booking whose refund PayPal has not completed: still waiting for PayPal's answer, or short of what the cancellation decided. */
+function refundFlag(r: Rental, fee: { refundedCents: number; waitingCents: number }): string | null {
+  if (r.status !== "cancelled" || !r.cancelledAt || !r.feeCaptureId) return null;
+  if (fee.waitingCents > 0) return `Refund of ${formatUsd(fee.waitingCents)} waiting for PayPal's answer`;
+  const short = (r.cancelRefundCents ?? 0) - fee.refundedCents;
+  return short > 0 ? `${formatUsd(short)} of the cancellation refund not refunded: send it again` : null;
+}
+
+function RentalRow({ r, unit, refunded = 0, fee = { refundedCents: 0, waitingCents: 0 } }: { r: Rental; unit?: Handover; refunded?: number; fee?: { refundedCents: number; waitingCents: number } }) {
   const item = catalogItem(r.itemId);
   const status = STATUS[r.status];
+  const flag = refundFlag(r, fee);
   const money =
-    r.status === "settled"
+    r.status === "cancelled"
+      ? r.cancelledAt && r.feeCaptureId
+        ? `${formatUsd(fee.refundedCents)} of ${formatUsd(r.feeCents)} fee refunded`
+        : "Nothing paid"
+      : r.status === "settled"
       ? `${formatUsd(r.releasedCents ?? 0)} released${r.capturedCents ? ` · ${formatUsd(r.capturedCents)} kept` : ""}${refunded ? ` · ${formatUsd(refunded)} refunded` : ""}`
       : r.authorizedCents
         ? `${formatUsd(r.authorizedCents)} held`
@@ -45,10 +59,11 @@ function RentalRow({ r, unit, refunded = 0 }: { r: Rental; unit?: Handover; refu
         <span className="min-w-0">
           <span className="block truncate font-semibold">{r.customerName}</span>
           <span className="block truncate text-sm text-muted">
-            {item.name} · {unit ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
+            {item.name} · {unit && r.status !== "cancelled" ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
             {shortDate(r.startDate)}–{shortDate(r.endDate)}
           </span>
           {unit?.warning && <span className="block truncate text-xs font-medium text-charged">{unit.warning}</span>}
+          {flag && <span className="block truncate text-xs font-medium text-charged">{flag}</span>}
         </span>
         <span className="tabular hidden text-sm text-ink-soft sm:block">{money}</span>
         <span className="flex items-center gap-2">
@@ -66,6 +81,7 @@ export default async function Counter() {
   const rentals = await listRentals(db);
   const units = await handovers(rentals);
   const refunds = await refundTotals(db);
+  const feeRefunds = await feeRefundTotals(db);
   const held = rentals.filter((r) => ["out", "inspecting", "customer_review", "responded"].includes(r.status)).reduce((s, r) => s + (r.authorizedCents ?? 0), 0);
   const settled = rentals.filter((r) => r.status === "settled");
   const released = settled.reduce((s, r) => s + (r.releasedCents ?? 0), 0);
@@ -126,7 +142,7 @@ export default async function Counter() {
                 </div>
                 <ul className="space-y-2">
                   {list.map((r) => (
-                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} refunded={refunds.get(r.id)} />
+                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} refunded={refunds.get(r.id)} fee={feeRefunds.get(r.id)} />
                   ))}
                 </ul>
               </section>

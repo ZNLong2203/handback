@@ -17,8 +17,9 @@ function instructions(): string {
     "3. Give them approveUrl, and only them. They approve the fee in PayPal themselves; nothing is paid until they do. PayPal then opens their " +
       "private rental page, which you do not get.",
     "",
-    "You cannot pay, approve a payment, hold a deposit, accept or question a charge, or settle. Those steps belong to the renter (in PayPal and on " +
-      "their rental page) and to the shop's counter. get_rental_status with the statusToken shows where a rental stands.",
+    "You cannot pay, approve a payment, cancel a booking, hold a deposit, accept or question a charge, or settle. Those steps belong to the renter " +
+      "(in PayPal and on their rental page, where they can also cancel before pickup under the terms quote_rental lists) and to the shop's counter. " +
+      "get_rental_status with the statusToken shows where a rental stands, including a cancellation and its refund.",
   ].join("\n");
 }
 

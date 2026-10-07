@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RentalItem } from "@/lib/catalog";
-import { buildMandate, mandateExpiry, mandateTerms, mandateViolations, openMandate, sealMandate, type MandateInput } from "./mandate";
+import { buildMandate, mandateCancellation, mandateExpiry, mandateTerms, mandateViolations, openMandate, sealMandate, type DepositMandate, type MandateInput } from "./mandate";
 
 // A fixed item, so the pinned hash below does not move when the demo catalog does.
 const drone: RentalItem = {
@@ -71,7 +71,33 @@ describe("deposit mandate", () => {
 
   it("keeps a stable hash for the same terms", () => {
     // Pinned: if this changes, stored mandates no longer verify. Bump `version` instead.
-    expect(sealMandate(buildMandate(input)).sha256).toBe("5231c681c64edc9fa0a394faadc306c5e5ab3e6d4fb3a8d9086518f0c3887974");
+    expect(sealMandate(buildMandate(input)).sha256).toBe("5421facd22f49cb95452e5202c11fde1983ae35dfdfb77df06d2b93c9a8f05ac");
+  });
+
+  it("writes the cancellation terms into version 2, fixed to the pickup day", () => {
+    const m = buildMandate(input);
+    expect(m.version).toBe(2);
+    expect(mandateCancellation(m)).toEqual({
+      feeRefund: [
+        { before: "2026-10-02T00:00:00.000Z", percent: 100 },
+        { before: "2026-10-03T00:00:00.000Z", percent: 50 },
+      ],
+    });
+    expect(mandateTerms(m).at(-1)).toBe(
+      "If you cancel before Oct 2, 00:00 UTC, the whole rental fee ($90.00) is refunded; before Oct 3, 00:00 UTC, half the rental fee ($45.00); from then on, nothing.",
+    );
+  });
+
+  it("still verifies a version 1 mandate issued before cancellation terms existed, byte for byte", () => {
+    // The same booking as issued before version 2: no cancellation field. Its hash is the one pinned then.
+    const v1: Record<string, unknown> = { ...buildMandate(input), version: 1 };
+    delete v1.cancellation;
+    const { json, sha256 } = sealMandate(v1 as unknown as DepositMandate);
+    expect(sha256).toBe("5231c681c64edc9fa0a394faadc306c5e5ab3e6d4fb3a8d9086518f0c3887974");
+    const opened = openMandate(json, sha256)!;
+    expect(opened.intact).toBe(true);
+    expect(mandateCancellation(opened.mandate)).toBeNull();
+    expect(mandateTerms(opened.mandate).join(" ")).not.toContain("cancel");
   });
 
   it("detects a changed price, a changed hash and unreadable text", () => {

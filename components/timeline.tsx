@@ -30,6 +30,11 @@ function detail(e: AuditEvent): string | null {
   if (e.type === "mandate.issued") ids.push(d.issuedTo === "assistant" ? "issued to an assistant acting for the renter" : "issued to the renter");
   if (Array.isArray(d.problems)) ids.push(...d.problems.map(String));
   if (e.type === "schedule.moved") ids.push(`${d.from} → ${d.to} · ${MOVED_VIA[String(d.via)] ?? String(d.via)}`);
+  if (e.type === "booking.cancelled") {
+    ids.push(`by ${d.by === "staff" ? "the counter" : "the renter"}`);
+    if (d.paid) ids.push(`${formatUsd(Number(d.refundCents))} of the ${formatUsd(Number(d.feeCents))} fee to refund (policy: ${d.policyPercent}%)`);
+    else ids.push("nothing was paid");
+  }
   if (e.type === "repair.blocked") ids.push(`${d.unitId} · ${d.startDate} to ${d.endDate}`);
   return ids.length ? ids.join(" · ") : null;
 }

@@ -184,8 +184,11 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
         {pack ? (
           <div className="space-y-2">
             <p className="text-sm text-ink-soft">
-              One page built from this rental&apos;s record as of {utc(pack.facts.asOf)}: both photos with their SHA-256, the findings, the customer&apos;s answers, the
-              settlement and the audit chain. Summary {pack.narrative.source === "gemini" ? `by ${pack.narrative.model}, checked against the pack's facts` : "from fixed sentences"}.
+              One page built from this rental&apos;s record as of {utc(pack.facts.asOf)}:{" "}
+              {pack.facts.cancellation
+                ? "the booking, the cancellation terms the customer agreed to, the cancellation, the refunds"
+                : "both photos with their SHA-256, the findings, the customer's answers, the settlement"}{" "}
+              and the audit chain. Summary {pack.narrative.source === "gemini" ? `by ${pack.narrative.model}, checked against the pack's facts` : "from fixed sentences"}.
             </p>
             <p className="break-all font-mono text-[11px] text-muted">sha256 {pack.sha256}</p>
             {!pack.current && actions.provideEvidence && (
@@ -203,7 +206,7 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
             </ActionButton>
           )}
           {actions.provideEvidence && (
-            <ActionButton action={submitEvidenceAction.bind(null, rental.id, d.id)} variant="brand" confirmLabel="Send the pack and both photos to PayPal" pendingLabel="Sending to PayPal…">
+            <ActionButton action={submitEvidenceAction.bind(null, rental.id, d.id)} variant="brand" confirmLabel={rental.status === "cancelled" ? "Send the pack to PayPal" : "Send the pack and both photos to PayPal"} pendingLabel="Sending to PayPal…">
               Send to PayPal
             </ActionButton>
           )}

@@ -64,6 +64,17 @@ export type RecordStrength = {
   acceptedCents: Cents;
   /** Charges the customer questioned that the counter kept anyway. */
   upheldCents: Cents;
+  /** Set when the booking was cancelled before pickup: there are no photos to prove anything, and the fee math decides. */
+  cancellation?: {
+    by: "renter" | "staff";
+    /** The renter approved the cancellation terms in their deposit mandate (version 2), and it verifies. */
+    termsInMandate: boolean;
+    feeCents: Cents;
+    /** Refunded of the fee so far, including money a dispute gave back. */
+    refundedCents: Cents;
+    /** What the shop still has of the fee. */
+    keptCents: Cents;
+  };
 };
 
 export type RecommendInput = {
@@ -105,7 +116,10 @@ export function recommend(i: RecommendInput): Recommendation {
   const r = i.record;
   const canOffer = Boolean(i.actions.makeOffer?.includes("REFUND"));
   const canAccept = i.actions.acceptClaim !== null;
-  const offerCents = r.upheldCents > 0 && r.upheldCents < i.disputedCents ? r.upheldCents : null;
+  const c = r.cancellation;
+  // A cancelled booking's offer is what the shop kept of the fee; a rental's, the charge the customer questioned.
+  const offerable = c ? c.keptCents : r.upheldCents;
+  const offerCents = offerable > 0 && offerable < i.disputedCents ? offerable : null;
   const options: OptionCost[] = [
     {
       action: "fight",
@@ -132,6 +146,8 @@ export function recommend(i: RecommendInput): Recommendation {
       reasons: ["PayPal will ask for more evidence or decide; this page updates when it does.", ...(canAccept ? ["Accepting is still possible, at the cost shown below."] : [])],
     };
   }
+
+  if (c) return cancelledAdvice(i, c, { ...base, canOffer, canAccept });
 
   const gaps = [
     !r.pickupPhoto && "there is no pickup photo",
@@ -177,5 +193,59 @@ export function recommend(i: RecommendInput): Recommendation {
     action: "fight",
     headline: "Fight, and say plainly which charge the customer questioned.",
     reasons: [`The customer questioned ${formatUsd(r.upheldCents)} that the counter kept; PayPal does not allow an offer at this stage.`, ...record],
+  };
+}
+
+/**
+ * A dispute on the fee of a booking cancelled before pickup. There are no
+ * photos to show, and none are needed: what matters is who cancelled, under
+ * which terms, and what the shop kept.
+ */
+function cancelledAdvice(
+  i: RecommendInput,
+  c: NonNullable<RecordStrength["cancellation"]>,
+  base: Pick<Recommendation, "offerCents" | "options" | "fee"> & { canOffer: boolean; canAccept: boolean },
+): Recommendation {
+  const { canOffer, canAccept, ...rest } = base;
+  const money = `The shop refunded ${formatUsd(c.refundedCents)} of the ${formatUsd(c.feeCents)} fee and kept ${formatUsd(c.keptCents)}.`;
+  const offer = base.offerCents && canOffer ? base.offerCents : null;
+  if (!i.record.chainIntact) {
+    return {
+      ...rest,
+      action: canAccept ? "accept" : "fight",
+      headline: canAccept ? "Accept: the record cannot back keeping the fee." : "Send what there is; the record has gaps.",
+      reasons: ["The evidence is weak: the audit log does not verify.", money],
+    };
+  }
+  if (c.by === "staff") {
+    const action = offer ? "offer" : canAccept ? "accept" : "fight";
+    return {
+      ...rest,
+      action,
+      headline:
+        action === "offer" ? `Offer ${formatUsd(offer!)}: the rest of the fee.` : action === "accept" ? "Accept: the shop cancelled this booking." : "Send the record; PayPal allows no offer or acceptance now.",
+      reasons: ["The shop cancelled this booking, so the customer never had the rental; keeping part of the fee is hard to defend.", money],
+    };
+  }
+  if (c.termsInMandate) {
+    return {
+      ...rest,
+      action: "fight",
+      headline: "Fight: the customer cancelled under terms they approved at booking.",
+      reasons: [
+        "The cancellation terms are in the deposit mandate the customer approved in PayPal at booking; the audit log recorded its hash then and still verifies.",
+        `The customer cancelled before pickup. ${money}`,
+        ...(offer ? [`Or offer the ${formatUsd(offer)} kept: no dispute fee, and the customer gets the whole fee back.`] : []),
+      ],
+    };
+  }
+  return {
+    ...rest,
+    action: offer ? "offer" : "fight",
+    headline: offer ? `Offer ${formatUsd(offer)}: the rest of the fee.` : "Fight, but the terms are not in the customer's mandate.",
+    reasons: [
+      "This booking's mandate carries no cancellation terms (it was made before they were added), so the record cannot show that the customer approved the policy the shop applied.",
+      money,
+    ],
   };
 }

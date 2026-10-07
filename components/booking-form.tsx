@@ -21,13 +21,15 @@ type Props = {
   dailyCents: number;
   depositCents: number;
   maxDays: number;
+  /** The last pickup date that can be booked. */
+  lastPickup: string;
   today: string;
   /** The dates the form starts on; today to three days later when not given. */
   initial?: { start: string; end: string };
   paypal: { clientId: string; environment: "sandbox" | "production" } | null;
 };
 
-function useBooking({ itemId, dailyCents, maxDays, today, initial }: Props) {
+function useBooking({ itemId, dailyCents, maxDays, lastPickup, today, initial }: Props) {
   const [start, setStart] = useState(initial?.start ?? today);
   const [end, setEnd] = useState(initial?.end ?? addDaysIso(today, 3));
   const [name, setName] = useState("");
@@ -44,6 +46,8 @@ function useBooking({ itemId, dailyCents, maxDays, today, initial }: Props) {
       ? "The return date must be after the pickup date."
       : days > maxDays
         ? `Rentals can be at most ${maxDays} days.`
+        : start > lastPickup
+          ? `Bookings open up to ${lastPickup}; pick an earlier pickup date.`
         : !name.trim()
           ? "Enter your name."
           : !/^\S+@\S+\.\S+$/.test(email)
@@ -67,7 +71,7 @@ export function BookingForm(props: Props) {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-medium">
           Pickup
-          <input type="date" className={field} min={props.today} value={f.start} onChange={(e) => f.setStart(e.target.value)} />
+          <input type="date" className={field} min={props.today} max={props.lastPickup} value={f.start} onChange={(e) => f.setStart(e.target.value)} />
         </label>
         <label className="text-sm font-medium">
           Return
@@ -107,7 +111,7 @@ export function BookingForm(props: Props) {
         By paying you agree to the deposit mandate: at pickup the shop may hold up to the deposit on this PayPal account, and it can charge only
         prices from the list on this page, after showing you each charge with the photos. You accept or question each one; a person at the shop
         decides the ones you question. Anything above the deposit is charged to the same account, and the rest is released when the shop settles.
-        Your rental page shows the full mandate.
+        Cancelling before pickup refunds the fee as this page says. Your rental page shows the full mandate.
       </p>
     </div>
   );

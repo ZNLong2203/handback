@@ -4,7 +4,9 @@ import type { RentalItem } from "@/lib/catalog";
 import { addDaysIso, shortDate } from "@/lib/dates";
 import { formatUsd, type Cents } from "@/lib/money";
 import { AUTHORIZATION_VALID_DAYS } from "@/lib/paypal/gateway";
-import { canonicalJson } from "./audit";
+import { canonicalJson, firstBrokenLink } from "./audit";
+import { cancellationTerms, termsSummary, type CancellationTerms } from "./cancellation";
+import type { AuditEvent, Rental } from "./types";
 
 // The deposit mandate: what the renter allows the shop to do with their
 // PayPal account, written down when the booking starts and approved by the
@@ -14,7 +16,7 @@ import { canonicalJson } from "./audit";
 
 const cents = z.number().int().nonnegative();
 
-export const DepositMandateSchema = z.object({
+const MandateV1 = z.object({
   type: z.literal("handback.deposit-mandate"),
   version: z.literal(1),
   rentalId: z.string(),
@@ -51,7 +53,23 @@ export const DepositMandateSchema = z.object({
   createdAt: z.string(),
 });
 
+/**
+ * Version 2 adds the cancellation terms. Mandates issued before it stay
+ * version 1, without them, and still verify byte for byte: their text is
+ * never rewritten.
+ */
+const MandateV2 = MandateV1.extend({
+  version: z.literal(2),
+  /** The share of the rental fee refunded when the renter cancels before each moment (UTC, earliest first); from the last one, the pickup day, nothing. */
+  cancellation: z.object({ feeRefund: z.array(z.object({ before: z.string(), percent: z.number().int().min(0).max(100) })) }),
+});
+
+export const DepositMandateSchema = z.discriminatedUnion("version", [MandateV1, MandateV2]);
+
 export type DepositMandate = z.infer<typeof DepositMandateSchema>;
+
+/** The cancellation terms a mandate fixed, or null for a version 1 mandate that has none. */
+export const mandateCancellation = (m: DepositMandate): CancellationTerms | null => (m.version === 2 ? m.cancellation : null);
 export type MandateIssuer = { party: "renter" } | { party: "assistant"; assistant: string | null };
 
 export type MandateInput = {
@@ -80,7 +98,7 @@ export function buildMandate(input: MandateInput): DepositMandate {
   const { item, renter, issuer } = input;
   return {
     type: "handback.deposit-mandate",
-    version: 1,
+    version: 2,
     rentalId: input.rentalId,
     shop: { name: input.shop.name, city: input.shop.city },
     item: { id: item.id, name: item.name },
@@ -97,6 +115,7 @@ export function buildMandate(input: MandateInput): DepositMandate {
     priceList: item.prices.map((p) => ({ id: p.id, label: p.label, kind: p.kind, cents: p.cents })),
     expiresAt: mandateExpiry(input.pickup),
     createdAt: input.createdAt.toISOString(),
+    cancellation: cancellationTerms(input.pickup),
   };
 }
 
@@ -110,7 +129,7 @@ export function sealMandate(mandate: DepositMandate): { json: string; sha256: st
 
 /**
  * Reads a stored mandate back. `intact` is false when the text no longer
- * matches its hash or is not exactly a canonical v1 mandate; null when it
+ * matches its hash or is not exactly a canonical mandate; null when it
  * cannot be read at all.
  */
 export function openMandate(json: string, hash: string): { mandate: DepositMandate; intact: boolean } | null {
@@ -125,8 +144,34 @@ export function openMandate(json: string, hash: string): { mandate: DepositManda
   return { mandate: parsed.data, intact: sha256(json) === hash && canonicalJson(parsed.data) === json };
 }
 
+export type MandateOnRecord =
+  /** Booked before mandates existed: no mandate stored and none recorded. */
+  | { kind: "none" }
+  | { kind: "trusted"; mandate: DepositMandate }
+  | { kind: "untrusted"; problem: string };
+
+/**
+ * The rental's mandate, if it can be trusted: the stored text must hash to
+ * the value the audit chain recorded when the booking started, be a
+ * canonical mandate for this rental, and the chain itself must verify. The
+ * same check stands in front of every hold and charge (service.ts) and
+ * decides which cancellation terms apply (cancel.ts).
+ */
+export function mandateOnRecord(rental: Pick<Rental, "id" | "mandateJson" | "mandateSha256">, events: AuditEvent[]): MandateOnRecord {
+  const issued = events.find((e) => e.type === "mandate.issued");
+  const recorded = typeof issued?.data.sha256 === "string" ? issued.data.sha256 : null;
+  if (!recorded && !rental.mandateJson && !rental.mandateSha256) return { kind: "none" };
+  const broken = firstBrokenLink(events);
+  if (broken !== null) {
+    return { kind: "untrusted", problem: `The rental's audit log was changed after the fact (entry ${broken} no longer matches), so the mandate it recorded cannot be trusted.` };
+  }
+  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
+  if (opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id) return { kind: "trusted", mandate: opened.mandate };
+  return { kind: "untrusted", problem: "The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it." };
+}
+
 /** The mandate in plain sentences, for the renter's page and for assistants to read out. */
-export function mandateTerms(m: Pick<DepositMandate, "feeCents" | "hold" | "expiresAt">): string[] {
+export function mandateTerms(m: Pick<DepositMandate, "feeCents" | "hold" | "expiresAt"> & { cancellation?: CancellationTerms }): string[] {
   return [
     `The rental fee of ${formatUsd(m.feeCents)} is paid when you approve the booking in PayPal. Nothing is charged before that.`,
     `When you pick the item up, the shop can hold up to ${formatUsd(m.hold.maxCents)} on the same PayPal account. A hold is not a charge.`,
@@ -134,6 +179,7 @@ export function mandateTerms(m: Pick<DepositMandate, "feeCents" | "hold" | "expi
     "You accept or question each charge yourself. A charge you question is decided by a person at the shop after reading your reason.",
     "If the charges come to more than the hold, the difference is charged to the same PayPal account.",
     `Everything held and not charged is released when the shop settles. Nothing can be held or charged under the mandate from ${shortDate(m.expiresAt)}.`,
+    ...(m.cancellation ? [termsSummary(m.cancellation, m.feeCents)] : []),
   ];
 }
 

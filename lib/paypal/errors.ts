@@ -35,6 +35,14 @@ export class PayPalError extends Error {
   get retryable(): boolean {
     return this.status === 429 || this.status >= 500;
   }
+
+  /**
+   * True when PayPal definitely did not do it: a 4xx it would answer the same
+   * way again. No answer, a timeout, a conflict, 429 or a 5xx may have landed.
+   */
+  get definitelyRefused(): boolean {
+    return this.status >= 400 && this.status < 500 && ![408, 409, 429].includes(this.status);
+  }
 }
 
 type ErrorBody = {
