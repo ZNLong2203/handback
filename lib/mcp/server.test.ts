@@ -19,6 +19,7 @@ const { canonicalJson } = await import("@/lib/rentals/audit");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
 const { applyPayPalWebhook } = await import("@/lib/rentals/webhooks");
+const { cancelAsRenter } = await import("@/lib/rentals/cancel");
 const { handleMcpRequest } = await import("./server");
 
 const ENDPOINT = "http://localhost:3000/api/mcp";
@@ -82,6 +83,7 @@ describe("MCP tools", () => {
     expect(out).toMatchObject({ days: 2, payNow: { cents: 9000, usd: "$90.00" }, depositHold: { cents: 30000 } });
     expect(out.priceList.map((p) => p.id)).toContain("missing-battery");
     expect(out.terms.join(" ")).toContain("up to $300.00");
+    expect(out.terms.at(-1)).toMatch(/^If you cancel before .*, the whole rental fee \(\$90\.00\) is refunded; .*half the rental fee \(\$45\.00\); from then on, nothing\.$/);
   });
 
   it("tells the assistant what to fix", async () => {
@@ -183,6 +185,29 @@ describe("MCP tools", () => {
     });
     const status = await call(client, "get_rental_status", { statusToken: booking.statusToken });
     expect(status).toMatchObject({ status: "out", amounts: { heldNow: { usd: "$300.00" }, kept: null, released: null } });
+  });
+
+  it("reports a cancellation and its refund, and cannot cancel", async () => {
+    const booking = await call(client, "create_booking", { itemId: "drone-kit", ...spacedDates(2, 2), ...sam });
+    const rental = (await repo.rentalById(await getDb(), booking.rentalId))!;
+    await svc.returnFromPayPal(rental.token, { token: booking.approveUrl.split("token=")[1], PayerID: "DEMOPAYER" });
+
+    // No tool cancels, and the status token is not the renter's page token, so it cannot cancel either.
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).filter((n) => /cancel|refund/.test(n))).toEqual([]);
+    expect(await refusal(client, "cancel_booking", { statusToken: booking.statusToken })).toMatch(/not found/);
+    await expect(cancelAsRenter(booking.statusToken, null)).rejects.toThrow(/This link is not valid/);
+    expect((await call(client, "get_rental_status", { statusToken: booking.statusToken })).status).toBe("booked");
+
+    // The renter cancels on their own page, two days ahead: the whole $90.00 back.
+    await cancelAsRenter(rental.token, 9000, new Date(Date.parse(`${rental.startDate}T00:00:00Z`) - 48 * 3_600_000));
+    const status = await call(client, "get_rental_status", { statusToken: booking.statusToken });
+    expect(status).toMatchObject({
+      status: "cancelled",
+      amounts: { feePaid: true, refunded: { usd: "$90.00" }, heldNow: null },
+      cancellation: { by: "renter", reason: null, feePaid: true, feeRefund: { cents: 9000 }, refundStatus: "refunded" },
+    });
+    expect(status.nextStep).toMatch(/renter cancelled this booking before pickup/);
   });
 
   it("reads a rental only with its status token, not with the renter's page token or a guess", async () => {

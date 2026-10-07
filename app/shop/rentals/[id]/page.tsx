@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { demoOpenDisputeAction, findDisputesAction, holdDepositAction, inspectAction, resendRefundAction, sendToCustomerAction, settleAction } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { CancelForm } from "@/components/cancel-form";
+import { CancellationReceipt } from "@/components/cancellation-receipt";
 import { DisputePanel } from "@/components/dispute-panel";
 import { ShopHeader } from "@/components/headers";
 import { InspectionView } from "@/components/inspection-view";
@@ -19,9 +21,10 @@ import { loadDisputeDesk } from "@/lib/disputes/service";
 import { paypalConfig } from "@/lib/paypal/config";
 import { formatUsd } from "@/lib/money";
 import { samplesFor } from "@/lib/samples";
+import { quoteCancellation } from "@/lib/rentals/cancel";
 import { renewalDueAt } from "@/lib/rentals/jobs";
 import { awaitingResolution } from "@/lib/rentals/settlement";
-import { STATUS, STEPS, stepIndex } from "@/lib/rentals/status";
+import { feePending, STATUS, STEPS, stepIndex } from "@/lib/rentals/status";
 import { loadRentalView, type RentalView } from "@/lib/rentals/view";
 import { appUrl } from "@/lib/shop";
 import { requireStaffPage } from "@/lib/staff-access";
@@ -55,6 +58,66 @@ function Photo({ sha, label }: { sha: string; label: string }) {
   );
 }
 
+/** Refunds of what the shop took: a settlement's charges, or the fee of a cancelled booking. */
+function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean }) {
+  const { rental } = view;
+  const refundLeft = view.refundable.some((c) => c.leftCents > 0);
+  const captureLabel = (captureId: string) =>
+    view.refundable.find((c) => c.captureId === captureId)?.label ?? (captureId === rental.feeCaptureId ? "the rental fee" : `capture ${captureId}`);
+  return (
+    (view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
+      <div className="mt-5 space-y-3 border-t border-line pt-4">
+        <h3 className="font-semibold">Refunds</h3>
+        {view.waitingRefunds.map((r) => (
+          <div key={r.id} className="space-y-2 rounded-2xl bg-held-soft p-4 text-sm">
+            <p>
+              Refund {r.seq}: <span className="tabular font-semibold">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
+              {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}. It was sent to PayPal, but PayPal&apos;s answer
+              was lost, so it may or may not have gone through.
+            </p>
+            {r.resendable ? (
+              <ActionButton action={resendRefundAction.bind(null, rental.id, r.seq)} variant="outline" size="sm" pendingLabel="Asking PayPal…">
+                Send refund {r.seq} again, unchanged
+              </ActionButton>
+            ) : (
+              <p className="text-muted">
+                Sent more than an hour ago, so sending it again could refund twice. Check the capture in PayPal; when PayPal reports the refund,
+                it is recorded here.
+              </p>
+            )}
+          </div>
+        ))}
+        {view.refunds
+          .filter((r) => r.state === "done")
+          .map((r) => (
+            <div key={r.id} className="text-sm">
+              <p>
+                <span className="tabular font-semibold text-released">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
+                {r.paypalStatus === "PENDING"
+                    ? ": PayPal is processing it."
+                    : r.paypalStatus === "FAILED" || r.paypalStatus === "CANCELLED"
+                      ? `: PayPal reports it ${r.paypalStatus.toLowerCase()}.`
+                      : r.source === "webhook"
+                        ? ": refunded outside the counter, reported by PayPal."
+                        : " refunded."}
+                {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}
+              </p>
+              {r.refundId && <p className="font-mono text-xs text-muted">refund {r.refundId}</p>}
+            </div>
+          ))}
+        {disputeOpen ? (
+          <p className="max-w-prose text-sm text-muted">
+            The customer has an open PayPal dispute on this rental. To give money back, use the dispute desk above, so PayPal counts it toward
+            the case.
+          </p>
+        ) : refundLeft ? (
+          <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} />
+        ) : null}
+      </div>
+    )
+  );
+}
+
 export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[id]">) {
   const { id } = await props.params;
   await requireStaffPage(`/shop/rentals/${id}`);
@@ -69,9 +132,9 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
   const settled = rental.status === "settled" || rental.status === "disputed";
   const paypalMode = paypalConfig().mode;
   const disputeOpen = Boolean(view.dispute && view.dispute.status !== "RESOLVED");
-  const refundLeft = view.refundable.some((c) => c.leftCents > 0);
-  const captureLabel = (captureId: string) =>
-    view.refundable.find((c) => c.captureId === captureId)?.label ?? (captureId === rental.feeCaptureId ? "the rental fee" : `capture ${captureId}`);
+  const cancellable = rental.status === "booked" || rental.status === "draft";
+  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute }, "staff", new Date()) : null;
+  const paid = rental.feeCaptureId !== null && !feePending(rental) && !(rental.status === "cancelled" && !rental.cancelledAt);
 
   return (
     <>
@@ -92,10 +155,20 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               </div>
               <Badge tone={status.tone}>{status.label}</Badge>
             </div>
-            <div className="mt-6">
-              <Steps status={rental.status} />
-            </div>
-            <p className="mt-5 text-sm font-medium text-ink-soft">Next: {status.staffNext}.</p>
+            {rental.status === "cancelled" ? (
+              <p className="mt-5 text-sm font-medium text-ink-soft">
+                {rental.cancelledAt
+                  ? `Cancelled before pickup by ${rental.cancelledBy === "staff" ? "the counter" : "the customer"} on ${shortDate(rental.cancelledAt)}. The unit is free again.`
+                  : "PayPal declined the fee, so the booking was cancelled with nothing charged."}
+              </p>
+            ) : (
+              <>
+                <div className="mt-6">
+                  <Steps status={rental.status} />
+                </div>
+                <p className="mt-5 text-sm font-medium text-ink-soft">Next: {status.staffNext}.</p>
+              </>
+            )}
           </Card>
 
           {desk && <DisputePanel desk={desk} rental={rental} />}
@@ -122,6 +195,38 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               ) : (
                 <PhotoCapture rentalId={rental.id} phase="checkout" shot={item.shot} samples={samplesFor(item.id, "checkout")} />
               )}
+            </Card>
+          )}
+
+          {cancel && (
+            <Card className="space-y-4 p-6">
+              <div>
+                <h2 className="font-display text-2xl font-bold">Cancel the booking</h2>
+                <p className="mt-1 text-sm text-muted">
+                  {rental.status === "draft" ? "Not paid yet." : `Paid ${formatUsd(rental.feeCents)} at booking; no deposit is held before pickup.`}
+                </p>
+              </div>
+              {cancel.blocked ? (
+                <p className="max-w-prose text-sm text-ink-soft">{cancel.blocked}</p>
+              ) : (
+                <CancelForm
+                  rentalId={rental.id}
+                  paid={cancel.paid}
+                  policyCents={cancel.refundCents}
+                  policyPercent={cancel.policy.percent}
+                  feeLeftCents={cancel.feeLeftCents}
+                  firstName={rental.customerName.split(" ")[0]}
+                />
+              )}
+            </Card>
+          )}
+
+          {rental.status === "cancelled" && rental.cancelledAt && (
+            <Card className="p-6">
+              <h2 className="font-display text-2xl font-bold">Cancelled</h2>
+              {rental.cancelReason && <p className="mt-1 text-sm text-muted">&ldquo;{rental.cancelReason}&rdquo;</p>}
+              <CancellationReceipt rental={rental} refunds={view.refunds} audience="staff" />
+              <Refunds view={view} disputeOpen={disputeOpen} />
             </Card>
           )}
 
@@ -261,56 +366,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               {desk?.dispute.outcome === "RESOLVED_BUYER_FAVOUR" && (
                 <p className="mt-3 text-sm text-charged">After the dispute, PayPal refunded {formatUsd(desk.dispute.refundedCents ?? desk.dispute.amountCents ?? 0)} of this to the customer.</p>
               )}
-              {(view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
-                <div className="mt-5 space-y-3 border-t border-line pt-4">
-                  <h3 className="font-semibold">Refunds</h3>
-                  {view.waitingRefunds.map((r) => (
-                    <div key={r.id} className="space-y-2 rounded-2xl bg-held-soft p-4 text-sm">
-                      <p>
-                        Refund {r.seq}: <span className="tabular font-semibold">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
-                        {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}. It was sent to PayPal, but PayPal&apos;s answer
-                        was lost, so it may or may not have gone through.
-                      </p>
-                      {r.resendable ? (
-                        <ActionButton action={resendRefundAction.bind(null, rental.id, r.seq)} variant="outline" size="sm" pendingLabel="Asking PayPal…">
-                          Send refund {r.seq} again, unchanged
-                        </ActionButton>
-                      ) : (
-                        <p className="text-muted">
-                          Sent more than an hour ago, so sending it again could refund twice. Check the capture in PayPal; when PayPal reports the refund,
-                          it is recorded here.
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                  {view.refunds
-                    .filter((r) => r.state === "done")
-                    .map((r) => (
-                      <div key={r.id} className="text-sm">
-                        <p>
-                          <span className="tabular font-semibold text-released">{formatUsd(r.amountCents)}</span> of {captureLabel(r.captureId)}
-                          {r.paypalStatus === "PENDING"
-                              ? ": PayPal is processing it."
-                              : r.paypalStatus === "FAILED" || r.paypalStatus === "CANCELLED"
-                                ? `: PayPal reports it ${r.paypalStatus.toLowerCase()}.`
-                                : r.source === "webhook"
-                                  ? ": refunded outside the counter, reported by PayPal."
-                                  : " refunded."}
-                          {r.reason ? <span className="text-muted"> &ldquo;{r.reason}&rdquo;</span> : null}
-                        </p>
-                        {r.refundId && <p className="font-mono text-xs text-muted">refund {r.refundId}</p>}
-                      </div>
-                    ))}
-                  {disputeOpen ? (
-                    <p className="max-w-prose text-sm text-muted">
-                      The customer has an open PayPal dispute on this rental. To give money back, use the dispute desk above, so PayPal counts it toward
-                      the case.
-                    </p>
-                  ) : refundLeft ? (
-                    <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} />
-                  ) : null}
-                </div>
-              )}
+              <Refunds view={view} disputeOpen={disputeOpen} />
               {!desk && (
                 <div className="mt-5 flex flex-wrap items-start gap-3 border-t border-line pt-4">
                   {paypalMode === "demo" ? (
@@ -340,7 +396,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             <p className="text-sm text-muted">{rental.customerEmail}</p>
             <dl className="mt-4 space-y-1.5 text-sm">
               <div className="flex justify-between gap-3">
-                <dt className="text-muted">Fee paid</dt>
+                <dt className="text-muted">{paid ? "Fee paid" : "Fee, not paid"}</dt>
                 <dd className="tabular font-semibold">{formatUsd(rental.feeCents)}</dd>
               </div>
               {view.feeRefundedCents > 0 && (
@@ -413,6 +469,8 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                 )}
                 <div className="break-all font-mono text-[11px] text-muted">authorization {rental.authorizationId}</div>
               </dl>
+            ) : rental.status === "cancelled" ? (
+              <p className="mt-2 text-sm text-muted">None held: the booking was cancelled before pickup.</p>
             ) : (
               <p className="mt-2 text-sm text-muted">{formatUsd(rental.depositCents)} will be held at pickup.</p>
             )}

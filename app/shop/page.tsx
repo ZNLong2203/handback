@@ -7,7 +7,7 @@ import { catalogItem } from "@/lib/catalog";
 import { shortDate } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { formatUsd } from "@/lib/money";
-import { refundTotals } from "@/lib/rentals/refunds";
+import { feeRefundTotals, refundTotals } from "@/lib/rentals/refunds";
 import { listRentals } from "@/lib/rentals/repo";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus } from "@/lib/rentals/types";
@@ -22,14 +22,19 @@ const GROUPS: { title: string; hint: string; statuses: RentalStatus[] }[] = [
   { title: "Picking up", hint: "Paid; photograph and hold the deposit", statuses: ["booked"] },
   { title: "Out now", hint: "Deposit held on PayPal", statuses: ["out"] },
   { title: "With the customer", hint: "Waiting for their answers", statuses: ["customer_review"] },
-  { title: "Settled", hint: "Deposit charged or released", statuses: ["settled", "cancelled"] },
+  { title: "Settled", hint: "Deposit charged or released", statuses: ["settled"] },
+  { title: "Cancelled", hint: "Before pickup; the unit is free again", statuses: ["cancelled"] },
 ];
 
-function RentalRow({ r, unit, refunded = 0 }: { r: Rental; unit?: Handover; refunded?: number }) {
+function RentalRow({ r, unit, refunded = 0, feeRefunded = 0 }: { r: Rental; unit?: Handover; refunded?: number; feeRefunded?: number }) {
   const item = catalogItem(r.itemId);
   const status = STATUS[r.status];
   const money =
-    r.status === "settled"
+    r.status === "cancelled"
+      ? r.cancelledAt && r.feeCaptureId
+        ? `${formatUsd(feeRefunded)} of ${formatUsd(r.feeCents)} fee refunded`
+        : "Nothing paid"
+      : r.status === "settled"
       ? `${formatUsd(r.releasedCents ?? 0)} released${r.capturedCents ? ` · ${formatUsd(r.capturedCents)} kept` : ""}${refunded ? ` · ${formatUsd(refunded)} refunded` : ""}`
       : r.authorizedCents
         ? `${formatUsd(r.authorizedCents)} held`
@@ -44,7 +49,7 @@ function RentalRow({ r, unit, refunded = 0 }: { r: Rental; unit?: Handover; refu
         <span className="min-w-0">
           <span className="block truncate font-semibold">{r.customerName}</span>
           <span className="block truncate text-sm text-muted">
-            {item.name} · {unit ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
+            {item.name} · {unit && r.status !== "cancelled" ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
             {shortDate(r.startDate)}–{shortDate(r.endDate)}
           </span>
           {unit?.warning && <span className="block truncate text-xs font-medium text-charged">{unit.warning}</span>}
@@ -65,6 +70,7 @@ export default async function Counter() {
   const rentals = await listRentals(db);
   const units = await handovers(rentals);
   const refunds = await refundTotals(db);
+  const feeRefunds = await feeRefundTotals(db);
   const held = rentals.filter((r) => ["out", "inspecting", "customer_review", "responded"].includes(r.status)).reduce((s, r) => s + (r.authorizedCents ?? 0), 0);
   const settled = rentals.filter((r) => r.status === "settled");
   const released = settled.reduce((s, r) => s + (r.releasedCents ?? 0), 0);
@@ -124,7 +130,7 @@ export default async function Counter() {
                 </div>
                 <ul className="space-y-2">
                   {list.map((r) => (
-                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} refunded={refunds.get(r.id)} />
+                    <RentalRow key={r.id} r={r} unit={units.get(r.id)} refunded={refunds.get(r.id)} feeRefunded={feeRefunds.get(r.id)} />
                   ))}
                 </ul>
               </section>

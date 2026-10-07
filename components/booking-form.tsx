@@ -107,7 +107,7 @@ export function BookingForm(props: Props) {
         By paying you agree to the deposit mandate: at pickup the shop may hold up to the deposit on this PayPal account, and it can charge only
         prices from the list on this page, after showing you each charge with the photos. You accept or question each one; a person at the shop
         decides the ones you question. Anything above the deposit is charged to the same account, and the rest is released when the shop settles.
-        Your rental page shows the full mandate.
+        Cancelling before pickup refunds the fee as this page says. Your rental page shows the full mandate.
       </p>
     </div>
   );
