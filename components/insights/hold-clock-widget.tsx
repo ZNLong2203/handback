@@ -159,7 +159,7 @@ export default function HoldClockWidget(params: AgWidgetParams<HoldClockWidget>)
                 <title>{summary}</title>
                 <rect x={0} y={y + 2} width={box.width} height={rowH(h) - 4} className="hb-clock-hit" rx={8} />
                 <text x={8} y={y + 16} className="hb-clock-label">
-                  {h.label ?? h.id}
+                  {fit(h.label ?? h.id, labelW - 16)}
                 </text>
                 <text x={8} y={y + 32} className="hb-clock-sub">
                   {h.id}
@@ -205,5 +205,11 @@ export default function HoldClockWidget(params: AgWidgetParams<HoldClockWidget>)
     </div>
   );
 }
+
+/** Cuts a label to the room it has (about 7 px a character at this size); the full text stays in the row's accessible name. */
+const fit = (text: string, px: number) => {
+  const max = Math.max(4, Math.floor(px / 7));
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+};
 
 const diamond = (cx: number, cy: number, r: number) => `M${cx},${cy - r} L${cx + r},${cy} L${cx},${cy + r} L${cx - r},${cy} Z`;
