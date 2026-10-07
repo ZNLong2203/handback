@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
+import { DemoResetNote } from "@/components/demo-reset-note";
 import { StoreHeader } from "@/components/headers";
 import { Badge, Card, Eyebrow } from "@/components/ui";
 import { CATALOG } from "@/lib/catalog";
@@ -45,6 +46,7 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
         <Card className="h-fit p-6 lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <h2 className="font-display text-2xl font-bold">Book it</h2>
           <p className="mt-1 text-sm text-muted">Pick up and return at {SHOP.name}, {SHOP.city}.</p>
+          <DemoResetNote audience="renter" className="mt-2" />
           {later && (
             <p className="mt-2 text-sm text-held" data-testid="first-free">
               No {item.name.toLowerCase()} is free for {FIRST_STAY_DAYS} days from today, so the dates below start on the first free ones, {spanLabel(later)}.

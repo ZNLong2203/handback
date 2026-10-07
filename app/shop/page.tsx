@@ -1,5 +1,6 @@
 import { ArrowUpRight, CalendarRange, Plus } from "lucide-react";
 import Link from "next/link";
+import { DemoResetNote } from "@/components/demo-reset-note";
 import { ShopHeader } from "@/components/headers";
 import { LiveRefresh } from "@/components/live-refresh";
 import { Badge, ButtonLink, Card, Eyebrow } from "@/components/ui";
@@ -79,6 +80,7 @@ export default async function Counter() {
           <div>
             <Eyebrow>Counter</Eyebrow>
             <h1 className="mt-1 font-display text-4xl font-bold tracking-tight">Today at the counter</h1>
+            <DemoResetNote audience="counter" className="mt-2 max-w-xl" />
           </div>
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/shop/schedule" variant="primary">
