@@ -35,7 +35,8 @@ test("the insights dashboard shows where the deposits went, the hold clock, and 
   const clock = page.getByTestId("hold-clock");
   await expect(clock.getByText("72 h", { exact: true })).toBeVisible();
   await expect(clock.getByRole("button", { name: /held .* of 29 days/ }).first()).toBeVisible();
-  await expect(clock.getByText("The renter has answered; ready to settle.", { exact: true })).toBeVisible();
+  // Other specs on the same server can have a renter who has answered too.
+  await expect(clock.getByText("The renter has answered; ready to settle.", { exact: true }).first()).toBeVisible();
   await shot(page, "insights-overview");
 
   // A click on a band filters the page: rentals whose deposit was captured have no running hold.
