@@ -215,3 +215,21 @@ Both samples write their links on `api.sandbox.paypal.com`.
 `confirmBooking` reads the order back when PayPal answers a capture with `ORDER_ALREADY_CAPTURED` (a capture that went through unanswered, retried after PayPal stopped recognising its request id). `GET /v2/checkout/orders/5VT96881B7313973S`, the `R-BYNANG` booking above (debug_id `ca44b72392bcf`), returned status `COMPLETED` with the fee capture `5CM53111UC959472K` (`COMPLETED`, 87.00) under `purchase_units[0].payments.captures` and the saved-wallet token, `VAULTED`, under `payment_source.paypal.attributes.vault`: everything the booking records. The `ORDER_ALREADY_CAPTURED` refusal itself was not provoked in the sandbox.
 
 Capturing a booking from a real `CHECKOUT.ORDER.APPROVED` delivery has not been seen: it needs a deployment with a public URL. The handler is tested against the simulator's payload shape above.
+
+## 2026-10-07: cancelling a paid booking before pickup
+
+`scripts/sandbox-cancel.ts` books through the app's `startBooking`, has the sandbox buyer approve PayPal's payer-action page in a headless browser (the redirect back to the renter's page is intercepted, so no app server ran), captures through `returnFromPayPal`, then cancels with the app's `cancelAsRenter` (`lib/rentals/cancel.ts`) on the app's database. Rental `R-ZPAGTC`: action camera kit, pickup the next day (Oct 8), $38.00 fee. The booking's mandate is version 2, with the cancellation terms fixed to its pickup day (whole fee before Oct 7 00:00 UTC, half before Oct 8 00:00 UTC); cancelling on Oct 7 at 08:13 UTC fell in the half tier.
+
+| # | What we tried | Result |
+|---|---|---|
+| 1 | Booking order for the fee, approved by the sandbox buyer ("Agree & Pay Now") | Order `44V339624F034883R`; PayPal sent the buyer back with `PayerID` `QJUL8ARAJ5X86` |
+| 2 | Capture through `returnFromPayPal` (`booking-capture:R-ZPAGTC`) | Fee capture `5EW75258X3375844S`, $38.00, wallet saved; rental booked |
+| 3 | The renter cancels; the page showed $19.00 (50%) and sends it (`PayPal-Request-Id: refund:R-ZPAGTC:1`, `invoice_id` `R-ZPAGTC-refund-1`) | Refund `8FA52654WA4204304`, `COMPLETED`, 19.00, with the policy sentence as `note_to_payer`. Rental cancelled, `booking.cancelled` and `refund.issued` in the audit chain |
+| 4 | The same cancel again | Answered from the app's record ("already cancelled"); PayPal was not called |
+| 5 | The same refund request sent to PayPal again with the same `PayPal-Request-Id` | PayPal returned refund `8FA52654WA4204304` again, `COMPLETED`, 19.00: no second refund |
+| 6 | The counter refunds the rest of the fee of the cancelled booking (`refundCharge`, `refund:R-ZPAGTC:2`) | Refund `2Y725034VG2941903`, `COMPLETED`, 19.00 |
+| 7 | `GET /v2/payments/refunds/{id}` for both, `GET /v2/payments/captures/5EW75258X3375844S` | Both refunds `COMPLETED` with their invoice ids and notes (debug_ids `f4674027223d0`, `f690750522ab1`); the fee capture reads `REFUNDED`, 38.00 (debug_id `f147888258e0e`) |
+
+What this shows: a fee capture from the booking order is refunded with the same Payments v2 call and the same request-id rule as a settlement capture, and a partial refund followed by the rest leaves the capture `REFUNDED`.
+
+Not tried in the sandbox: the counter cancelling with an amount it chooses (the same `sendRefund`, tested in demo mode), cancelling an unpaid draft (no PayPal call), a cancel racing the deposit hold, a capture that lands after a draft was cancelled, and a cancellation refund whose answer was lost and is completed by `PAYMENT.CAPTURE.REFUNDED` (tested against the simulator's payload shape; no deployment receives webhooks yet).
