@@ -15,6 +15,7 @@ const { PayPalError } = await import("@/lib/paypal/errors");
 const repo = await import("@/lib/rentals/repo");
 const svc = await import("@/lib/rentals/service");
 const { SEED_NAME, SEED_PLAN } = await import("@/lib/schedule/seed");
+const { INSIGHTS_PLAN, INSIGHTS_SEED } = await import("@/lib/insights/seed");
 const { SCENARIOS } = await import("@/lib/seed/plan");
 const { spacedDates } = await import("@/test/dates");
 const { KEPT_TABLES, lastDemoReset, resetDemo, WIPED_TABLES } = await import("./reset");
@@ -106,7 +107,7 @@ describe("resetDemo", () => {
         { rentalId: held.id, outcome: "voided" },
         { rentalId: refused.id, outcome: "failed", detail: "AUTHORIZATION_ALREADY_CAPTURED (PayPal debug_id debug-123)" },
       ],
-      seeded: { counter: 0, schedule: 0, note: expect.stringMatching(/SEED_VAULT_ID is not set/) },
+      seeded: { counter: 0, schedule: 0, insights: 0, note: expect.stringMatching(/SEED_VAULT_ID is not set/) },
     });
     expect(await rentalIds()).toEqual([]);
     expect(await resetRows()).toEqual([{ day: "2026-01-01", status: "done" }]);
@@ -134,7 +135,7 @@ describe("resetDemo", () => {
     expect(await at("2026-01-02T22:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
   });
 
-  it("in demo mode, deletes every rental and seeds the counter and the demo schedule again", async () => {
+  it("in demo mode, deletes every rental and seeds the counter, the demo schedule and the dashboard history again", async () => {
     const visitor = await visitorRental({ hold: true });
     const db = await getDb();
     await db.query("insert into webhook_events (id, event_type, verified, payload) values ('WH-1', 'PAYMENT.CAPTURE.COMPLETED', true, '{}')");
@@ -146,13 +147,15 @@ describe("resetDemo", () => {
 
     expect(await repo.rentalById(db, visitor.id)).toBeNull();
     const rentals = await repo.listRentals(db);
-    expect(rentals).toHaveLength(result.seeded.counter + result.seeded.schedule);
+    expect(rentals).toHaveLength(result.seeded.counter + result.seeded.schedule + result.seeded.insights);
     expect(result.seeded.counter).toBe(SCENARIOS.length);
     expect(result.seeded.schedule).toBeGreaterThan(SEED_PLAN.length / 2);
+    // The dashboard's history comes last, around the other two, and all of it fits.
+    expect(result.seeded.insights).toBe(INSIGHTS_PLAN.length);
     const emails = new Set(rentals.map((r) => r.customerEmail));
     for (const s of SCENARIOS) expect(emails.has(s.email), s.email).toBe(true);
     expect(await db.query("select id from webhook_events")).toEqual([]);
-    expect(await db.query("select name from demo_seeds")).toEqual([{ name: SEED_NAME }]);
+    expect(await db.query("select name from demo_seeds order by name")).toEqual([{ name: INSIGHTS_SEED }, { name: SEED_NAME }]);
 
     // The stand-in this process had cached was dropped with demo_paypal; the new one knows only the seeded holds.
     const standIn = depositGateway();
@@ -164,7 +167,7 @@ describe("resetDemo", () => {
     expect(await resetDemo({ env: ON })).toMatchObject({ status: "already-done", day: result.day });
     expect((await repo.listRentals(db)).length).toBe(rentals.length);
     expect(await lastDemoReset()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  });
+  }, 90_000);
 
   it("empties every table that holds rental data and keeps the reference data", async () => {
     const db = await getDb();

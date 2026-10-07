@@ -1,10 +1,10 @@
 import "server-only";
-import { addDaysIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { publish } from "@/lib/live";
 import { depositGateway, PayPalError } from "@/lib/paypal";
-import { AUTHORIZATION_VALID_DAYS, HONOR_PERIOD_DAYS, type DepositGateway } from "@/lib/paypal/gateway";
+import { AUTHORIZATION_VALID_DAYS, type DepositGateway } from "@/lib/paypal/gateway";
 import { appendEvent } from "./audit";
+import { renewalDueAt } from "./hold-clock";
 import { updateRental } from "./repo";
 
 const DAY_MS = 86_400_000;
@@ -12,29 +12,19 @@ const ACTIVE = ["out", "inspecting", "customer_review", "responded"];
 
 type HoldRow = { id: string; authorization_id: string; authorized_cents: number; authorized_at: Date | string; end_date: Date | string };
 
-/**
- * When to renew a deposit hold. PayPal allows one reauthorization, from 72
- * hours after the hold (measured in the sandbox: refused at 71.9 hours,
- * accepted at 72.3) to day 29, and a renewed hold gets a fresh 3-day honor
- * period but keeps the original expiry. Renewing on day 4 would waste the
- * honor period on a two-week rental, so the renewal waits for the day before
- * the item is due back, and never comes before day 4.
- */
-export function renewalDueAt(authorizedAt: Date, endDate: string): Date {
-  const earliest = new Date(authorizedAt.getTime() + HONOR_PERIOD_DAYS * DAY_MS);
-  const dayBeforeReturn = new Date(`${addDaysIso(endDate, -1)}T00:00:00Z`);
-  return dayBeforeReturn > earliest ? dayBeforeReturn : earliest;
-}
+// When to renew lives in hold-clock.ts, which the owner's dashboard reads too.
+export { renewalDueAt };
 
 export type RenewalOutcome = { rentalId: string; outcome: "renewed" | "not-due" | "expired" | "failed"; detail?: string };
 
-/** Renews every active hold that is due. Safe to run as often as you like. */
-export async function renewDueHolds(now = new Date(), gateway: DepositGateway = depositGateway()): Promise<RenewalOutcome[]> {
+/** Renews every active hold that is due (or only those of the given rentals). Safe to run as often as you like. */
+export async function renewDueHolds(now = new Date(), gateway: DepositGateway = depositGateway(), only?: string[]): Promise<RenewalOutcome[]> {
   const db = await getDb();
   const rows = await db.query<HoldRow>(
     `select id, authorization_id, authorized_cents, authorized_at, end_date from rentals
-     where status = any($1) and authorization_id is not null and parent_authorization_id is null and authorized_at is not null`,
-    [ACTIVE],
+     where status = any($1) and authorization_id is not null and parent_authorization_id is null and authorized_at is not null
+       and ($2::text[] is null or id = any($2::text[]))`,
+    [ACTIVE, only ?? null],
   );
   const results: RenewalOutcome[] = [];
   for (const row of rows) {

@@ -36,6 +36,8 @@
     "@paypal/paypal-server-sdk": "^2.5.0",
     "@paypal/react-paypal-js": "^10.5.2",
     "@renderinc/sdk": "^1.2.0",
+    "ag-studio": "3.0.0",
+    "ag-studio-react": "3.0.0",
     "lucide-react": "^1.49.0",
     "next": "16.3.8",
     "pdf-lib": "^1.17.1",

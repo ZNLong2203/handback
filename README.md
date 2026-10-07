@@ -37,6 +37,7 @@ Also in this build:
 - **A schedule of physical units, with a repair agent.** Each booking gets a physical unit (for example "Projector B") when it is made. `/shop/schedule` shows every unit on a Bryntum Scheduler timeline. When a settled return has a charged damage or missing part, the unit is blocked for its repair, and an agent suggests a fix for each booking that now clashes: another unit, later dates, or a call. Staff approve each suggestion; drags and typed commands go through the same checks on the server.
 - **Cancelling before pickup.** The booking page states the cancellation policy next to the price list: the whole fee back when cancelled at least 24 hours before the pickup day starts, half after that, nothing from the pickup day on (whole days in UTC). Each new booking's deposit mandate fixes those terms to its dates. The renter cancels on their own page and PayPal refunds what the terms give back at that moment; the counter can cancel with any refund from $0.00 up to the fee and a reason the renter sees. An unpaid booking is cancelled without calling PayPal. The unit goes back on the schedule, both pages update live, and an assistant can read the cancellation over MCP but cannot cancel. Pickups can be booked up to 120 days ahead, so every refund the policy promises stays inside PayPal's 180-day refund window. If the renter then disputes the fee, the evidence pack and the desk's advice are about the booking, the terms they approved and the cancellation, not a pickup that never happened.
 - **Refunds after settling.** If the shop kept too much, staff refund part or all of the settlement capture (or of the charge above the deposit) from the counter, with a reason the renter sees on their page. The same form refunds the rest of a cancelled booking's fee. A double submit refunds once, and while a PayPal dispute is open the counter sends staff to the dispute desk instead.
+- **An owner's dashboard built with AG Studio.** `/shop/insights` shows where the deposit money went: one row per PayPal movement with its id, what was kept for which price-list entry and how the renter answered, and every running hold on PayPal's 29-day clock. Two custom widgets (the deposit flow and the hold clock) cross-filter the page. With a Gemini key, a custom agent on AG Studio's Agent Framework, the deposit desk, answers from the record, hands chart requests to Studio's built-in agents, and can draft a refund that a person sends from the rental page ([docs/ag-studio.md](docs/ag-studio.md)).
 - **Booking through an AI assistant over MCP.** `/api/mcp` lets an assistant (Claude Desktop, Claude Code or any MCP client) list items, quote, start a booking and follow it with a read-only status token. The assistant hands the person PayPal's approval link. Money moves only after the person approves in PayPal and the counter settles, and every hold and charge is checked against the deposit mandate first.
 
 ![The schedule after a damaged return: Projector A is in repair, and the agent suggests moving Priya to Projector B and offering Diego later dates](docs/images/schedule-proposals.png)
@@ -75,6 +76,7 @@ Then, still in demo mode:
 - **Cancel.** Book another item with a pickup date two or more days ahead. On the renter's page, **Cancel this booking** shows what comes back (the whole fee this early) and asks to confirm; the counter's page turns to **Cancelled** with the refund without a reload. On a booked rental at the counter, **Cancel the booking** lets staff choose the refund and type the reason the renter sees.
 - **Dispute.** On the settled rental, press **Demo stand-in: the customer disputes this charge with PayPal**, then **Prepare the evidence pack**, **Send to PayPal** and confirm. The panel's **Demo stand-in: play PayPal's part** buttons ask for evidence again and decide the case.
 - **Schedule.** Open **Schedule** at the counter. The first visit books two weeks of sample rentals through the real service; [docs/bryntum.md](docs/bryntum.md#demo-data) shows how to stage a damaged return.
+- **Insights.** Open **Insights** at the counter. The first visit books six weeks of sample rentals through the real service; click a band of the deposit flow to filter the page. With `GEMINI_API_KEY` set, **Edit and ask the deposit desk** opens the agent.
 - **Assistant.** `claude mcp add --transport http handback http://localhost:3000/api/mcp`, or any client from [docs/agents.md](docs/agents.md#connecting-a-client). In demo mode the approval link opens a page labelled as a stand-in for PayPal.
 
 In a Codespace, the counter's QR code and "Customer's page" link point at `http://localhost:3000` unless you set `APP_URL` to the forwarded address; the renter tab you booked in works either way.
@@ -152,6 +154,7 @@ Before building on PayPal, we checked each behaviour in the sandbox: partial cap
 | Dispute summary, fact-checked | The evidence PDF is drawn by code. Gemini only writes its short summary, as JSON paragraphs that each cite ids of facts from the pack. Code rejects the summary if a paragraph cites an unknown fact, states a number or id that is not in the facts it cites, or contains a link or an email address, or if it runs past 170 words. One repair turn, then a fixed template; without a key, and in demo mode, the template. The PDF says which wrote the summary | [`lib/disputes/narrative.ts`](lib/disputes/narrative.ts) (`writeNarrative`, `narrativeProblems`, `templateNarrative`), [`lib/disputes/evidence.ts`](lib/disputes/evidence.ts) (`renderEvidencePdf`) |
 | Schedule: customer messages | The agent's plan is deterministic. Gemini rewords the message for the customer from the plan's facts, and the text is used only if it passes `checkMessage`: addressed by name, no links, no money, no refunds or discounts, no date outside the plan. Otherwise, and without a key, the template. Handback does not send it; staff copy it | [`lib/schedule/messages.ts`](lib/schedule/messages.ts) (`draftMessage`, `checkMessage`), [`lib/schedule/agent.ts`](lib/schedule/agent.ts) |
 | Schedule: typed commands | Gemini is forced to answer with exactly one of three tools (`reassign_booking`, `block_unit`, `ask_staff`). Code checks the arguments against zod schemas and the same rules as a drag, files the result as one pending suggestion, and a person confirms it. Without a key, a small parser handles the common phrasings | [`lib/schedule/commands.ts`](lib/schedule/commands.ts) (`interpretCommand`, `parseCommand`), [`lib/schedule/gemini.ts`](lib/schedule/gemini.ts) (`callOneTool`), [`lib/schedule/service.ts`](lib/schedule/service.ts) |
+| Owner's dashboard agent | AG Studio's Agent Framework with Gemini: Studio's five built-in agents plus a custom deposit-desk agent with three server tools (holds needing attention, one rental's record, a refund draft checked against the counter's limits). The adapter posts each turn to a staff-only route that calls Gemini, so the key stays on the server; the refund draft writes nothing and calls no PayPal API | [`components/insights/agent.tsx`](components/insights/agent.tsx), [`lib/insights/gemini.ts`](lib/insights/gemini.ts), [`lib/insights/agent-tools.ts`](lib/insights/agent-tools.ts), [`app/api/insights/llm/route.ts`](app/api/insights/llm/route.ts) |
 | MCP demo client | A script gives a plain request ("rent a drone this weekend for Sam") to a model with the server's MCP tools: Gemini function calling, or Claude when `ANTHROPIC_API_KEY` is set. It ends with PayPal's approval link for the person | [`scripts/agent-books.ts`](scripts/agent-books.ts) |
 
 ### How well the photo comparison works
@@ -265,6 +268,7 @@ sequenceDiagram
 - **An assistant cannot move money.** The MCP tools list, quote, create an unpaid booking and read its status. None can approve a payment, cancel, hold a deposit, answer a charge or settle, and no reply contains the renter's page link.
 - **A dispute answer states only what was recorded.** The evidence PDF is built by code from the rental's record, with both photos embedded byte for byte under their SHA-256, and the same record gives the same bytes. Gemini's summary is printed only if every number and id in it is in the facts it cites. Dispute actions follow only the links PayPal returned.
 - **Nothing on the schedule moves without a person.** The agent plans in code; Gemini only words the customer message and reads a typed command into one proposed tool call. The server checks every move (same item, still waiting for pickup, same length, nothing else on the unit), and staff confirm it.
+- **The dashboard's agent drafts; a person refunds.** Its tools read the record. `draft_refund` checks an amount against the same limits as the counter's refund and returns a signed link that fills in the rental page's form; nothing is sent until a person presses Refund. Both of its routes are staff only, and the Gemini key never reaches the browser.
 - **Evidence the renter can check.** Photos are stored under the SHA-256 of their bytes, the renter sees that hash when confirming the pickup photo, and every step is written to a hash-chained audit log with its PayPal ids.
 - **The counter can be closed to the public.** With `SHOP_ACCESS_CODE` set (at least 12 characters; a shorter one closes the counter to everyone), every counter page, every staff server action, the shop's live channel and the evidence PDFs need a staff cookie that a sign-in page issues for the right code. The check runs inside each server action, not only in front of the pages, because an action can be posted to from any path. The cookie holds an HMAC keyed from the code and, with `STAFF_COOKIE_SECRET`, a server secret, never the code; a new code or secret signs everyone out.
 - **Cancelling is bounded and counted once.** The renter gets exactly the share the cancellation terms in their mandate give at that moment, and their page sends what it showed, whether the fee was paid and the refund: if the payment went through or a step of the policy passed in between, nothing is cancelled and the page shows the new amount. The terms come from the mandate only when it passes the same check as every hold and charge. The counter refunds at most the fee left. A second press sends nothing, and a cancel and the deposit hold at pickup cannot both go through.
@@ -284,6 +288,7 @@ Known limits of this build:
 - Live page updates use an in-process event bus, so the app is meant to run as a single server instance.
 - A fee capture that PayPal leaves pending is resolved only by webhooks, so without `PAYPAL_WEBHOOK_ID` the rental stays unpaid. Likewise a renter who approves and closes the window is booked only through the `CHECKOUT.ORDER.APPROVED` webhook, which has not yet been delivered to a deployment (only PayPal's simulated payload was checked).
 - When PayPal asks for proof of shipment, of a refund or of a delivery signature, the evidence pack is filed as `OTHER`, because it is none of those.
+- Without `AG_STUDIO_LICENSE_KEY`, AG Studio runs as a trial: a "For Trial Use Only" watermark (not on localhost) and a licence notice in the browser console. The dashboard's layout is not saved, and its data loads when the page renders, not live ([docs/ag-studio.md](docs/ag-studio.md#known-limits)).
 - The Bryntum Scheduler trial shows a watermark and runs for 45 days per browser. Using Handback beyond evaluation needs a Bryntum licence ([docs/bryntum.md](docs/bryntum.md#licensing)).
 - Dates are whole days in UTC.
 
@@ -297,6 +302,7 @@ Known limits of this build:
   - Disputes (`lib/disputes/*.test.ts`): byte-identical PDFs, the summary's fact check and template fallback, the fee-based recommendation, dispute records and webhooks, and the desk against a mocked PayPal REST API, including a reply that was lost and a retry PayPal refused; and a dispute on a cancelled booking's fee ([`lib/disputes/cancelled.test.ts`](lib/disputes/cancelled.test.ts)): a one-page pack about the booking, the terms in the mandate and the cancellation, with no pickup or return, notes for PayPal to match, the pack sent without photos, and advice from the fee math.
   - MCP ([`lib/mcp/server.test.ts`](lib/mcp/server.test.ts)): the SDK client against the HTTP handler: tool annotations, a booking that moves no money, status only by status token, and the `Origin` check.
   - Schedule (`lib/schedule/*.test.ts`): overlaps and unit search, assignment at booking, the agent's repair blocks and suggestions, handover warnings, message checks and typed commands.
+  - Owner's dashboard (`lib/insights/*.test.ts`, [`app/api/insights/routes.test.ts`](app/api/insights/routes.test.ts)): the money adds up for rentals walked through the service (a hold is what was captured plus what was released; kept plus refunds plus dispute returns is what was captured; no refund above its capture; the ledger's signed sum; money conserved through the deposit flow), cancelled and disputed rentals, the hold clock, the Sankey layout, the mapping between AG Studio's turns and Gemini, both routes staff only with no key in any reply, the turn limit, and the agent's tools reading only, with refund drafts held to what is left to refund.
   - Render and operations: where jobs run and their idempotency keys (`lib/workflows/*.test.ts`), the two tasks ([`workflows/tasks.test.ts`](workflows/tasks.test.ts)), the cron script and route ([`scripts/cron/renew-holds.test.ts`](scripts/cron/renew-holds.test.ts), [`app/api/jobs/renew-holds/route.test.ts`](app/api/jobs/renew-holds/route.test.ts)), `/api/health` ([`lib/health.test.ts`](lib/health.test.ts)), the demo seed (`lib/seed/*.test.ts`) and the Postgres driver's JSON handling ([`lib/db/client.test.ts`](lib/db/client.test.ts)).
   - Eval tooling (`scripts/eval/*.test.ts`): lining up the image model's edits, and a check that `eval/README.md` matches the saved runs.
 - **End-to-end tests** (`npm run e2e`, Playwright). They build the app, start it in demo mode (three servers: two without an access code, one with), and drive the counter on a desktop and the renter on a phone-sized screen.
@@ -306,6 +312,8 @@ Known limits of this build:
   - [`e2e/agent-booking.spec.ts`](e2e/agent-booking.spec.ts): an assistant books over MCP and no reply leads to the renter's page. The phone leaves the PayPal stand-in once, reads the mandate on the cancel page, approves, and lands booked on its own page, whose token the status tool refuses.
   - [`e2e/cancel-booking.spec.ts`](e2e/cancel-booking.spec.ts): the booking page states the cancellation policy; the renter books ten days ahead, cancels on the phone and gets the whole $70.00 fee back; the counter's open page turns to Cancelled with the refund without a reload, and the counter's list files it under Cancelled. Then the counter cancels another booking with its own form: a refund above the fee is refused, $30.00 of $38.00 goes back with a reason, and the renter's phone shows the reason, the refund and the $8.00 kept.
   - [`e2e/city-bike.spec.ts`](e2e/city-bike.spec.ts): the story from the bike shop interview. A city bike comes back without its phone holder and rear light; the renter accepts the $12.00 phone holder and questions the rear light, the counter waives it and settles: $12.00 kept, $138.00 released.
+  - [`e2e/insights.spec.ts`](e2e/insights.spec.ts): the owner's dashboard loads AG Studio in the browser with the sample history, shows the KPIs, the deposit flow and the hold clock, filters the page on a click, and opens the Ledger and Holds pages.
+  - [`e2e/insights-agent.spec.ts`](e2e/insights-agent.spec.ts): the deposit desk agent through Studio's chat panel, the turn route and its holds tool, with the test server's scripted model in place of Gemini.
   - [`e2e/schedule.spec.ts`](e2e/schedule.spec.ts): a damaged return puts a projector in repair, the agent suggests two fixes and one click moves a booking; a typed command is applied only after Confirm; a drag onto a busy unit is refused; a busy item's booking form starts on its first free dates.
 - **CI** runs route type generation, lint, typecheck and the unit tests, and the end-to-end tests in a second job, on every push and pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Both run in demo mode with no secrets.
 - **PayPal sandbox.** `npm run smoke:sandbox` runs the real gateway against the sandbox: partial capture, a repeated request id returning the first capture, refund, void, and the reauthorization error. `scripts/sandbox-walkthrough.ts` drives the running app in a browser with the JS SDK v6 button and a sandbox buyer approving in PayPal's popup. One full run, from [docs/paypal-sandbox-notes.md](docs/paypal-sandbox-notes.md), took about 33 seconds:
@@ -343,10 +351,12 @@ app/                       Next.js App Router
   shop/                    the counter: today's rentals, the rental workflow, refunds and the dispute desk
   shop/sign-in/            the counter's access code page, when SHOP_ACCESS_CODE is set
   shop/schedule/           the Bryntum timeline of units, repairs and the agent's suggestions
+  shop/insights/           the owner's AG Studio dashboard and its deposit desk agent
   actions.ts               server actions
   api/paypal/webhooks/     PayPal webhook receiver
   api/jobs/renew-holds/    hold renewal job, protected by CRON_SECRET
   api/mcp/                 MCP server for assistants (Streamable HTTP, stateless)
+  api/insights/            the dashboard agent's Gemini proxy and tools, staff only
   api/health/              health check: database, PayPal and AI modes, where jobs run, commit
   api/evidence/[sha]/      evidence PDFs by SHA-256
   api/live/[channel]/      server-sent events that keep pages live
@@ -354,12 +364,14 @@ app/                       Next.js App Router
   api/samples/[...key]/    bundled sample photos
 components/                UI: booking form with the PayPal button, findings view, dispute panel, mandate card, money bar, audit timeline
   schedule/                Bryntum timeline, suggestions panel, command box
+  insights/                AG Studio dashboard: theme, the two custom widgets, the deposit desk agent
 lib/
   paypal/                  gateway interface, Server SDK gateway, Disputes v1 client, demo stand-ins, REST client with multipart, webhook verification
   inspection/              prompt, output schema, Gemini call, pricing policy, consensus rule
   rentals/                 rental service, settlement arithmetic, deposit mandate, cancellation policy and cancelling, audit chain, refunds, hold renewal, webhook handling
   disputes/                evidence facts, one-page PDF, fact-checked summary, fee-based recommendation, dispute record, desk service
   schedule/                units and availability, repair blocks, the schedule agent, typed commands, customer messages
+  insights/                the dashboard's tables and data sources, report layout, Sankey layout, Gemini mapping, agent tools, demo history
   mcp/                     MCP server and its four tools
   workflows/               whether a job runs on Render Workflows or in the web process
   seed/                    the demo counter seed (npm run seed:demo)
@@ -369,7 +381,7 @@ lib/
   photos.ts                photo storage and quality checks
   staff-access.ts          the counter's shared access code: cookie, checks, wrong-code limits
 workflows/                 Render Workflows entry point and the inspect-return and renew-holds tasks
-e2e/                       Playwright tests: rental flow and refund, cancelling, city bike, dispute desk, assistant booking, schedule, counter access code
+e2e/                       Playwright tests: rental flow and refund, cancelling, city bike, dispute desk, assistant booking, schedule, insights, counter access code
 eval/                      synthetic photo pairs, recorded model replies, results
   real/                    pairs built on Wikimedia Commons photos, with CREDITS.md
 scripts/                   sandbox smoke test, walkthrough, refund, cancel, dispute and assistant runs, MCP demo client, seed, cron job, webhook registration, eval, git hooks
@@ -378,7 +390,7 @@ docs/                      PayPal sandbox notes, deployment, assistants, schedul
 render.yaml                Render Blueprint: web service, Postgres, Workflows service, cron job
 ```
 
-Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, zod, the PayPal Server SDK, the PayPal JS SDK v6, the Google Gen AI SDK, the MCP TypeScript SDK, Bryntum Scheduler (trial), pdf-lib, the Render SDK, PGlite or Postgres, Vitest and Playwright. The MCP demo client can also use the Anthropic SDK.
+Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, zod, the PayPal Server SDK, the PayPal JS SDK v6, the Google Gen AI SDK, the MCP TypeScript SDK, Bryntum Scheduler (trial), AG Studio (trial), pdf-lib, the Render SDK, PGlite or Postgres, Vitest and Playwright. The MCP demo client can also use the Anthropic SDK.
 
 ## Not built yet
 
@@ -396,6 +408,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, zod, the PayPal Ser
 - [docs/deploy.md](docs/deploy.md): deploying on Render with the Blueprint, Render Workflows, costs, and what has been verified
 - [docs/agents.md](docs/agents.md): the MCP server, its tools, the deposit mandate and approval by redirect
 - [docs/bryntum.md](docs/bryntum.md): the schedule, its agent, how every change is checked, and the trial licence
+- [docs/ag-studio.md](docs/ag-studio.md): the owner's dashboard, its data, the two custom widgets, the deposit desk agent and its guardrails, and the AG Studio licence
 - [eval/README.md](eval/README.md): how the photo comparison is scored, on both sets
 - [eval/real/CREDITS.md](eval/real/CREDITS.md): sources, authors and licenses of the real photos
 - [docs/ai-build-log.md](docs/ai-build-log.md): how AI coding tools were used to build this, and what they got wrong
@@ -405,6 +418,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, zod, the PayPal Ser
 Handback's code is [MIT](LICENSE). Some things in or used by this repository are not covered by it:
 
 - The real-photo eval images in `eval/real/images/` keep their own licenses (CC0, CC BY or CC BY-SA), listed with their authors in [eval/real/CREDITS.md](eval/real/CREDITS.md).
+- AG Studio (`ag-studio`, `ag-studio-react`) is commercial software. npm installs it, with the AG Grid and AG Charts Enterprise packages it depends on, when the project is installed; the repository contains no AG Studio code. Without a licence key it runs as a trial, and a key is set on the host as `AG_STUDIO_LICENSE_KEY`, never committed. Handback's custom widgets draw their own SVG and use no AG Grid or AG Charts package of their own.
 - Bryntum Scheduler is commercial software. npm installs its trial package when the project is installed; the repository contains no Bryntum code, and the trial is not covered by the MIT license.
 
 Kestrel Camera Rentals is a fictional demo shop.

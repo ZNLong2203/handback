@@ -56,6 +56,9 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # AG Studio licence key for the owner's dashboard; empty runs it as a trial.
+      - key: AG_STUDIO_LICENSE_KEY
+        sync: false
       # Only for a custom domain; the onrender.com URL is used otherwise.
       - key: APP_URL
         sync: false

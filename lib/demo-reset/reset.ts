@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db/client";
 import { publish } from "@/lib/live";
 import { depositGateway, dropDemoStandIns, PayPalError, type DepositGateway } from "@/lib/paypal";
 import type { PayPalMode } from "@/lib/paypal/config";
+import { seedInsightsHistory } from "@/lib/insights/seed";
 import { seedDemoSchedule } from "@/lib/schedule/seed";
 import { seedCounter } from "@/lib/seed/run";
 import { demoResetConfig, liveRefusal, resetDayOf, resetSeedWallet, type Env } from "./config";
@@ -56,8 +57,8 @@ export type ResetSummary = {
   deletedRentals: number;
   /** Sandbox only: the open deposit holds voided (or not) before the wipe. */
   released: HoldRelease[];
-  /** Rentals booked again by the counter seed and by the demo schedule seed. */
-  seeded: { counter: number; schedule: number; note?: string };
+  /** Rentals booked again by the counter seed, the demo schedule seed and the owner's dashboard's sample history, in that order. */
+  seeded: { counter: number; schedule: number; insights: number; note?: string };
 };
 
 export type ResetResult =
@@ -72,7 +73,7 @@ const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
  * Deletes every rental and everything recorded about it, then seeds the
  * counter the way a fresh deployment is seeded: `npm run seed:demo`'s
  * scenarios for the current PayPal mode and, in demo mode, the two-week
- * demo schedule. In the sandbox it first voids the deposit holds that are
+ * demo schedule and then the owner's dashboard's sample history, in that order. In the sandbox it first voids the deposit holds that are
  * still open, so visitors' sandbox money is not left on hold; it never
  * captures or refunds a visitor's payment. (With SEED_VAULT_ID set, the
  * sandbox seed afterwards makes new sandbox payments for the sample
@@ -107,7 +108,7 @@ export async function resetDemo(opts: { now?: Date; env?: Env } = {}): Promise<R
     const summary = await wipeAndSeed(gateway, now, env);
     await db.query("update demo_resets set status = 'done', finished_at = now(), summary = $2::jsonb where day = $1", [day, JSON.stringify(summary)]);
     console.log(
-      `Demo reset ${day}: deleted ${summary.deletedRentals} rentals, voided ${summary.released.filter((r) => r.outcome === "voided").length} of ${summary.released.length} open holds, seeded ${summary.seeded.counter} counter and ${summary.seeded.schedule} schedule rentals.`,
+      `Demo reset ${day}: deleted ${summary.deletedRentals} rentals, voided ${summary.released.filter((r) => r.outcome === "voided").length} of ${summary.released.length} open holds, seeded ${summary.seeded.counter} counter, ${summary.seeded.schedule} schedule and ${summary.seeded.insights} dashboard rentals.`,
     );
     return { status: "reset", day, ...summary };
   } catch (err) {
@@ -139,6 +140,7 @@ async function wipeAndSeed(gateway: DepositGateway, now: Date, env: Env): Promis
   const counter = await seedCounter({ vaultId });
   for (const line of counter.lines.filter((l) => l.stopped)) console.error(`Demo reset: the seed stopped ${line.scenario.name}: ${line.stopped}`);
   const schedule = mode === "demo" ? await seedDemoSchedule(now) : [];
+  const insights = mode === "demo" ? await seedInsightsHistory(now) : [];
   publish("demo-reset", "demo.reset");
   return {
     mode,
@@ -147,6 +149,7 @@ async function wipeAndSeed(gateway: DepositGateway, now: Date, env: Env): Promis
     seeded: {
       counter: counter.lines.filter((l) => l.rentalId).length,
       schedule: schedule.length,
+      insights: insights.length,
       ...(counter.skipped ? { note: counter.skipped } : {}),
     },
   };

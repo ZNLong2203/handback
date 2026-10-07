@@ -27,6 +27,7 @@ import { Timeline } from "@/components/timeline";
 import { Badge, Card, Eyebrow, Notice, cx } from "@/components/ui";
 import { shortDate } from "@/lib/dates";
 import { loadDisputeDesk } from "@/lib/disputes/service";
+import { readDraft, type RefundDraft } from "@/lib/insights/draft-link";
 import { paypalConfig } from "@/lib/paypal/config";
 import { formatUsd } from "@/lib/money";
 import { samplesFor } from "@/lib/samples";
@@ -67,15 +68,20 @@ function Photo({ sha, label }: { sha: string; label: string }) {
   );
 }
 
-/** Refunds of what the shop took: a settlement's charges, or the fee of a cancelled booking. */
-function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean }) {
+/**
+ * Refunds of what the shop took: a settlement's charges, or the fee of a
+ * cancelled booking. `draft` is a refund the dashboard's deposit desk
+ * drafted, from a signed link (lib/insights/draft-link.ts): it only fills
+ * the form in.
+ */
+function Refunds({ view, disputeOpen, draft }: { view: RentalView; disputeOpen: boolean; draft: RefundDraft | null }) {
   const { rental } = view;
   const refundLeft = view.refundable.some((c) => c.leftCents > 0);
   const captureLabel = (captureId: string) =>
     view.refundable.find((c) => c.captureId === captureId)?.label ?? (captureId === rental.feeCaptureId ? "the rental fee" : `capture ${captureId}`);
   return (
     (view.refunds.some((r) => r.state !== "refused") || refundLeft) && (
-      <div className="mt-5 space-y-3 border-t border-line pt-4">
+      <div id="refunds" className="mt-5 scroll-mt-24 space-y-3 border-t border-line pt-4">
         <h3 className="font-semibold">Refunds</h3>
         {view.waitingRefunds.map((r) => (
           <div key={r.id} className="space-y-2 rounded-2xl bg-held-soft p-4 text-sm">
@@ -120,7 +126,7 @@ function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean
             the case.
           </p>
         ) : refundLeft ? (
-          <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} />
+          <RefundForm rentalId={rental.id} captures={view.refundable} seq={view.nextRefundSeq} firstName={rental.customerName.split(" ")[0]} draft={draft} />
         ) : null}
       </div>
     )
@@ -130,6 +136,7 @@ function Refunds({ view, disputeOpen }: { view: RentalView; disputeOpen: boolean
 export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[id]">) {
   const { id } = await props.params;
   await requireStaffPage(`/shop/rentals/${id}`);
+  const draft = readDraft(id, await props.searchParams);
   const view = await loadRentalView({ id });
   if (!view) notFound();
   const { rental, item, checkout, checkin, assessment, plan } = view;
@@ -248,7 +255,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               <h2 className="font-display text-2xl font-bold">Cancelled</h2>
               {rental.cancelReason && <p className="mt-1 text-sm text-muted">&ldquo;{rental.cancelReason}&rdquo;</p>}
               <CancellationReceipt rental={rental} refunds={view.refunds} fee={view.feeCapture} audience="staff" />
-              <Refunds view={view} disputeOpen={disputeOpen} />
+              <Refunds view={view} disputeOpen={disputeOpen} draft={draft} />
             </Card>
           )}
 
@@ -388,7 +395,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
               {desk?.dispute.outcome === "RESOLVED_BUYER_FAVOUR" && (
                 <p className="mt-3 text-sm text-charged">After the dispute, PayPal refunded {formatUsd(desk.dispute.refundedCents ?? desk.dispute.amountCents ?? 0)} of this to the customer.</p>
               )}
-              <Refunds view={view} disputeOpen={disputeOpen} />
+              <Refunds view={view} disputeOpen={disputeOpen} draft={draft} />
               {!desk && (
                 <div className="mt-5 flex flex-wrap items-start gap-3 border-t border-line pt-4">
                   {paypalMode === "demo" ? (

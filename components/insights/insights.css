@@ -1,0 +1,159 @@
+/*
+ * The owner's dashboard. Handback's money colours as CSS variables in both
+ * colour modes, for the custom widgets (which draw their own SVG); AG Studio
+ * itself is themed through its theme params in theme.ts.
+ */
+.hb-insights {
+  --hb-held: #b7791f;
+  --hb-held-soft: #fcf3e2;
+  --hb-released: #1f7a4d;
+  --hb-released-soft: #e4f3ea;
+  --hb-charged: #c2462b;
+  --hb-charged-soft: #fbe8e2;
+  --hb-brand: #3730a3;
+  --hb-brand-soft: #eceafd;
+  --hb-note: #64748b;
+  --hb-ink: #1d1b2f;
+  --hb-muted: #6b6a7a;
+  --hb-line: #e9e4dc;
+  --hb-card: #ffffff;
+  --hb-paper: #faf7f2;
+  color-scheme: light;
+}
+
+.hb-insights[data-hb-mode="dark"] {
+  --hb-held: #e3a94e;
+  --hb-held-soft: #3a2f1c;
+  --hb-released: #52c48d;
+  --hb-released-soft: #17322a;
+  --hb-charged: #f0805f;
+  --hb-charged-soft: #3d221d;
+  --hb-brand: #9d98ff;
+  --hb-brand-soft: #262449;
+  --hb-note: #9aa8bd;
+  --hb-ink: #eeebf7;
+  --hb-muted: #a8a4ba;
+  --hb-line: #322e45;
+  --hb-card: #1d1a2b;
+  --hb-paper: #14121e;
+  color-scheme: dark;
+}
+
+.hb-widget {
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  color: var(--hb-ink);
+  position: relative;
+}
+
+.hb-widget svg {
+  display: block;
+  overflow: visible;
+}
+
+/* Where the deposits went */
+.hb-flow-band {
+  cursor: pointer;
+  transition: fill-opacity 120ms ease;
+}
+.hb-flow-band:focus,
+.hb-clock-row:focus {
+  outline: none;
+}
+.hb-flow-band:focus-visible {
+  outline: none;
+  stroke: var(--hb-ink);
+  stroke-opacity: 1;
+  stroke-width: 2px;
+}
+.hb-flow-node {
+  cursor: pointer;
+}
+.hb-flow-label,
+.hb-flow-value {
+  paint-order: stroke;
+  stroke: var(--hb-card);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.hb-flow-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  fill: var(--hb-ink);
+}
+.hb-flow-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--hb-muted);
+}
+
+/* Hold clock */
+.hb-clock-axis line {
+  stroke: var(--hb-line);
+  stroke-dasharray: 3 4;
+}
+.hb-clock-axis text,
+.hb-clock-legend text {
+  font-size: 11px;
+  fill: var(--hb-muted);
+}
+.hb-clock-row {
+  cursor: pointer;
+}
+.hb-clock-row:focus-visible {
+  outline: none;
+}
+.hb-clock-hit {
+  fill: transparent;
+}
+.hb-clock-row:hover .hb-clock-hit,
+.hb-clock-row:focus-visible .hb-clock-hit {
+  fill: var(--hb-brand-soft);
+}
+.hb-clock-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  fill: var(--hb-ink);
+}
+.hb-clock-sub {
+  font-size: 11px;
+  fill: var(--hb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hb-clock-track {
+  fill: var(--hb-line);
+}
+.hb-clock-honor {
+  fill: var(--hb-held-soft);
+  stroke: var(--hb-held);
+  stroke-opacity: 0.45;
+}
+.hb-clock-now {
+  stroke: var(--hb-ink);
+  stroke-width: 2px;
+}
+.hb-clock-due {
+  fill: var(--hb-card);
+  stroke: var(--hb-brand);
+  stroke-width: 2px;
+}
+.hb-clock-renewed circle {
+  fill: var(--hb-released);
+}
+.hb-clock-renewed path {
+  stroke: var(--hb-card);
+}
+.hb-clock-expiry {
+  stroke: var(--hb-charged);
+  stroke-width: 2px;
+}
+.hb-clock-warn {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--hb-charged);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hb-flow-band {
+    transition: none;
+  }
+}

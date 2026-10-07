@@ -48,10 +48,10 @@ describe("POST /api/jobs/reset-demo", () => {
     expect(first.status).toBe(200);
     const body = await first.json();
     expect(body).toMatchObject({ ok: true, status: "reset", mode: "demo", deletedRentals: 0, released: [] });
-    expect(await rentalCount()).toBe(body.seeded.counter + body.seeded.schedule);
+    expect(await rentalCount()).toBe(body.seeded.counter + body.seeded.schedule + body.seeded.insights);
 
     const second = await call();
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({ ok: true, status: "already-done", day: body.day, state: "done" });
-  });
+  }, 90_000);
 });

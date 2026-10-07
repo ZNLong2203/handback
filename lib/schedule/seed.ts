@@ -2,9 +2,10 @@ import "server-only";
 import { addDaysIso, todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
 import { paypalConfig } from "@/lib/paypal/config";
-import { latestAssessment } from "@/lib/rentals/repo";
+import { latestAssessment, rentalById } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
+import { freeUnitFor } from "./place";
 
 // Two weeks of bookings for demo mode, so the schedule has something to show
 // the first time it opens. Every rental goes through the same service calls a
@@ -83,6 +84,12 @@ async function seedOne(p: SeedPlan, today: string): Promise<string> {
   });
   if (shift < 0) {
     await db.query("update rentals set start_date = start_date + $2::int, end_date = end_date + $2::int where id = $1", [rentalId, shift]);
+    // Its unit was free from today; the days it moved back to may already be
+    // drawn on that unit (the owner's dashboard seeds history there too).
+    // Keep the unit when it is free for them, else take one that is.
+    const moved = (await rentalById(db, rentalId))!;
+    const unitId = await freeUnitFor(db, p.itemId, [{ start: moved.startDate, end: moved.endDate }], { now: new Date(), exceptRentalId: rentalId, prefer: moved.unitId });
+    if (unitId && unitId !== moved.unitId) await db.query("update rentals set unit_id = $2 where id = $1", [rentalId, unitId]);
   }
   const { token } = await svc.confirmBooking(orderId);
   if (p.state === "booked") return rentalId;

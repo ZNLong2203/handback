@@ -13,11 +13,25 @@ type Capture = { captureId: string; label: string; capturedCents: number; leftCe
  * refund number the server expects next, so pressing twice, or sending again
  * after a lost reply, refunds once. The first press asks; the second sends.
  */
-export function RefundForm({ rentalId, captures, seq, firstName }: { rentalId: string; captures: Capture[]; seq: number; firstName: string }) {
+export function RefundForm({
+  rentalId,
+  captures,
+  seq,
+  firstName,
+  draft = null,
+}: {
+  rentalId: string;
+  captures: Capture[];
+  seq: number;
+  firstName: string;
+  /** A refund the dashboard agent drafted: it fills the form in, and a person still presses Refund and confirms. */
+  draft?: { captureId: string; cents: number; reason: string } | null;
+}) {
   const open = captures.filter((c) => c.leftCents > 0);
-  const [captureId, setCaptureId] = useState(open[0]?.captureId ?? "");
-  const [amount, setAmount] = useState("");
-  const [reason, setReason] = useState("");
+  const drafted = draft && open.some((c) => c.captureId === draft.captureId) ? draft : null;
+  const [captureId, setCaptureId] = useState(drafted?.captureId ?? open[0]?.captureId ?? "");
+  const [amount, setAmount] = useState(drafted ? (drafted.cents / 100).toFixed(2) : "");
+  const [reason, setReason] = useState(drafted?.reason ?? "");
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -94,6 +108,11 @@ export function RefundForm({ rentalId, captures, seq, firstName }: { rentalId: s
       <p className="text-xs text-muted">
         At most {formatUsd(capture.leftCents)} is left to refund on {capture.label}. The reason is shown on {firstName}&apos;s page and in PayPal&apos;s email.
       </p>
+      {drafted && !done && (
+        <p className="text-xs text-brand-ink" data-testid="refund-drafted">
+          Filled in from a draft by the dashboard&apos;s deposit desk. Nothing has been sent: check it, then press Refund and confirm.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" variant="outline" disabled={pending || cents === null || cents <= 0 || !reason.trim()}>
           {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Undo2 className="h-4 w-4" aria-hidden />}

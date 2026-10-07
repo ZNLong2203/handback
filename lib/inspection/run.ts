@@ -38,9 +38,16 @@ export function aiConfigured(): boolean {
  * bundled sample photos replay recorded Gemini replies from the eval, so the
  * whole flow still works for anyone who clones the repo.
  */
-export async function inspectReturn(checkout: Photo, checkin: Photo, item: RentalItem, shopName: string): Promise<InspectionRun> {
+export async function inspectReturn(
+  checkout: Photo,
+  checkin: Photo,
+  item: RentalItem,
+  shopName: string,
+  opts: { recordedOnly?: boolean } = {},
+): Promise<InspectionRun> {
   const started = Date.now();
-  if (aiConfigured()) {
+  // Demo seeds ask for the recorded replies even with a key: they run inside a page render and must not spend or wait on Gemini.
+  if (aiConfigured() && !opts.recordedOnly) {
     const input = {
       before: { base64: checkout.bytes.toString("base64"), mimeType: "image/jpeg" },
       after: { base64: checkin.bytes.toString("base64"), mimeType: "image/jpeg" },
