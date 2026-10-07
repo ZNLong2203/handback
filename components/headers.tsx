@@ -86,6 +86,9 @@ export function ShopHeader({ live }: { live?: React.ReactNode }) {
             <Link href="/shop/schedule" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
               Schedule
             </Link>
+            <Link href="/shop/insights" className="rounded-full px-3 py-1.5 text-ink-soft hover:bg-line/50 hover:text-ink">
+              Insights
+            </Link>
           </nav>
           <div className="flex items-center gap-4 text-sm">
             {live}
