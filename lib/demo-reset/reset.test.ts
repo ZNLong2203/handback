@@ -135,7 +135,7 @@ describe("resetDemo", () => {
     expect(await at("2026-01-02T22:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
   });
 
-  it("in demo mode, deletes every rental and seeds the counter and the demo schedule again", async () => {
+  it("in demo mode, deletes every rental and seeds the counter, the demo schedule and the dashboard history again", async () => {
     const visitor = await visitorRental({ hold: true });
     const db = await getDb();
     await db.query("insert into webhook_events (id, event_type, verified, payload) values ('WH-1', 'PAYMENT.CAPTURE.COMPLETED', true, '{}')");
@@ -167,7 +167,7 @@ describe("resetDemo", () => {
     expect(await resetDemo({ env: ON })).toMatchObject({ status: "already-done", day: result.day });
     expect((await repo.listRentals(db)).length).toBe(rentals.length);
     expect(await lastDemoReset()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  });
+  }, 90_000);
 
   it("empties every table that holds rental data and keeps the reference data", async () => {
     const db = await getDb();

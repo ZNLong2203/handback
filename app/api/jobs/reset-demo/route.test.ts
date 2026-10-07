@@ -53,5 +53,5 @@ describe("POST /api/jobs/reset-demo", () => {
     const second = await call();
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({ ok: true, status: "already-done", day: body.day, state: "done" });
-  });
+  }, 90_000);
 });

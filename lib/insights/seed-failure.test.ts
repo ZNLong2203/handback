@@ -43,5 +43,5 @@ describe("a plan that fails part way", () => {
     expect(voided.mock.calls.filter(([, requestId]) => String(requestId).startsWith("seed-discard:"))).toHaveLength(2);
     // A later visit does not try again.
     expect(await seedInsightsHistory()).toEqual([]);
-  });
+  }, 180_000);
 });

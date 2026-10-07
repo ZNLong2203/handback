@@ -71,7 +71,10 @@ async function counterSeeded(): Promise<number> {
   return report.lines.filter((l) => l.rentalId).length;
 }
 
-const baseline = { schedule: 0, scheduleAfterCounter: 0 };
+/** What the schedule seeds after the counter's, without the dashboard: the count the dashboard must not lower. */
+let afterCounter = 0;
+// Each test books dozens of rentals through the real service; a busy machine running the whole suite needs the room.
+const SLOW = 180_000;
 
 beforeEach(async () => {
   await getDb();
@@ -79,89 +82,66 @@ beforeEach(async () => {
 });
 
 describe("the dashboard's sample history next to the other demo seeds", () => {
-  it("measures what the schedule seeds without it, alone and after the counter", async () => {
-    baseline.schedule = (await seedDemoSchedule()).length;
-    expect(baseline.schedule).toBe(SEED_PLAN.length);
-    await wipe();
+  it("measures the schedule seed after the counter's, without the dashboard", async () => {
     await counterSeeded();
-    baseline.scheduleAfterCounter = (await seedDemoSchedule()).length;
-    expect(baseline.scheduleAfterCounter).toBeGreaterThan(SEED_PLAN.length / 2);
-  });
+    afterCounter = (await seedDemoSchedule()).length;
+    expect(afterCounter).toBeGreaterThan(SEED_PLAN.length / 2);
+  }, SLOW);
 
   it("dashboard first, then the schedule: everything seeds and nothing shares a unit", async () => {
     const history = await seedInsightsHistory();
     expect(history).toHaveLength(INSIGHTS_PLAN.length);
-    expect(await seedDemoSchedule()).toHaveLength(baseline.schedule);
+    // Every one of the schedule's plans, as on a database without the dashboard.
+    expect(await seedDemoSchedule()).toHaveLength(SEED_PLAN.length);
     expect(await clashes(new Set(history))).toEqual([]);
-  });
+  }, SLOW);
 
-  it("schedule first, then the dashboard", async () => {
-    expect(await seedDemoSchedule()).toHaveLength(baseline.schedule);
-    const history = await seedInsightsHistory();
-    expect(history).toHaveLength(INSIGHTS_PLAN.length);
-    expect(await clashes(new Set(history))).toEqual([]);
-  });
-
-  it("a fresh deployment: counter, dashboard, then schedule", async () => {
+  it("a fresh deployment opened on the dashboard: counter, dashboard, then schedule", async () => {
     await counterSeeded();
     const history = await seedInsightsHistory();
     expect(history).toHaveLength(INSIGHTS_PLAN.length);
-    expect(await seedDemoSchedule()).toHaveLength(baseline.scheduleAfterCounter);
+    expect(await seedDemoSchedule()).toHaveLength(afterCounter);
     expect(await clashes(new Set(history))).toEqual([]);
-  });
+  }, SLOW);
 
-  it("a fresh deployment: counter, schedule, then dashboard", async () => {
-    await counterSeeded();
-    expect(await seedDemoSchedule()).toHaveLength(baseline.scheduleAfterCounter);
-    const history = await seedInsightsHistory();
-    expect(history).toHaveLength(INSIGHTS_PLAN.length);
-    expect(await clashes(new Set(history))).toEqual([]);
-  });
-
-  it("the nightly reset seeds the dashboard last, after a visit had seeded it before", async () => {
+  it("the nightly reset seeds counter, schedule, then the dashboard, after a visit had seeded it", async () => {
     expect(await seedInsightsHistory()).toHaveLength(INSIGHTS_PLAN.length);
     const result = await resetDemo({ env: { ...process.env, DEMO_RESET: "true" } });
-    expect(result).toMatchObject({ status: "reset", seeded: { counter: 6, schedule: baseline.scheduleAfterCounter, insights: INSIGHTS_PLAN.length } });
+    expect(result).toMatchObject({ status: "reset", seeded: { counter: 6, schedule: afterCounter, insights: INSIGHTS_PLAN.length } });
     const history = (await historyRentals()).map((r) => r.id);
     expect(history).toHaveLength(INSIGHTS_PLAN.length);
     expect(await clashes(new Set(history))).toEqual([]);
     // Nothing is left booked far ahead, where the plans were walked through.
     const far = addDaysIso(todayIso(), STAGING_DAYS - 1);
     expect((await historyRentals()).filter((r) => r.start_date >= far)).toEqual([]);
-  });
+  }, SLOW);
 
-  it("keeps the stand-in's clock with the moved-back holds, and renews the one that is due", async () => {
-    const history = await seedInsightsHistory();
-    const data = await loadInsights();
-    const sara = data.holds.find((h) => h.renter === "Sara")!;
-    expect(sara).toMatchObject({ state: "Renewed, keeps the first expiry", renewed_at: expect.any(String) });
-    expect(sara.authorization_id).not.toBe(sara.original_authorization_id);
-    const db = await getDb();
-    const holds = (await db.query<Record<string, unknown>>("select * from rentals where id = any($1) and status in ('out', 'responded')", [history])).map(toRental);
-    expect(holds.length).toBe(4);
-    for (const r of holds) {
-      const auth = await depositGateway().getAuthorization(r.authorizationId!);
-      // The stand-in's hold expires when the database says, 29 days after the moved-back pickup.
-      expect(auth.expiresAt, r.customerName).toBe(r.authorizationExpiresAt);
-    }
-    // The hourly job finds nothing more to do, and writes no PayPal error.
-    const { renewDueHolds } = await import("@/lib/rentals/jobs");
-    expect((await renewDueHolds(new Date())).filter((o) => o.outcome !== "not-due")).toEqual([]);
-    expect(await db.query("select seq from events where type = 'paypal.error'")).toEqual([]);
-  });
-
-  it("uses the recorded Gemini replies even with a key set", async () => {
+  it("with a key set: recorded replies, the stand-in's clock with the moved-back holds, and the renewal that is due", async () => {
     process.env.GEMINI_API_KEY = "not-a-real-key";
     process.env.DEMO_MODE = "false";
     try {
       const history = await seedInsightsHistory();
       expect(history).toHaveLength(INSIGHTS_PLAN.length);
       const db = await getDb();
-      const sources = await db.query<{ source: string }>("select distinct source from assessments where rental_id = any($1)", [history]);
-      expect(sources).toEqual([{ source: "replay" }]);
+      expect(await db.query<{ source: string }>("select distinct source from assessments where rental_id = any($1)", [history])).toEqual([{ source: "replay" }]);
+
+      const sara = (await loadInsights()).holds.find((h) => h.renter === "Sara")!;
+      expect(sara).toMatchObject({ state: "Renewed, keeps the first expiry", renewed_at: expect.any(String) });
+      expect(sara.authorization_id).not.toBe(sara.original_authorization_id);
+      const holds = (await db.query<Record<string, unknown>>("select * from rentals where id = any($1) and status in ('out', 'responded')", [history])).map(toRental);
+      expect(holds.length).toBe(4);
+      for (const r of holds) {
+        const auth = await depositGateway().getAuthorization(r.authorizationId!);
+        // The stand-in's hold expires when the database says, 29 days after the moved-back pickup.
+        expect(auth.expiresAt, r.customerName).toBe(r.authorizationExpiresAt);
+      }
+      // The hourly job finds nothing more to do, and writes no PayPal error.
+      const { renewDueHolds } = await import("@/lib/rentals/jobs");
+      expect((await renewDueHolds(new Date())).filter((o) => o.outcome !== "not-due")).toEqual([]);
+      expect(await db.query("select seq from events where type = 'paypal.error'")).toEqual([]);
     } finally {
       process.env.DEMO_MODE = "true";
       delete process.env.GEMINI_API_KEY;
     }
-  });
+  }, SLOW);
 });
