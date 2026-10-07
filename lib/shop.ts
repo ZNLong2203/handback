@@ -4,6 +4,13 @@ export const SHOP = {
   city: "Austin, TX",
   /** Longest rental we accept: the deposit hold must settle inside PayPal's 29-day window. */
   maxRentalDays: 21,
+  /**
+   * How far ahead a pickup can be booked. PayPal refunds a capture only
+   * within 180 days of it, and a cancellation refunds the fee captured at
+   * booking, so every refund the cancellation policy promises stays inside
+   * that window, with room for a booking moved later on the schedule.
+   */
+  maxDaysAhead: 120,
 } as const;
 
 /**

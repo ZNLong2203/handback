@@ -60,6 +60,8 @@ export type Rental = {
   cancelRefundCents: Cents | null;
   /** When the counter sent the deposit hold to PayPal; a cancellation waits for its answer. */
   holdRequestedAt: string | null;
+  /** When the booking fee's capture was first sent to PayPal; cancelling the unpaid booking waits for its answer. */
+  captureRequestedAt: string | null;
   /** The physical unit promised to this customer (see lib/schedule). */
   unitId?: string | null;
 };

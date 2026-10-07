@@ -51,7 +51,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const dispute = view.dispute;
   const evidenceSent = Boolean(dispute && view.events.some((e) => e.type === "dispute.evidence_sent" && e.data.disputeId === dispute.id));
   const cancellable = rental.status === "booked" || (rental.status === "draft" && !processing);
-  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute }, "renter", new Date()) : null;
+  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute, events: view.events }, "renter", new Date()) : null;
 
   return (
     <>
@@ -124,7 +124,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
           <Card className="p-6">
             <h2 className="font-semibold">{rental.cancelledBy === "staff" ? `${SHOP.name} cancelled this booking` : "You cancelled this booking"}</h2>
             {rental.cancelReason && <p className="mt-2 text-sm text-ink-soft">&ldquo;{rental.cancelReason}&rdquo;</p>}
-            <CancellationReceipt rental={rental} refunds={view.refunds} audience="renter" />
+            <CancellationReceipt rental={rental} refunds={view.refunds} fee={view.feeCapture} audience="renter" />
             <p className="mt-4 text-sm text-ink-soft">
               <Link href={`/rent/${item.id}`} className="font-semibold underline underline-offset-2">
                 Book the {item.name.toLowerCase()} again
@@ -187,7 +187,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                 <ActionButton
                   className="mt-4"
                   variant="outline"
-                  action={cancelBookingAction.bind(null, token, cancel.refundCents)}
+                  action={cancelBookingAction.bind(null, token, { paid: cancel.paid, refundCents: cancel.refundCents })}
                   confirmLabel={cancel.refundCents > 0 ? `Yes, cancel and refund ${formatUsd(cancel.refundCents)}` : "Yes, cancel my booking"}
                   pendingLabel="Cancelling…"
                 >

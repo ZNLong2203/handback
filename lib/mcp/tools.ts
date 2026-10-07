@@ -6,7 +6,7 @@ import { getDb } from "@/lib/db/client";
 import { formatUsd, type Cents } from "@/lib/money";
 import { cancellationTerms } from "@/lib/rentals/cancellation";
 import { DepositMandateSchema, mandateExpiry, mandateTerms } from "@/lib/rentals/mandate";
-import { cancelledAfterPayment, refundedCents, refundsFor, type StoredRefund } from "@/lib/rentals/refunds";
+import { cancelledAfterPayment, isRefunded, refundedCents, refundsFor, type StoredRefund } from "@/lib/rentals/refunds";
 import { latestAssessment, rentalByStatusToken } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
@@ -122,7 +122,7 @@ export const StatusOut = z.object({
       reason: z.string().nullable(),
       feePaid: z.boolean(),
       feeRefund: Money,
-      /** refunded: PayPal completed it; processing: PayPal accepted it; waiting: sent, no answer recorded yet; refused: PayPal refused it; none: nothing to refund. */
+      /** Against the refund the cancellation decided. refunded: all of it went back; processing: PayPal accepted it and has not finished; waiting: sent, no answer recorded yet; refused: PayPal refused or failed it, so the shop has to send it again; none: nothing to refund. */
       refundStatus: z.enum(["refunded", "processing", "waiting", "refused", "none"]),
     })
     .nullable(),
@@ -208,23 +208,32 @@ function nextStepFor(rental: Rental): string {
   return steps[rental.status];
 }
 
+/**
+ * Where the cancellation's refund stands: counted against what the
+ * cancellation decided, so a refund PayPal reported from its own dashboard
+ * that covers it counts, and an answer that is still missing shows as
+ * waiting only while nothing else covered it.
+ */
 function cancellationOut(rental: Rental, refunds: StoredRefund[]): NonNullable<z.infer<typeof StatusOut>["cancellation"]> {
-  const fee = refunds.filter((r) => r.captureId === rental.feeCaptureId && r.seq !== null);
-  const refundStatus = !fee.length
-    ? "none"
-    : fee.some((r) => r.state === "requested")
-      ? "waiting"
-      : fee.every((r) => r.state === "refused" || r.paypalStatus === "FAILED" || r.paypalStatus === "CANCELLED")
-        ? "refused"
-        : fee.some((r) => r.paypalStatus === "PENDING")
+  const fee = refunds.filter((r) => r.captureId === rental.feeCaptureId);
+  const decided = rental.cancelRefundCents ?? 0;
+  const back = refundedCents(fee);
+  const refundStatus =
+    decided === 0 && back === 0
+      ? "none"
+      : back >= decided
+        ? fee.some((r) => isRefunded(r) && r.paypalStatus === "PENDING")
           ? "processing"
-          : "refunded";
+          : "refunded"
+        : fee.some((r) => r.state === "requested")
+          ? "waiting"
+          : "refused";
   return {
     at: rental.cancelledAt!,
     by: rental.cancelledBy === "staff" ? "shop" : "renter",
     reason: rental.cancelReason,
     feePaid: cancelledAfterPayment(rental),
-    feeRefund: money(rental.cancelRefundCents ?? 0),
+    feeRefund: money(decided),
     refundStatus,
   };
 }

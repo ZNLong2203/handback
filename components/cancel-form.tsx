@@ -40,7 +40,7 @@ export function CancelForm({
     startTransition(async () => {
       setError(null);
       setAsking(false);
-      const res = await cancelAtCounterAction(rentalId, { amount, reason });
+      const res = await cancelAtCounterAction(rentalId, { amount, reason, paid });
       if (!res.ok) setError(res.error);
       else if (typeof res.data === "string") setStatus(res.data);
     });

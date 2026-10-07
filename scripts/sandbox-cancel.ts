@@ -79,14 +79,15 @@ if (rental.status !== "booked") throw new Error("the booking was not captured");
 
 // 3. The renter cancels: the page shows what the policy gives back now, and sends that amount.
 const before = feeCapture(rental, await refundsFor(db, rental.id));
-const quote = quoteCancellation(rental, { feeLeftCents: before?.leftCents ?? 0, openDispute: false }, "renter", new Date());
+const quote = quoteCancellation(rental, { feeLeftCents: before?.leftCents ?? 0, openDispute: false, events: await eventsFor(db, rental.id) }, "renter", new Date());
 log("3a. what the renter's page shows", { percent: quote.policy.percent, refundCents: quote.refundCents, until: quote.policy.until, terms: quote.terms });
-const cancelled = await cancelAsRenter(booking.token, quote.refundCents);
+const shown = { paid: quote.paid, refundCents: quote.refundCents };
+const cancelled = await cancelAsRenter(booking.token, shown);
 rental = (await rentalById(db, booking.rentalId))!;
 log("3b. cancelAsRenter", { result: cancelled, status: rental.status, cancelRefundCents: rental.cancelRefundCents, requestId: refundRequestId(rental.id, 1) });
 
 // 4. Pressed again.
-log("4. cancelAsRenter again (answered from the app's record)", await cancelAsRenter(booking.token, quote.refundCents));
+log("4. cancelAsRenter again (answered from the app's record)", await cancelAsRenter(booking.token, shown));
 
 // 5. The same refund request to PayPal again, same PayPal-Request-Id.
 const first = cancelled.refund!;

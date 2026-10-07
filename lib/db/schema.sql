@@ -59,6 +59,9 @@ alter table rentals add column if not exists cancel_refund_cents integer;
 -- cancellation racing the pickup cannot slip in while PayPal answers. Cleared
 -- when PayPal definitely refuses the hold.
 alter table rentals add column if not exists hold_requested_at timestamptz;
+-- Set under the row lock just before the booking fee is captured, so a
+-- cancellation of the unpaid booking cannot slip in while PayPal answers.
+alter table rentals add column if not exists capture_requested_at timestamptz;
 
 -- Content-addressed photo store: the key is the SHA-256 of the bytes, so the
 -- hash a customer acknowledged always points at exactly the same image.

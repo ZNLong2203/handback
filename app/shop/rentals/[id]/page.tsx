@@ -1,7 +1,16 @@
 import { ArrowLeft, CheckCircle2, ExternalLink, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { demoOpenDisputeAction, findDisputesAction, holdDepositAction, inspectAction, resendRefundAction, sendToCustomerAction, settleAction } from "@/app/actions";
+import {
+  clearHoldClaimAction,
+  demoOpenDisputeAction,
+  findDisputesAction,
+  holdDepositAction,
+  inspectAction,
+  resendRefundAction,
+  sendToCustomerAction,
+  settleAction,
+} from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { CancelForm } from "@/components/cancel-form";
 import { CancellationReceipt } from "@/components/cancellation-receipt";
@@ -133,7 +142,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
   const paypalMode = paypalConfig().mode;
   const disputeOpen = Boolean(view.dispute && view.dispute.status !== "RESOLVED");
   const cancellable = rental.status === "booked" || rental.status === "draft";
-  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute }, "staff", new Date()) : null;
+  const cancel = cancellable ? quoteCancellation(rental, { feeLeftCents: view.feeCapture?.leftCents ?? 0, openDispute: view.openDispute, events: view.events }, "staff", new Date()) : null;
   const paid = rental.feeCaptureId !== null && !feePending(rental) && !(rental.status === "cancelled" && !rental.cancelledAt);
 
   return (
@@ -207,7 +216,20 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                 </p>
               </div>
               {cancel.blocked ? (
-                <p className="max-w-prose text-sm text-ink-soft">{cancel.blocked}</p>
+                <div className="space-y-3">
+                  <p className="max-w-prose text-sm text-ink-soft">{cancel.blocked}</p>
+                  {cancel.holdClaimStale && (
+                    <ActionButton
+                      action={clearHoldClaimAction.bind(null, rental.id)}
+                      variant="outline"
+                      size="sm"
+                      confirmLabel={`Yes: PayPal shows no open hold for ${rental.id}-deposit`}
+                      pendingLabel="Saving…"
+                    >
+                      I checked PayPal: no hold is open
+                    </ActionButton>
+                  )}
+                </div>
               ) : (
                 <CancelForm
                   rentalId={rental.id}
@@ -225,7 +247,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
             <Card className="p-6">
               <h2 className="font-display text-2xl font-bold">Cancelled</h2>
               {rental.cancelReason && <p className="mt-1 text-sm text-muted">&ldquo;{rental.cancelReason}&rdquo;</p>}
-              <CancellationReceipt rental={rental} refunds={view.refunds} audience="staff" />
+              <CancellationReceipt rental={rental} refunds={view.refunds} fee={view.feeCapture} audience="staff" />
               <Refunds view={view} disputeOpen={disputeOpen} />
             </Card>
           )}

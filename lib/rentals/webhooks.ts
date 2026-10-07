@@ -3,7 +3,9 @@ import { getDb } from "@/lib/db/client";
 import { recordDispute, type DisputeLike } from "@/lib/disputes/record";
 import { rentalIdForDispute } from "@/lib/disputes/repo";
 import { publish } from "@/lib/live";
+import { fromPayPalValue } from "@/lib/money";
 import { appendEvent } from "./audit";
+import { refundCaptureAfterCancel } from "./cancel";
 import { recordRefundWebhook, refundedCaptureId, rentalIdForRefund, type RefundResource } from "./refunds";
 import { rentalByAuthorization, rentalById, rentalByOrder, updateRental } from "./repo";
 import { confirmBooking } from "./service";
@@ -134,6 +136,12 @@ async function apply(event: PayPalWebhookEvent, resourceId: string | null): Prom
   });
   publish(rentalId, moved ?? event.event_type);
   if (approvedUnpaid) await captureApproved(rentalId, r.id!, event.id);
+  // A fee capture PayPal left PENDING after its unpaid booking was cancelled
+  // (cancel.ts) has completed: refund it in full. Ignored for any other booking.
+  if (event.event_type === "PAYMENT.CAPTURE.COMPLETED" && rental.status === "cancelled" && rental.cancelledAt && rental.feeCaptureId === r.id) {
+    const cents = r.amount?.value ? fromPayPalValue(r.amount.value) : rental.feeCents;
+    await refundCaptureAfterCancel(rentalId, { captureId: r.id, status: "COMPLETED", capturedCents: cents });
+  }
   return "applied";
 }
 

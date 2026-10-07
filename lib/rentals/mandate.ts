@@ -4,8 +4,9 @@ import type { RentalItem } from "@/lib/catalog";
 import { addDaysIso, shortDate } from "@/lib/dates";
 import { formatUsd, type Cents } from "@/lib/money";
 import { AUTHORIZATION_VALID_DAYS } from "@/lib/paypal/gateway";
-import { canonicalJson } from "./audit";
+import { canonicalJson, firstBrokenLink } from "./audit";
 import { cancellationTerms, termsSummary, type CancellationTerms } from "./cancellation";
+import type { AuditEvent, Rental } from "./types";
 
 // The deposit mandate: what the renter allows the shop to do with their
 // PayPal account, written down when the booking starts and approved by the
@@ -141,6 +142,32 @@ export function openMandate(json: string, hash: string): { mandate: DepositManda
   const parsed = DepositMandateSchema.safeParse(raw);
   if (!parsed.success) return null;
   return { mandate: parsed.data, intact: sha256(json) === hash && canonicalJson(parsed.data) === json };
+}
+
+export type MandateOnRecord =
+  /** Booked before mandates existed: no mandate stored and none recorded. */
+  | { kind: "none" }
+  | { kind: "trusted"; mandate: DepositMandate }
+  | { kind: "untrusted"; problem: string };
+
+/**
+ * The rental's mandate, if it can be trusted: the stored text must hash to
+ * the value the audit chain recorded when the booking started, be a
+ * canonical mandate for this rental, and the chain itself must verify. The
+ * same check stands in front of every hold and charge (service.ts) and
+ * decides which cancellation terms apply (cancel.ts).
+ */
+export function mandateOnRecord(rental: Pick<Rental, "id" | "mandateJson" | "mandateSha256">, events: AuditEvent[]): MandateOnRecord {
+  const issued = events.find((e) => e.type === "mandate.issued");
+  const recorded = typeof issued?.data.sha256 === "string" ? issued.data.sha256 : null;
+  if (!recorded && !rental.mandateJson && !rental.mandateSha256) return { kind: "none" };
+  const broken = firstBrokenLink(events);
+  if (broken !== null) {
+    return { kind: "untrusted", problem: `The rental's audit log was changed after the fact (entry ${broken} no longer matches), so the mandate it recorded cannot be trusted.` };
+  }
+  const opened = rental.mandateJson && rental.mandateSha256 ? openMandate(rental.mandateJson, rental.mandateSha256) : null;
+  if (opened?.intact && rental.mandateSha256 === recorded && opened.mandate.rentalId === rental.id) return { kind: "trusted", mandate: opened.mandate };
+  return { kind: "untrusted", problem: "The stored mandate is not the one recorded when the booking started, so nothing can be held or charged under it." };
 }
 
 /** The mandate in plain sentences, for the renter's page and for assistants to read out. */

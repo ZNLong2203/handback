@@ -91,13 +91,16 @@ export const refundedCents = (refunds: StoredRefund[], captureIds?: (string | nu
  * the charge above the deposit), for the counter's list. A refund of the
  * booking fee is not part of what the shop kept from the deposit.
  */
-export async function feeRefundTotals(db: Query): Promise<Map<string, Cents>> {
-  const rows = await db.query<{ rental_id: string; cents: string | number }>(
-    `select f.rental_id, sum(f.amount_cents) as cents from refunds f join rentals r on r.id = f.rental_id
-     where f.state = 'done' and coalesce(f.paypal_status, '') not in ('FAILED', 'CANCELLED') and f.capture_id = r.fee_capture_id
+export async function feeRefundTotals(db: Query): Promise<Map<string, { refundedCents: Cents; waitingCents: Cents }>> {
+  const rows = await db.query<{ rental_id: string; refunded: string | number; waiting: string | number }>(
+    `select f.rental_id,
+            sum(case when f.state = 'done' and coalesce(f.paypal_status, '') not in ('FAILED', 'CANCELLED') then f.amount_cents else 0 end) as refunded,
+            sum(case when f.state = 'requested' then f.amount_cents else 0 end) as waiting
+     from refunds f join rentals r on r.id = f.rental_id
+     where f.capture_id = r.fee_capture_id
      group by f.rental_id`,
   );
-  return new Map(rows.map((r) => [r.rental_id, Number(r.cents)]));
+  return new Map(rows.map((r) => [r.rental_id, { refundedCents: Number(r.refunded), waitingCents: Number(r.waiting) }]));
 }
 
 /** Refunded per rental of what the settlement took; see feeRefundTotals for the fee. */

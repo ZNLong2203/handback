@@ -200,7 +200,7 @@ describe("MCP tools", () => {
     expect((await call(client, "get_rental_status", { statusToken: booking.statusToken })).status).toBe("booked");
 
     // The renter cancels on their own page, two days ahead: the whole $90.00 back.
-    await cancelAsRenter(rental.token, 9000, new Date(Date.parse(`${rental.startDate}T00:00:00Z`) - 48 * 3_600_000));
+    await cancelAsRenter(rental.token, { paid: true, refundCents: 9000 }, new Date(Date.parse(`${rental.startDate}T00:00:00Z`) - 48 * 3_600_000));
     const status = await call(client, "get_rental_status", { statusToken: booking.statusToken });
     expect(status).toMatchObject({
       status: "cancelled",

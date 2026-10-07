@@ -61,3 +61,43 @@ test("the renter cancels on their phone before pickup, gets the fee back, and th
   await expect(row).toContainText("Cancelled");
   await expect(row).toContainText("$70.00 of $70.00 fee refunded");
 });
+
+test("the counter cancels with a refund it chooses and a reason, and the renter's phone shows both at once", async ({ browser }) => {
+  const counter = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
+
+  // The renter books the action camera kit three weeks ahead: 2 days, $38.00.
+  await phone.goto("/rent/action-cam-kit");
+  await phone.getByLabel("Pickup").fill(daysFromToday(20));
+  await phone.getByLabel("Return").fill(daysFromToday(22));
+  await phone.getByLabel("Your name").fill("Omar Diaz");
+  await phone.getByLabel("Email").fill("omar@example.com");
+  await phone.getByRole("button", { name: "Pay $38.00 (demo PayPal)" }).click();
+  await phone.waitForURL(/\/r\//);
+  await expect(phone.getByText("Paid $38.00 with PayPal")).toBeVisible();
+  const rentalId = /R-[0-9A-Z]{6}/.exec((await phone.getByText(/^Rental R-/).textContent()) ?? "")![0];
+
+  // The counter's form starts at what the policy gives ($38.00 this early); staff refund $30.00 with a reason.
+  await counter.goto(`/shop/rentals/${rentalId}`);
+  await expect(counter.getByText(/The cancellation policy gives Omar \$38\.00 \(100%\) now/)).toBeVisible();
+  await expect(counter.getByLabel("Refund")).toHaveValue("38.00");
+  await counter.getByLabel("Refund").fill("38.01");
+  await counter.getByLabel("Reason Omar sees").fill("The camera failed its check before your rental");
+  await expect(counter.getByRole("button", { name: "Cancel booking" })).toBeDisabled();
+  await counter.getByLabel("Refund").fill("30");
+  await counter.getByRole("button", { name: "Cancel booking" }).click();
+  await counter.getByRole("button", { name: "Yes, cancel and refund $30.00" }).click();
+  await expect(counter.getByRole("heading", { name: "Cancelled", exact: true })).toBeVisible();
+  await expect(counter.getByText(/Cancelled before pickup by the counter/)).toBeVisible();
+  await expect(counter.getByText("Kept of the fee")).toBeVisible();
+  // What is left of the fee can still be refunded from the same page.
+  await expect(counter.getByText(/At most \$8\.00 is left to refund on the rental fee/)).toBeVisible();
+  await shot(counter, "x04-counter-cancelled-by-shop");
+
+  // The renter's page shows the shop's cancellation, the reason and the refund without a reload.
+  await expect(phone.getByRole("heading", { name: "Kestrel Camera Rentals cancelled this booking" })).toBeVisible();
+  await expect(phone.getByText(/The camera failed its check before your rental/)).toBeVisible();
+  await expect(phone.getByText("−$30.00")).toBeVisible();
+  await expect(phone.getByText("The shop keeps").locator("..")).toContainText("$8.00");
+  await shot(phone, "x05-renter-cancelled-by-shop");
+});

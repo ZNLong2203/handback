@@ -59,6 +59,7 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
               dailyCents={item.dailyCents}
               depositCents={item.depositCents}
               maxDays={SHOP.maxRentalDays}
+              lastPickup={addDaysIso(today, SHOP.maxDaysAhead)}
               today={today}
               initial={free ?? { start: today, end: addDaysIso(today, FIRST_STAY_DAYS) }}
               paypal={cfg.mode === "demo" ? null : { clientId: cfg.clientId, environment: cfg.mode === "live" ? "production" : "sandbox" }}
