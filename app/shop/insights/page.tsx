@@ -56,8 +56,10 @@ export default async function InsightsPage() {
             <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>
               Dashboard by AG Studio, a commercial component.{" "}
-              {licenseKey ? "Licensed with the key set on this server." : "No licence key is set on this server, so AG Studio shows its trial watermark and a console warning."} The
-              two custom widgets draw their own SVG; no AG Grid or AG Charts Enterprise code is used outside Studio itself.
+              {licenseKey
+                ? "Licensed with the key set on this server."
+                : "No licence key is set on this server, so AG Studio runs as a trial: it shows a “For Trial Use Only” watermark (not on localhost) and logs a licence notice in the browser console."}{" "}
+              The two custom widgets draw their own SVG; they use no AG Grid or AG Charts package of their own.
             </span>
           </p>
           {demo && <p>Demo mode: the history is sample rentals booked through the PayPal stand-in, then moved back in time; their audit trails keep the real times.</p>}

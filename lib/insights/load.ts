@@ -11,7 +11,7 @@ type Row = Record<string, unknown>;
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v === null || v === undefined ? null : String(v));
 
 /**
- * Reads what the dashboard needs, in five queries, and builds its tables.
+ * Reads what the dashboard needs, in six queries, and builds its tables.
  * Columns only: nothing here reads email addresses, payer addresses or the
  * renter's link token, so they cannot reach the dashboard by accident.
  */

@@ -56,10 +56,10 @@ export function safeError(err: unknown, env: Env = process.env): string {
 // ─── Rate limit ──────────────────────────────────────────────
 
 export const LLM_WINDOW_MS = 10 * 60_000;
-/** Model turns one staff session may ask for per window: a dashboard request takes several (delegations, tools). */
-export const LLM_PER_SESSION = 60;
+/** Model turns one staff session may ask for per window: one "add a chart" request took 15 to 20 turns (delegations, tools). */
+export const LLM_PER_SESSION = 120;
 /** Turns from everyone together per window, as a ceiling on spend. */
-export const LLM_GLOBAL = 300;
+export const LLM_GLOBAL = 400;
 
 /** Counts turns per session and in total over a sliding window, in this process (the app runs as one instance). */
 export function createTurnLimiter(perSession = LLM_PER_SESSION, global = LLM_GLOBAL, windowMs = LLM_WINDOW_MS) {
