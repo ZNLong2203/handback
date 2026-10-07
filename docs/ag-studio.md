@@ -90,7 +90,7 @@ flowchart LR
 
 ### Guardrails
 
-- **Staff only.** The page uses `requireStaffPage`; both routes answer 401 without the staff cookie when `SHOP_ACCESS_CODE` is set, like every counter action.
+- **Staff only.** The page uses `requireStaffPage`; both routes answer 401 without the staff cookie when `SHOP_ACCESS_CODE` is set, like every counter action. Without a code the counter is open to anyone who can reach it, and so are these routes; on a copy others can reach, set the code, or the turn limits below are all that bound the Gemini spend.
 - **No key in the browser, none in a reply.** The adapter only knows the route. Provider errors are logged and returned with the key cut out wherever it appears.
 - **No key, no agent.** Without `GEMINI_API_KEY` the AI module is not loaded, the page says "AI assistant needs a Gemini key", and the route answers 503 with the same sentence. The dashboard works as before.
 - **Limits.** 120 model turns per session (the staff cookie, or the client address when the counter has no code) and 400 from everyone per 10 minutes, counted in the web process. Requests over 1.5 MB, with more than 400 conversation items or 64 tools, or in a shape Studio does not send, are refused before Gemini is called.
