@@ -9,7 +9,7 @@ import { cancelledAfterPayment, disputeReturns, refundableCaptures, refundsFor, 
 import { eventsFor, latestAssessment, rentalById, toRental } from "@/lib/rentals/repo";
 import { isCharged } from "@/lib/rentals/settlement";
 import { eventLabel, STATUS } from "@/lib/rentals/status";
-import { findingOutcome, holdRow, originalHoldTime } from "./model";
+import { findingOutcome, holdRow, originalHoldTime, renterFirstName, settlementMoney } from "./model";
 
 /**
  * The deposit desk agent's own tools. The browser's agent calls them through
@@ -22,8 +22,11 @@ import { findingOutcome, holdRow, originalHoldTime } from "./model";
  *                            the counter's refund; a person sends it from the
  *                            rental page. Nothing is written and PayPal is not called.
  *
- * Outputs name the renter by first name only and carry no email, address,
- * link token or free text someone typed (reasons and notes can hold names).
+ * Outputs carry no email, address or link token. The only text a renter
+ * typed that reaches the model is their first name, cut down to letters,
+ * apostrophes and hyphens (renterFirstName), because a name is free text
+ * and the model reads it. Reasons and notes people typed into the audit
+ * trail stay out; draft_refund echoes only the reason it was given.
  */
 
 const RentalId = z.string().trim().regex(/^R-[A-Z0-9]{6}$/, "A rental id looks like R-7KQ2MX.");
@@ -46,7 +49,6 @@ export const TOOL_NAMES = Object.keys(TOOL_ARGS) as ToolName[];
 
 export class ToolRefusal extends Error {}
 
-const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
 
 // ─── holds_needing_attention ─────────────────────────────────
 
@@ -128,11 +130,17 @@ export async function explainRental(args: z.infer<(typeof TOOL_ARGS)["explain_re
   ]);
   const settled = rental.status === "settled" || rental.status === "disputed";
   const captures = refundableCaptures(rental, refunds, returned);
+  // The dashboard's own arithmetic, so the agent and the Kept KPI agree.
+  const split = settlementMoney(
+    rental,
+    refunds,
+    disputes.map((d) => ({ ...d, fundMovements: d.paypal.fund_movements ?? [] })),
+  );
   return {
     rental: {
       id: rental.id,
       item: catalogItem(rental.itemId).name,
-      renter: firstName(rental.customerName),
+      renter: renterFirstName(rental.customerName),
       pickup_day: rental.startDate,
       return_day: rental.endDate,
       status: STATUS[rental.status].label,
@@ -144,9 +152,12 @@ export async function explainRental(args: z.infer<(typeof TOOL_ARGS)["explain_re
       first_hold_at: originalHoldTime(rental),
       hold_expires_at: rental.authorizationExpiresAt,
       hold_renewed: Boolean(rental.parentAuthorizationId),
-      kept_from_deposit: settled ? formatUsd(rental.capturedCents ?? 0) : null,
-      released_to_renter: settled ? formatUsd(rental.releasedCents ?? 0) : null,
-      charged_above_deposit: settled && rental.extraCents ? formatUsd(rental.extraCents) : null,
+      captured_from_deposit: settled ? formatUsd(split.captured) : null,
+      released_to_renter: settled ? formatUsd(split.released) : null,
+      charged_above_deposit: settled && split.extra ? formatUsd(split.extra) : null,
+      refunded_of_what_settling_took: settled ? formatUsd(split.refundedAfter) : null,
+      returned_through_disputes: settled ? formatUsd(split.disputeReturned) : null,
+      kept_after_refunds_and_disputes: settled ? formatUsd(split.kept) : null,
       refunds: refunds
         .filter((r) => r.state !== "refused")
         .map((r) => ({
@@ -225,7 +236,7 @@ export async function draftRefund(args: z.infer<(typeof TOOL_ARGS)["draft_refund
     status: "draft, not sent",
     rental_id: rental.id,
     item: catalogItem(rental.itemId).name,
-    renter: firstName(rental.customerName),
+    renter: renterFirstName(rental.customerName),
     amount: formatUsd(args.amount_cents),
     amount_cents: args.amount_cents,
     of: capture.label,

@@ -1,5 +1,5 @@
 import { catalogItem } from "@/lib/catalog";
-import type { Cents } from "@/lib/money";
+import { formatUsd, type Cents } from "@/lib/money";
 import { shopMoney, type Dispute } from "@/lib/paypal/dispute-model";
 import { AUTHORIZATION_VALID_DAYS, HONOR_PERIOD_DAYS } from "@/lib/paypal/gateway";
 import { renewalDueAt } from "@/lib/rentals/hold-clock";
@@ -123,6 +123,7 @@ export type LedgerKind =
   | "release"
   | "void"
   | "refund"
+  | "fee_refund"
   | "cancellation_refund"
   | "dispute_hold"
   | "dispute_hold_released"
@@ -138,6 +139,7 @@ export const LEDGER_KIND_LABEL: Record<LedgerKind, string> = {
   release: "Rest of the hold released",
   void: "Hold voided, nothing kept",
   refund: "Refund after settling",
+  fee_refund: "Refund of the rental fee",
   cancellation_refund: "Cancellation refund of the fee",
   dispute_hold: "Dispute: PayPal held the shop's money",
   dispute_hold_released: "Dispute: PayPal released the held money",
@@ -268,7 +270,18 @@ export type InsightsData = {
 
 export const usd = (cents: number) => Math.round(cents) / 100;
 const month = (iso: string) => iso.slice(0, 7);
-const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
+/**
+ * The renter's first name as the dashboard and its agent show it: the first
+ * run of letters (with apostrophes and hyphens), at most 24 characters.
+ * Names are typed by renters and reach a model through the agent's tools and
+ * Studio's queries, so anything else (zero-width characters, punctuation,
+ * a sentence) is dropped.
+ */
+export function renterFirstName(name: string): string {
+  const run = /[\p{L}\p{M}'’-]{1,24}/u.exec(name.normalize("NFKC"))?.[0] ?? "";
+  return run.replace(/^['’-]+|['’-]+$/gu, "") || "the renter";
+}
+const firstName = renterFirstName;
 const ms = (iso: string) => Date.parse(iso);
 
 /** Money PayPal took and kept moving: refunds PayPal accepted and has not reported failed. */
@@ -317,6 +330,46 @@ function returnedOn(captureId: string, capturedCents: Cents, refunds: RefundReco
   // Attribute the dispute's share first, the rest to refunds.
   const dispute = Math.min(disputeCents, total);
   return { refunded: total - dispute, dispute };
+}
+
+/** Payout of each dispute as the ledger shows it: PayPal's settlement movement, else the outcome's refund. */
+const disputePayout = (d: DisputeRecord) => shopMoney({ fund_movements: d.fundMovements }).paidToCustomer?.cents ?? d.refundedCents ?? 0;
+
+export type SettlementMoney = {
+  captured: Cents;
+  extra: Cents;
+  released: Cents;
+  /** Refunded of what the settlement took. */
+  refundedAfter: Cents;
+  /** Given back through PayPal disputes on the settlement's captures. */
+  disputeReturned: Cents;
+  /** What the shop keeps: captured + extra - refundedAfter - disputeReturned. */
+  kept: Cents;
+};
+
+/**
+ * What a rental's settlement took and what the shop keeps of it, after
+ * refunds and money a dispute returned. Zero before settling. The dashboard
+ * and the agent's explain_rental both read it, so they agree.
+ */
+export function settlementMoney(r: Rental, refunds: RefundRecord[], disputes: DisputeRecord[]): SettlementMoney {
+  const settled = SETTLED.includes(r.status) && r.settledAt !== null;
+  const captured = settled ? (r.capturedCents ?? 0) : 0;
+  const extra = settled ? (r.extraCents ?? 0) : 0;
+  const released = settled ? (r.releasedCents ?? 0) : 0;
+  let refundedAfter = 0;
+  let disputeReturned = 0;
+  for (const [captureId, cents] of [
+    [r.settlementCaptureId, captured],
+    [r.extraCaptureId, extra],
+  ] as const) {
+    if (!captureId || cents <= 0) continue;
+    const dispute = disputes.filter((d) => d.transactionId === captureId).reduce((s, d) => s + Math.max(0, d.refundedCents ?? 0), 0);
+    const back = returnedOn(captureId, cents, refunds, dispute);
+    refundedAfter += back.refunded;
+    disputeReturned += back.dispute;
+  }
+  return { captured, extra, released, refundedAfter, disputeReturned, kept: captured + extra - refundedAfter - disputeReturned };
 }
 
 // ─── Findings ────────────────────────────────────────────────
@@ -438,9 +491,10 @@ export function buildInsights(input: InsightsInput): InsightsData {
         move({ movement_id: `${r.id}:renewal`, at: r.authorizedAt!, kind_code: "hold_renewal", paypal_id: r.authorizationId!, related_paypal_id: r.parentAuthorizationId, amount_cents: heldCents, shop_net_cents: 0, status: "CREATED" });
       }
     }
-    const captured = settled ? (r.capturedCents ?? 0) : 0;
-    const extra = settled ? (r.extraCents ?? 0) : 0;
-    const released = settled ? (r.releasedCents ?? 0) : 0;
+    const money = settlementMoney(r, refunds, disputes);
+    const { captured, extra } = money;
+    // A booking cancelled with a stray hold had that hold voided: all of it went back.
+    const released = r.status === "cancelled" && pickedUp ? heldCents : money.released;
     if (settled && pickedUp) {
       const at = r.settledAt!;
       if (captured > 0 && r.settlementCaptureId) {
@@ -460,56 +514,61 @@ export function buildInsights(input: InsightsInput): InsightsData {
       move({ movement_id: `${r.id}:void`, at: r.cancelledAt ?? r.updatedAt, kind_code: "void", paypal_id: r.authorizationId!, related_paypal_id: null, amount_cents: heldCents, shop_net_cents: 0, status: "VOIDED" });
     }
 
-    // Refunds: after settling, and of a cancelled booking's fee.
-    for (const f of refunds) {
+    // Refunds: after settling, of the fee, and of a cancelled booking's fee.
+    // PayPal may report money a dispute gave back a second time, as a refund
+    // the counter did not make (PAYMENT.CAPTURE.REFUNDED). On each capture,
+    // the part of such refunds that matches the dispute's payout moves no
+    // money of its own in the ledger, so the same dollars are not counted twice.
+    const payoutOn = new Map<string, number>();
+    for (const d of disputes) if (d.transactionId) payoutOn.set(d.transactionId, (payoutOn.get(d.transactionId) ?? 0) + disputePayout(d));
+    const sharedLeft = new Map<string, number>();
+    for (const [captureId, payout] of payoutOn) {
+      const reported = refunds.filter((f) => f.captureId === captureId && f.seq === null && refundCounts(f)).reduce((sum, f) => sum + f.amountCents, 0);
+      sharedLeft.set(captureId, Math.min(reported, payout));
+    }
+    let sharedTotal = 0;
+    for (const f of [...refunds].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))) {
+      if (f.state === "refused") continue;
       const onFee = f.captureId === r.feeCaptureId;
       const counted = refundCounts(f);
-      const status = f.state === "requested" ? "Sent, no answer from PayPal yet" : f.state === "refused" ? "Refused by PayPal" : (f.paypalStatus ?? "COMPLETED");
-      if (f.state === "refused") continue;
+      const shared = counted && f.seq === null ? Math.min(f.amountCents, sharedLeft.get(f.captureId) ?? 0) : 0;
+      if (shared > 0) sharedLeft.set(f.captureId, sharedLeft.get(f.captureId)! - shared);
+      sharedTotal += shared;
+      const base = f.state === "requested" ? "Sent, no answer from PayPal yet" : (f.paypalStatus ?? "COMPLETED");
       move({
         movement_id: `${r.id}:refund:${f.id}`,
         at: f.createdAt,
-        kind_code: onFee && r.status === "cancelled" ? "cancellation_refund" : "refund",
+        kind_code: onFee ? (r.status === "cancelled" ? "cancellation_refund" : "fee_refund") : "refund",
         paypal_id: f.refundId ?? `pending refund ${f.seq ?? ""}`.trim(),
         related_paypal_id: f.captureId,
         amount_cents: f.amountCents,
-        shop_net_cents: counted ? -f.amountCents : 0,
-        status,
+        shop_net_cents: counted ? shared - f.amountCents : 0,
+        status: shared > 0 ? `${base}; ${shared === f.amountCents ? "the same money" : `${formatUsd(shared)} of it is the money`} the PayPal dispute paid back, counted on that row` : base,
       });
     }
 
     // Disputes, from PayPal's fund movements; the outcome's refund when PayPal reported no movement.
-    let disputeReturned = 0;
     for (const d of disputes) {
-      const money = shopMoney({ fund_movements: d.fundMovements });
+      const moved = shopMoney({ fund_movements: d.fundMovements });
       const at = (m: { at: string | null } | null) => m?.at ?? d.openedAt ?? r.updatedAt;
-      if (money.held) move({ movement_id: `${r.id}:dispute:${d.id}:held`, at: at(money.held), kind_code: "dispute_hold", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: money.held.cents, shop_net_cents: 0, status: d.status });
-      if (money.released) move({ movement_id: `${r.id}:dispute:${d.id}:released`, at: at(money.released), kind_code: "dispute_hold_released", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: money.released.cents, shop_net_cents: 0, status: d.status });
-      const payout = money.paidToCustomer?.cents ?? d.refundedCents ?? 0;
+      if (moved.held) move({ movement_id: `${r.id}:dispute:${d.id}:held`, at: at(moved.held), kind_code: "dispute_hold", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: moved.held.cents, shop_net_cents: 0, status: d.status });
+      if (moved.released) move({ movement_id: `${r.id}:dispute:${d.id}:released`, at: at(moved.released), kind_code: "dispute_hold_released", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: moved.released.cents, shop_net_cents: 0, status: d.status });
+      const payout = disputePayout(d);
       if (payout > 0) {
-        move({ movement_id: `${r.id}:dispute:${d.id}:payout`, at: at(money.paidToCustomer), kind_code: "dispute_payout", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: payout, shop_net_cents: -payout, status: d.outcome ?? d.status });
+        move({ movement_id: `${r.id}:dispute:${d.id}:payout`, at: at(moved.paidToCustomer), kind_code: "dispute_payout", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: payout, shop_net_cents: -payout, status: d.outcome ?? d.status });
       }
-      if (money.fee) move({ movement_id: `${r.id}:dispute:${d.id}:fee`, at: at(money.fee), kind_code: "dispute_fee", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: money.fee.cents, shop_net_cents: -money.fee.cents, status: d.status });
+      if (moved.fee) move({ movement_id: `${r.id}:dispute:${d.id}:fee`, at: at(moved.fee), kind_code: "dispute_fee", paypal_id: d.id, related_paypal_id: d.transactionId, amount_cents: moved.fee.cents, shop_net_cents: -moved.fee.cents, status: d.status });
     }
 
     // What the shop keeps of the settlement's captures.
-    let refundedAfter = 0;
-    if (settled) {
-      for (const [captureId, cents] of [
-        [r.settlementCaptureId, captured],
-        [r.extraCaptureId, extra],
-      ] as const) {
-        if (!captureId || cents <= 0) continue;
-        const dispute = disputes.filter((d) => d.transactionId === captureId).reduce((s, d) => s + Math.max(0, d.refundedCents ?? 0), 0);
-        const back = returnedOn(captureId, cents, refunds, dispute);
-        refundedAfter += back.refunded;
-        disputeReturned += back.dispute;
-      }
-    }
-    const kept = captured + extra - refundedAfter - disputeReturned;
-    const refundedAll = refunds.filter(refundCounts).reduce((s, f) => s + f.amountCents, 0);
-    const cancellationRefund = refunds.filter((f) => refundCounts(f) && f.captureId === r.feeCaptureId && r.status === "cancelled").reduce((s, f) => s + f.amountCents, 0);
+    const { refundedAfter, disputeReturned, kept } = money;
+    const refundedAll = refunds.filter(refundCounts).reduce((sum, f) => sum + f.amountCents, 0) - sharedTotal;
+    const cancellationRefund = refunds.filter((f) => refundCounts(f) && f.captureId === r.feeCaptureId && r.status === "cancelled").reduce((sum, f) => sum + f.amountCents, 0);
     const openDisputes = disputes.filter((d) => d.status !== "RESOLVED").length;
+    // Only a dispute on the settlement's captures puts what the shop kept in question (one on the fee does not).
+    const keptInDispute = disputes.some(
+      (d) => d.status !== "RESOLVED" && (d.transactionId === null || d.transactionId === r.settlementCaptureId || d.transactionId === r.extraCaptureId),
+    );
     const checkoutPhoto = photos.some((p) => p.phase === "checkout");
 
     rentalRows.push({
@@ -559,7 +618,7 @@ export function buildInsights(input: InsightsInput): InsightsData {
       flow(FLOW.above, FLOW.kept, extra);
       flow(FLOW.kept, FLOW.refunded, refundedAfter);
       flow(FLOW.kept, FLOW.disputed, disputeReturned);
-      flow(FLOW.kept, openDisputes > 0 ? FLOW.openDispute : FLOW.keptForGood, kept);
+      flow(FLOW.kept, keptInDispute ? FLOW.openDispute : FLOW.keptForGood, kept);
     }
     if (r.status === "cancelled" && pickedUp) flow(FLOW.held, FLOW.released, heldCents);
 
