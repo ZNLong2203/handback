@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from "pdf-lib";
 import { formatUsd } from "@/lib/money";
 import { canonicalJson } from "@/lib/rentals/audit";
-import { counterDecision, customerAnswer, KIND_LABEL, reasonLabel, utc, type EvidenceFacts, type EvidenceFinding } from "./facts";
+import { counterDecision, customerAnswer, factList, feeRefunded, KIND_LABEL, reasonLabel, utc, type EvidenceFacts, type EvidenceFinding } from "./facts";
 import type { Narrative } from "./narrative";
 
 /**
@@ -191,7 +191,7 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
   const at = new Date(facts.asOf);
   pdf.setTitle(`Evidence pack: rental ${facts.rental.id}${facts.dispute ? `, PayPal dispute ${facts.dispute.id}` : ""}`);
   pdf.setAuthor(facts.shop);
-  pdf.setSubject("Rental condition record for a PayPal dispute");
+  pdf.setSubject(facts.cancellation ? "Booking and cancellation record for a PayPal dispute" : "Rental condition record for a PayPal dispute");
   pdf.setKeywords([facts.rental.id, ...(facts.dispute ? [facts.dispute.id] : [])]);
   pdf.setCreator(PACK_VERSION);
   pdf.setProducer("Handback");
@@ -233,20 +233,26 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
   // ── Key facts, two columns
   const d = facts.dispute;
   const p = facts.paypal;
+  const cancelled = facts.cancellation ?? null;
   const left: [string, string][] = [
     ["Customer", facts.rental.customer],
-    ["Rental", `${facts.rental.startDate} to ${facts.rental.endDate} (${facts.rental.days} day${facts.rental.days === 1 ? "" : "s"})`],
+    [
+      "Rental",
+      `${facts.rental.startDate} to ${facts.rental.endDate} (${facts.rental.days} day${facts.rental.days === 1 ? "" : "s"})${cancelled ? " · cancelled before pickup" : ""}`,
+    ],
     ["Dispute", d ? `${reasonLabel(d.reason)} · ${usd(d.amountCents)}${d.openedAt ? ` · opened ${utc(d.openedAt)}` : ""}` : "None recorded"],
     ["Disputed transaction", d?.transactionId ?? "-"],
   ];
   const right: [string, string][] = [
     ["Rental fee", `${usd(facts.money.feeCents)}${p.feeCaptureId ? ` · capture ${p.feeCaptureId}` : ""}`],
-    ["Deposit hold", `${usd(facts.money.heldCents)}${p.authorizationId ? ` · authorization ${p.authorizationId}` : ""}`],
-    [
-      "Settlement",
-      (p.settlementCaptureId ? `${usd(facts.money.capturedCents)} captured · capture ${p.settlementCaptureId}` : facts.money.settledAt ? "Hold released, nothing captured" : "Not settled") +
-        (facts.money.refunds?.length ? ` · ${usd(facts.money.refunds.reduce((s, x) => s + x.cents, 0))} refunded since` : ""),
-    ],
+    ["Deposit hold", cancelled && !p.authorizationId ? "None: cancelled before pickup" : `${usd(facts.money.heldCents)}${p.authorizationId ? ` · authorization ${p.authorizationId}` : ""}`],
+    cancelled
+      ? ["Cancellation", `${usd(feeRefunded(facts))} of the fee refunded · ${usd(Math.max(0, facts.money.feeCents - feeRefunded(facts)))} kept`]
+      : [
+          "Settlement",
+          (p.settlementCaptureId ? `${usd(facts.money.capturedCents)} captured · capture ${p.settlementCaptureId}` : facts.money.settledAt ? "Hold released, nothing captured" : "Not settled") +
+            (facts.money.refunds?.length ? ` · ${usd(facts.money.refunds.reduce((s, x) => s + x.cents, 0))} refunded since` : ""),
+        ],
     ["Booking order", p.bookingOrderId ?? "-"],
   ];
   const colW = (CONTENT - 16) / 2;
@@ -284,72 +290,89 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
     photoH = Math.max(90, Math.min(196, H - fixed - tableHeight(rows) - (hidden ? 12 : 0)));
   }
 
-  // ── Photos
-  y += 8;
-  const photoW = (CONTENT - 12) / 2;
-  drawPhoto(s, pickupImg, M, y, photoW, photoH, facts.findings, "before");
-  drawPhoto(s, returnImg, M + photoW + 12, y, photoW, photoH, facts.findings, "after");
-  y += photoH + 5;
-  const captions: [string, string, string | null][] = [
-    [
-      "At pickup",
-      facts.pickup ? `Taken ${utc(facts.pickup.takenAt)}${facts.pickup.acknowledgedAt ? ` · confirmed by the customer ${utc(facts.pickup.acknowledgedAt)}` : " · not confirmed by the customer"}` : "No pickup photo",
-      facts.pickup?.sha256 ?? null,
-    ],
-    ["At return", facts.returned ? `Taken ${utc(facts.returned.takenAt)}` : "No return photo", facts.returned?.sha256 ?? null],
-  ];
-  captions.forEach(([title, line, sha], i) => {
-    const x = M + i * (photoW + 12);
-    s.text(title, x, y, 7.5, bold);
-    s.lines(wrap(regular, 6.6, line, photoW, 1), x, y + 10, 6.6, 8, regular, C.soft);
-    if (sha) s.text(`sha256 ${sha}`, x, y + 20, 5.6, mono, C.muted);
-  });
-  y += captionHeight + 10;
+  if (cancelled && !facts.pickup) {
+    // ── A booking cancelled before pickup: no photos and no findings, so the
+    // cancellation and its terms take their place.
+    y += 8;
+    const text = factList(facts).find((f) => f.id === "cancellation")?.text ?? "";
+    const body = wrap(regular, 8, text, CONTENT - 24);
+    const boxH = 28 + body.length * 11;
+    s.box(M, y, CONTENT, boxH, { fill: C.paper, border: C.line, width: 0.6 });
+    s.text("CANCELLED BEFORE PICKUP", M + 12, y + 10, 6.5, bold, C.brand);
+    s.lines(body, M + 12, y + 22, 8, 11, regular, C.ink);
+    y += boxH + 12;
+  } else {
+    // ── Photos
+    y += 8;
+    const photoW = (CONTENT - 12) / 2;
+    drawPhoto(s, pickupImg, M, y, photoW, photoH, facts.findings, "before");
+    drawPhoto(s, returnImg, M + photoW + 12, y, photoW, photoH, facts.findings, "after");
+    y += photoH + 5;
+    const captions: [string, string, string | null][] = [
+      [
+        "At pickup",
+        facts.pickup ? `Taken ${utc(facts.pickup.takenAt)}${facts.pickup.acknowledgedAt ? ` · confirmed by the customer ${utc(facts.pickup.acknowledgedAt)}` : " · not confirmed by the customer"}` : "No pickup photo",
+        facts.pickup?.sha256 ?? null,
+      ],
+      ["At return", facts.returned ? `Taken ${utc(facts.returned.takenAt)}` : "No return photo", facts.returned?.sha256 ?? null],
+    ];
+    captions.forEach(([title, line, sha], i) => {
+      const x = M + i * (photoW + 12);
+      s.text(title, x, y, 7.5, bold);
+      s.lines(wrap(regular, 6.6, line, photoW, 1), x, y + 10, 6.6, 8, regular, C.soft);
+      if (sha) s.text(`sha256 ${sha}`, x, y + 20, 5.6, mono, C.muted);
+    });
+    y += captionHeight + 10;
 
-  // ── Findings
-  let x = M;
-  for (const c of COLS) {
-    s.text(c.label.toUpperCase(), x + (c.key === "amount" ? c.w - 3 - bold.widthOfTextAtSize(c.label.toUpperCase(), 5.8) : 0), y, 5.8, bold, C.muted);
-    x += c.w;
-  }
-  y += 9;
-  s.rule(y);
-  y += 4;
-  if (rows.length === 0) {
-    s.text("Nothing changed between the photos: no findings.", M, y + 2, 7.5, regular, C.soft);
-    y += 16;
-  }
-  for (const r of rows) {
-    x = M;
+    // ── Findings
+    let x = M;
     for (const c of COLS) {
-      const lines = r.wrapped[c.key];
-      const color = c.key === "amount" && r.f.charged ? C.charged : c.key === "n" ? findingColor(r.f) : C.ink;
-      const font = c.key === "n" || (c.key === "amount" && r.f.charged) ? bold : regular;
-      lines.forEach((l, i) => {
-        const lx = c.key === "amount" ? x + c.w - 3 - font.widthOfTextAtSize(l, TABLE_SIZE) : x;
-        s.text(l, lx, y + i * TABLE_LEAD, TABLE_SIZE, font, color);
-      });
+      s.text(c.label.toUpperCase(), x + (c.key === "amount" ? c.w - 3 - bold.widthOfTextAtSize(c.label.toUpperCase(), 5.8) : 0), y, 5.8, bold, C.muted);
       x += c.w;
     }
-    y += r.height;
-    s.rule(y - 3);
+    y += 9;
+    s.rule(y);
+    y += 4;
+    if (rows.length === 0) {
+      s.text("Nothing changed between the photos: no findings.", M, y + 2, 7.5, regular, C.soft);
+      y += 16;
+    }
+    for (const r of rows) {
+      x = M;
+      for (const c of COLS) {
+        const lines = r.wrapped[c.key];
+        const color = c.key === "amount" && r.f.charged ? C.charged : c.key === "n" ? findingColor(r.f) : C.ink;
+        const font = c.key === "n" || (c.key === "amount" && r.f.charged) ? bold : regular;
+        lines.forEach((l, i) => {
+          const lx = c.key === "amount" ? x + c.w - 3 - font.widthOfTextAtSize(l, TABLE_SIZE) : x;
+          s.text(l, lx, y + i * TABLE_LEAD, TABLE_SIZE, font, color);
+        });
+        x += c.w;
+      }
+      y += r.height;
+      s.rule(y - 3);
+    }
+    if (hidden) {
+      s.text(`${hidden} more finding${hidden === 1 ? "" : "s"} not shown for space.`, M, y, 6.6, regular, C.muted);
+      y += 12;
+    }
+    y += 6;
   }
-  if (hidden) {
-    s.text(`${hidden} more finding${hidden === 1 ? "" : "s"} not shown for space.`, M, y, 6.6, regular, C.muted);
-    y += 12;
-  }
-  y += 6;
 
   // ── Money
   const m = facts.money;
   s.box(M, y, CONTENT, moneyHeight - 4, { fill: C.paper });
-  const money = [
-    `Deposit held ${usd(m.heldCents)}`,
-    `captured ${usd(m.capturedCents ?? 0)}`,
-    `released ${usd(m.releasedCents ?? 0)}`,
-    ...(m.extraCents ? [`charged above the deposit ${usd(m.extraCents)}`] : []),
-    `rental fee ${usd(m.feeCents)} paid at booking`,
-  ].join(" · ");
+  const money = (
+    cancelled && !p.authorizationId
+      ? [`Rental fee ${usd(m.feeCents)} paid at booking`, `refunded ${usd(feeRefunded(facts))}`, `kept ${usd(Math.max(0, m.feeCents - feeRefunded(facts)))}`, "no deposit held"]
+      : [
+          `Deposit held ${usd(m.heldCents)}`,
+          `captured ${usd(m.capturedCents ?? 0)}`,
+          `released ${usd(m.releasedCents ?? 0)}`,
+          ...(m.extraCents ? [`charged above the deposit ${usd(m.extraCents)}`] : []),
+          `rental fee ${usd(m.feeCents)} paid at booking`,
+        ]
+  ).join(" · ");
   s.text("MONEY ON PAYPAL", M + 8, y + 7, 6, bold, C.muted);
   s.text(money, M + 78, y + 6, 7.6, regular, C.ink);
   y += moneyHeight + 4;
@@ -383,7 +406,16 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
   fy += 9;
   if (a.headHash) s.text(`head ${a.headHash}`, M, fy, 5.8, mono, C.muted);
   fy += 9;
-  s.text("Both photos are embedded unchanged: an image extracted from this PDF hashes to the sha256 printed under it.", M, fy, 6.4, regular, C.muted);
+  s.text(
+    facts.pickup || facts.returned
+      ? "Both photos are embedded unchanged: an image extracted from this PDF hashes to the sha256 printed under it."
+      : "No photos: the item was never picked up, so none were taken.",
+    M,
+    fy,
+    6.4,
+    regular,
+    C.muted,
+  );
   fy += 9;
   s.text(`${PACK_VERSION} · facts ${factsSha(facts)}`, M, fy, 5.8, mono, C.muted);
 
@@ -392,7 +424,10 @@ export async function renderEvidencePdf(facts: EvidenceFacts, narrative: Narrati
 
 /** The notes sent with the evidence (PayPal allows 2000 characters). */
 export function paypalNotes(facts: EvidenceFacts, narrative: Narrative, packSha: string): string {
-  const head = `In-store rental ${facts.rental.id} (${facts.rental.item}), ${facts.rental.startDate} to ${facts.rental.endDate}. Attached: ${packFileName(facts)} (SHA-256 ${packSha}), a one-page record of the pickup and return photos, the customer's answers on their own phone and the PayPal settlement, plus the two original photos.`;
+  const c = facts.cancellation;
+  const head = c
+    ? `In-store rental booking ${facts.rental.id} (${facts.rental.item}) for ${facts.rental.startDate} to ${facts.rental.endDate}, cancelled ${utc(c.at)} before pickup: the item never left the shop and no deposit was held. Attached: ${packFileName(facts)} (SHA-256 ${packSha}), a one-page record of the booking, the cancellation terms ${c.termsFrom === "mandate" ? "the customer approved in PayPal at booking (in the deposit mandate)" : "the shop applied"}, the cancellation and the refunds made.`
+    : `In-store rental ${facts.rental.id} (${facts.rental.item}), ${facts.rental.startDate} to ${facts.rental.endDate}. Attached: ${packFileName(facts)} (SHA-256 ${packSha}), a one-page record of the pickup and return photos, the customer's answers on their own phone and the PayPal settlement, plus the two original photos.`;
   const body = narrative.paragraphs.map((p) => p.text).join(" ");
   const text = `${head}\n\n${body}`;
   if (text.length <= 2000) return text;

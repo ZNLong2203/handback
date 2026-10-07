@@ -86,3 +86,39 @@ describe("recommend", () => {
     expect(recommend(input({ status: "RESOLVED", actions: none })).action).toBe("done");
   });
 });
+
+describe("recommend, for a booking cancelled before pickup", () => {
+  const cancelled = (over: Partial<NonNullable<RecommendInput["record"]["cancellation"]>> = {}) => ({
+    ...strong,
+    pickupPhoto: false,
+    pickupConfirmed: false,
+    returnPhoto: false,
+    disputedCapture: "fee" as const,
+    acceptedCents: 0,
+    cancellation: { by: "renter" as const, termsInMandate: true, feeCents: 8700, refundedCents: 4350, keptCents: 4350, ...over },
+  });
+
+  it("does not count the missing photos against a cancelled booking", () => {
+    const r = recommend(input({ disputedCents: 8700, transactionCents: 8700, record: cancelled() }));
+    expect(r.action).toBe("fight");
+    expect(r.reasons.join(" ")).not.toMatch(/photo|weak/);
+  });
+
+  it("offers the rest when PayPal allows an offer and the shop cancelled, or the terms are not in the mandate", () => {
+    for (const record of [cancelled({ by: "staff" }), cancelled({ termsInMandate: false })]) {
+      const r = recommend(input({ stage: "INQUIRY", actions: inquiryActions, disputedCents: 8700, transactionCents: 8700, record }));
+      expect(r).toMatchObject({ action: "offer", headline: "Offer $43.50: the rest of the fee.", offerCents: 4350 });
+    }
+  });
+
+  it("accepts a shop cancellation when no offer is possible, and says what the shop kept", () => {
+    const r = recommend(input({ disputedCents: 4350, transactionCents: 8700, record: cancelled({ by: "staff" }) }));
+    expect(r).toMatchObject({ action: "accept", offerCents: null });
+    expect(r.reasons.join(" ")).toMatch(/refunded \$43\.50 of the \$87\.00 fee and kept \$43\.50/);
+  });
+
+  it("accepts when the audit log does not verify", () => {
+    expect(recommend(input({ disputedCents: 4350, record: { ...cancelled(), chainIntact: false } })).action).toBe("accept");
+  });
+});
+
