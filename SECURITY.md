@@ -29,8 +29,8 @@ This is a one-person project with no bug bounty and no fixed response time. You 
 - Calling the hold renewal job (`POST /api/jobs/renew-holds`) without `CRON_SECRET`.
 - With `SHOP_ACCESS_CODE` set: reaching a counter page, a staff server action, `/api/live/shop` or an evidence PDF without a valid staff cookie, forging a cookie, or learning the code from one.
 - A refund of more than is left on a capture, two refunds from one submit, or a refund while a PayPal dispute on the rental is open.
-- Reading or answering another customer's rental without their link.
-- A way for an assistant using the MCP endpoint (`app/api/mcp/route.ts`, `lib/mcp/`) to move money, answer a charge, settle, or get a renter's page link, or a hold or charge that the deposit mandate should have refused (`lib/rentals/mandate.ts`).
+- Reading, answering or cancelling another customer's rental without their link, or a cancellation that refunds more than the booking's terms give the renter.
+- A way for an assistant using the MCP endpoint (`app/api/mcp/route.ts`, `lib/mcp/`) to move money, cancel a booking, answer a charge, settle, or get a renter's page link, or a hold or charge that the deposit mandate should have refused (`lib/rentals/mandate.ts`).
 - Secrets that reach the browser, the logs or the repository.
 
 ## Known limits of this build
