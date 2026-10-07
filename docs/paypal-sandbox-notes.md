@@ -50,6 +50,7 @@ What this settles:
 - Right after the reauthorization the original authorization still reads `CREATED`. The app never touches it again; captures go to the new one.
 - A new authorization captures like the original: a partial `final_capture` keeps the charge and releases the rest.
 - A hold can be voided after its honor period.
+- A hold can also be captured after its honor period without being reauthorized. On 2026-10-07 07:52 UTC, 125.5 hours (day 6) after card authorization `4CN71236N78905121` was placed, a $35.00 capture with `final_capture: true` came back `COMPLETED` (capture `3SY16415DT0720607`, $265.00 released) and the authorization became `CAPTURED`. In the sandbox the funds were still there; in production PayPal does not promise that after the honor period, which is why the app renews before the item comes back.
 
 ## 2026-10-02: save PayPal at booking, hold the deposit at pickup
 
