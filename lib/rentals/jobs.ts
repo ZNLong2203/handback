@@ -17,13 +17,14 @@ export { renewalDueAt };
 
 export type RenewalOutcome = { rentalId: string; outcome: "renewed" | "not-due" | "expired" | "failed"; detail?: string };
 
-/** Renews every active hold that is due. Safe to run as often as you like. */
-export async function renewDueHolds(now = new Date(), gateway: DepositGateway = depositGateway()): Promise<RenewalOutcome[]> {
+/** Renews every active hold that is due (or only those of the given rentals). Safe to run as often as you like. */
+export async function renewDueHolds(now = new Date(), gateway: DepositGateway = depositGateway(), only?: string[]): Promise<RenewalOutcome[]> {
   const db = await getDb();
   const rows = await db.query<HoldRow>(
     `select id, authorization_id, authorized_cents, authorized_at, end_date from rentals
-     where status = any($1) and authorization_id is not null and parent_authorization_id is null and authorized_at is not null`,
-    [ACTIVE],
+     where status = any($1) and authorization_id is not null and parent_authorization_id is null and authorized_at is not null
+       and ($2::text[] is null or id = any($2::text[]))`,
+    [ACTIVE, only ?? null],
   );
   const results: RenewalOutcome[] = [];
   for (const row of rows) {

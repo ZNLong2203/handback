@@ -282,6 +282,20 @@ export class DemoDepositGateway implements DepositGateway {
     });
   }
 
+  /**
+   * Not PayPal API: the demo's sample history (lib/insights/seed.ts) moves a
+   * hold back in time. The stand-in's own clock has to agree, or it would
+   * refuse the hourly renewal as too soon and report an expiry 29 days from
+   * the seeding instead of from the moved-back pickup.
+   */
+  async backdateAuthorization(authorizationId: string, createdAt: Date): Promise<void> {
+    await this.ready();
+    const auth = this.auth(authorizationId);
+    auth.createdAt = createdAt.toISOString();
+    auth.expiresAt = new Date(createdAt.getTime() + AUTHORIZATION_VALID_DAYS * DAY_MS).toISOString();
+    await this.store.save(this.state);
+  }
+
   /** Not PayPal API: the demo dispute stand-in reports money a dispute returned on a capture, so later refunds see less left. */
   async recordDisputeRefund(captureId: string, cents: number): Promise<void> {
     await this.ready();

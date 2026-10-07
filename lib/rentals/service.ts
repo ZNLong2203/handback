@@ -538,7 +538,7 @@ function itemAsBooked(rental: Rental): RentalItem {
 }
 
 /** Compares the latest pickup and return photos with two independent looks, pricing from the renter's agreed list. */
-export async function inspect(rentalId: string, ranBy?: InspectionWorker): Promise<void> {
+export async function inspect(rentalId: string, ranBy?: InspectionWorker, opts: { recordedOnly?: boolean } = {}): Promise<void> {
   const rental = await mustRental(rentalId);
   expectStatus(rental, ["out"], "inspect the return");
   const db = await getDb();
@@ -550,7 +550,7 @@ export async function inspect(rentalId: string, ranBy?: InspectionWorker): Promi
   if (!before || !after) throw new UserError("A photo is missing from storage.");
 
   const item = itemAsBooked(rental);
-  const run = await inspectReturn({ bytes: before.bytes, sample: checkout.sample }, { bytes: after.bytes, sample: checkin.sample }, item, SHOP.name);
+  const run = await inspectReturn({ bytes: before.bytes, sample: checkout.sample }, { bytes: after.bytes, sample: checkin.sample }, item, SHOP.name, opts);
   const findings: ReviewedFinding[] = run.assessment.findings.map((f) => ({
     ...f,
     staff: f.decision === "note" ? "waive" : "keep",
