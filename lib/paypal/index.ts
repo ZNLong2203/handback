@@ -63,5 +63,15 @@ export function disputeApi(): DisputeApi {
   return api;
 }
 
+/**
+ * Forgets the demo stand-ins this process has cached, after the demo reset
+ * emptied demo_paypal; the next call builds fresh ones that load the empty
+ * state. A sandbox or live gateway is kept.
+ */
+export function dropDemoStandIns(): void {
+  if (globalForGateway.depositGateway?.mode === "demo") globalForGateway.depositGateway = undefined;
+  if (globalForGateway.disputeApi?.mode === "demo") globalForGateway.disputeApi = undefined;
+}
+
 export type { DepositGateway } from "./gateway";
 export { PayPalError } from "./errors";

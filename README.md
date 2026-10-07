@@ -89,6 +89,8 @@ In a Codespace, the counter's QR code and "Customer's page" link point at `http:
 
 [`render.yaml`](render.yaml) is a Render Blueprint: the web service, Render Postgres, a Render Workflows service that runs photo comparisons and hold renewals as tasks with retries, and an hourly cron job. [docs/deploy.md](docs/deploy.md) has the steps and costs. The Blueprint passes Render's published schema and the tasks ran on a development machine through the Render CLI's local task server; it has not been deployed on Render yet.
 
+`DEMO_RESET=true`, meant only for the public demo judges use, makes the copy start over once a day (20:00 UTC by default, `DEMO_RESET_HOUR`): the cron job has the web service delete every rental and seed the sample ones again, and the counter and booking page say when ([docs/deploy.md](docs/deploy.md#daily-demo-reset)).
+
 ## How we use PayPal
 
 Terms used below:

@@ -1,5 +1,7 @@
 import "server-only";
 import { getDb } from "@/lib/db/client";
+import { demoResetConfig } from "@/lib/demo-reset/config";
+import { lastDemoReset } from "@/lib/demo-reset/reset";
 import { DEFAULT_VISION_MODEL } from "@/lib/inspection/compare";
 import { aiConfigured } from "@/lib/inspection/run";
 import { paypalConfig, type PayPalMode } from "@/lib/paypal/config";
@@ -26,11 +28,17 @@ export type Health = {
    * against.
    */
   staffAccess: { mode: "open" | "code" | "misconfigured"; signInLocked: boolean; countedAs?: string };
+  /**
+   * The nightly demo reset (DEMO_RESET): whether it is on, its hour in UTC,
+   * why it refuses to run here (live PayPal), and when the last one finished.
+   */
+  demoReset: { enabled: boolean; hourUtc: number; refused: string | null; lastResetAt: string | null };
   checkedAt: string;
 };
 
 /** Render answers a health check in 5 seconds; leave room for the response. */
 const DB_TIMEOUT_MS = 4_000;
+const LAST_RESET_TIMEOUT_MS = 500;
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -57,7 +65,10 @@ function errorCode(err: unknown): string {
  * mode, where background jobs run, and the deployed commit. Only modes and
  * booleans come from the environment; never a key, secret or URL.
  */
-export async function checkHealth(ping: () => Promise<void> = pingDatabase): Promise<Health> {
+export async function checkHealth(
+  ping: () => Promise<void> = pingDatabase,
+  lastReset: () => Promise<string | null> = lastDemoReset,
+): Promise<Health> {
   const env = process.env;
   const started = Date.now();
   let error: string | undefined;
@@ -70,6 +81,9 @@ export async function checkHealth(ping: () => Promise<void> = pingDatabase): Pro
   const paypal = paypalConfig();
   const ai = aiConfigured();
   const jobs = workflowsConfig();
+  const reset = demoResetConfig(env);
+  // Only asked of a reachable database where the reset is on, and briefly: the answer must stay within Render's 5 seconds.
+  const lastResetAt = reset.enabled && !error ? await withTimeout(lastReset(), LAST_RESET_TIMEOUT_MS).catch(() => null) : null;
   return {
     ok: !error,
     database: { ok: !error, driver: url === "memory" ? "memory" : url ? "postgres" : "pglite", ms: Date.now() - started, ...(error ? { error } : {}) },
@@ -78,6 +92,7 @@ export async function checkHealth(ping: () => Promise<void> = pingDatabase): Pro
     jobs: jobs.runner === "render" ? { runner: "render-workflows", slug: jobs.slug, lastSkippedRun: lastSkippedRun() } : { runner: "web", reason: jobs.reason },
     build: { commit: env.RENDER_GIT_COMMIT || null, branch: env.RENDER_GIT_BRANCH || null },
     staffAccess: { mode: staffAccess().mode, signInLocked: signInLocked() },
+    demoReset: { enabled: reset.enabled, hourUtc: reset.hourUtc, refused: reset.enabled ? reset.refusal : null, lastResetAt },
     checkedAt: new Date().toISOString(),
   };
 }
