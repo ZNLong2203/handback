@@ -9,7 +9,7 @@ Handback deploys to Render from one Blueprint (`render.yaml`): the Next.js app, 
 | `handback` | Web service, Node 22 | `0.5c-512mb` (Starter), $7/month | The app: counter, customer pages, PayPal webhooks, `/api/health` |
 | `handback-db` | Render Postgres 18 | `0.1c-256mb` (Basic 256 MB), $6/month, 1 GB disk | Rentals, photos, audit log. Reachable only from Render services in the same region |
 | `handback-workflows` | Render Workflows | per task run (`flex`) | Two tasks: `inspect-return` and `renew-holds` |
-| `handback-renew-holds` | Cron job | `0.5c-512mb`, per second, $1/month minimum | Every hour at :17 UTC, asks the web service to renew deposit holds that are due |
+| `handback-renew-holds` | Cron job | `0.5c-512mb`, per second, $1/month minimum | Every hour at :17 UTC, asks the web service to renew deposit holds that are due; once a day it also asks for the [daily demo reset](#daily-demo-reset), which the web service runs only with `DEMO_RESET=true` |
 
 Every resource is in `oregon`, so the services reach the database and each other over Render's private network.
 
@@ -21,6 +21,7 @@ The plans are paid on purpose. A free web service sleeps after 15 minutes withou
 flowchart LR
   counter["Counter page"] -->|"Compare the photos"| web["handback (web)"]
   cron["handback-renew-holds (cron, hourly)"] -->|"POST /api/jobs/renew-holds<br/>Bearer CRON_SECRET"| web
+  cron -->|"once a day: POST /api/jobs/reset-demo"| web
   web -->|"start run, idempotency key"| api["Render API"]
   api --> wf["handback-workflows<br/>inspect-return / renew-holds"]
   wf --> db[("handback-db")]
@@ -58,11 +59,12 @@ flowchart LR
    | `handback` | `RENDER_API_KEY` | Your Render API key, or empty to keep jobs in the web process |
    | `handback` | `SHOP_ACCESS_CODE` | A random code of at least 12 characters, for example from `openssl rand -base64 12`. Staff enter it at `/shop/sign-in`; without it anyone who finds the URL can hold, settle and refund, and a shorter one closes the counter to everyone. Changing it signs every browser out |
    | `handback` | `PUBLIC_DEMO` | `true` on the copy judges use, so the sign-in page says the code is in the Devpost testing instructions; empty otherwise |
+   | `handback` | `DEMO_RESET` | `true` only on the copy judges use: once a day it **deletes every rental** and seeds the sample ones again ([Daily demo reset](#daily-demo-reset)). Empty everywhere else |
    | `handback-workflows` | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `GEMINI_API_KEY` | **The same values** as the web service. A task whose mode differs skips its work and the web service does it instead (see "Same modes on both services") |
 
    If the form does not show the workflow's fields, add them under `handback-workflows`, **Environment**, after the Blueprint is created.
 
-   Render fills in the rest: `DATABASE_URL` (internal connection string), a random `CRON_SECRET` and `STAFF_COOKIE_SECRET`, `RENDER_WORKFLOW_SLUG` (from the workflow service), the cron job's `HANDBACK_HOSTPORT` and `CRON_SECRET` (from the web service), `PAYPAL_ENVIRONMENT=sandbox` and `NODE_VERSION=22`.
+   Render fills in the rest: `DATABASE_URL` (internal connection string), a random `CRON_SECRET` and `STAFF_COOKIE_SECRET`, `RENDER_WORKFLOW_SLUG` (from the workflow service), the cron job's `HANDBACK_HOSTPORT`, `CRON_SECRET` and `DEMO_RESET_HOUR` (from the web service), `DEMO_RESET_HOUR=20`, `PAYPAL_ENVIRONMENT=sandbox` and `NODE_VERSION=22`.
 3. Apply. The web service builds with `npm ci && npm run build` and starts with `npm run start`; it goes live once `GET /api/health` answers 200, which needs the database. The workflow service builds with `npm ci`, then runs `npm run workflows` to register its tasks: its **Tasks** page should list `inspect-return` and `renew-holds`. After the web service's first successful deploy, Render runs `npm run seed:demo` once (`initialDeployHook`).
 4. If your workspace cannot create a workflow from a Blueprint, delete the `handback-workflows` service and the `RENDER_WORKFLOW_SLUG` entry from `render.yaml` before applying it. Then create the workflow by hand: **New**, **Workflow**, this repository, language Node, region Oregon, build command `npm ci`, start command `npm run workflows`, with `DATABASE_URL` (the database's internal URL), `NODE_VERSION=22` and the PayPal and Gemini values from step 2. Finally set `RENDER_WORKFLOW_SLUG` on `handback` to the workflow's slug, shown on each task's page as `<slug>/<task>`.
 
@@ -107,6 +109,29 @@ In demo mode the stand-in caches its state in the web process: if you seed after
 5. Trigger the cron job once (`handback-renew-holds`, **Trigger Run**). The log should end with `HTTP 200 {"ok":true,"ranOn":"render-workflows",...}`. In demo mode it says `"ranOn":"web"`.
 6. After settling a sandbox rental, the audit trail gains "PayPal confirmed by webhook" once PayPal delivers `PAYMENT.CAPTURE.COMPLETED`.
 7. Refund a few dollars of that rental from its **Refunds** form. The audit trail shows PayPal's refund id, and once PayPal delivers `PAYMENT.CAPTURE.REFUNDED` another "PayPal confirmed by webhook" entry follows; the refund is still counted once.
+8. On the judges' copy, with `DEMO_RESET=true`: `/api/health` shows `"demoReset": {"enabled": true, "hourUtc": 20, "refused": null, ...}`, and the counter and the booking page show when the demo starts over. After the next reset hour, the cron run's log ends with `Demo reset: HTTP 200 {"ok":true,"status":"reset",...}` and `lastResetAt` is set.
+
+## Daily demo reset
+
+Judges use the public copy for weeks, as renter and as staff. Without a reset, every earlier visitor's half-finished rental stays on the counter and the next judge cannot tell which rental is theirs. With `DEMO_RESET=true` on `handback`, the copy starts over once a day.
+
+**It destroys all rental data.** Turn it on only on the public demo, never on a copy whose rentals matter. Anyone in the middle of a rental at that moment loses it, and their link stops working.
+
+On the cron job's run in the `DEMO_RESET_HOUR` (UTC, default `20`: 3:00 in Vietnam, noon or 1 p.m. in California; the run starts at :17):
+
+1. After renewing holds, the cron job calls `POST /api/jobs/reset-demo` with the same `CRON_SECRET`. The web service decides. It answers `"status":"off"` unless its own `DEMO_RESET` is `true`, refuses with 403 when `PAYPAL_ENVIRONMENT` is `live`, and resets at most once per reset day: a day starts at the reset hour, and a second call that day answers `"status":"already-done"`. The days are kept in the `demo_resets` table.
+2. Sandbox only: each deposit hold that is still open (a rental out, being compared, with the customer or answered) is voided on PayPal with `PayPal-Request-Id` `reset-void:<rental id>:<authorization id>`, and the log says which. This is best effort: a refusal is logged and the reset goes on, since an unused hold expires on its own. Nothing is captured or refunded. Booking fees and settled charges stay where they are in the sandbox, and PayPal keeps its own records (orders, captures, disputes).
+3. In one transaction it empties every table that holds rentals or what happened to them: rentals, the audit log, photos, inspections, assessments, refunds, disputes, dispute actions, evidence packs, schedule blocks and proposals (including moves), webhook events, the PayPal stand-in's state and the demo seed markers. The units and the schema stay. A test fails when a new table is in neither the wiped nor the kept list (`lib/demo-reset/reset.ts`).
+4. It seeds the counter as a fresh deployment is seeded. Demo mode: the six `seed:demo` rentals and the two-week demo schedule. Sandbox: the six rentals only when `SEED_VAULT_ID` is a saved wallet's id; the seed then makes new sandbox payments with that wallet, as `npm run seed:demo` does. `latest` is not used here, because on a public demo the newest saved wallet may be a visitor's. Without an id the counter stays empty until someone books.
+5. Open counter pages refresh. While the reset is on, the counter and the booking page say when the next one is, and `/api/health` shows `demoReset` with `enabled`, `hourUtc` and `lastResetAt`.
+
+To turn it on, set `DEMO_RESET=true` on `handback` under **Environment**; to move it, change `DEMO_RESET_HOUR` there (the cron job reads the web service's value). To turn it off, clear `DEMO_RESET`.
+
+A failed reset marks the day failed and fails the cron run, so Render notifies you; the web service's log has the error. A failed day can be retried by hand, a finished one cannot:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://handback.onrender.com/api/jobs/reset-demo
+```
 
 ## Costs
 
@@ -131,7 +156,7 @@ Render Workflows limits that matter here (Hobby): new task runs can take up to 1
 - Stay on paid plans. Never move the web service or the database to `free`: the web service would sleep, and the database would expire and be deleted.
 - Keep a card or credits on the workspace; Render suspends services when billing fails.
 - Keep the credentials valid: the PayPal sandbox app, the Gemini key, and the Render API key (revoking it moves jobs back into the web process, which still works).
-- Sandbox deposit holds are real and last 29 days (PayPal's limit); the cron job renews each one once, the day before return. Holds the seed places expire 29 days after it runs, and the app then reports them as expired. Seed close to the submission deadline (Nov 12) so the seeded holds last into December; rentals people create during judging are unaffected.
+- Sandbox deposit holds are real and last 29 days (PayPal's limit); the cron job renews each one once, the day before return. Holds the seed places expire 29 days after it runs, and the app then reports them as expired. Seed close to the submission deadline (Nov 12) so the seeded holds last into December; rentals people create during judging are unaffected. With the daily demo reset on, the seeded rentals are replaced every day (in the sandbox, only with `SEED_VAULT_ID` set), so this applies only without it.
 - After pushing, check `/api/health` shows the new commit.
 
 ## Running Render Workflows locally
@@ -154,7 +179,9 @@ Both processes need the same database. PGlite (the default local database) lives
 | `RENDER_API_KEY` | web | Starts task runs. Without it jobs run in the web process |
 | `RENDER_WORKFLOWS=off` | web | Run jobs in the web process even when Render Workflows is set up |
 | `RENDER_USE_LOCAL_DEV`, `RENDER_LOCAL_DEV_URL` | local | Send runs to `render workflows dev` (default `http://localhost:8120`) |
-| `CRON_SECRET` | web, cron | Generated; authorizes `POST /api/jobs/renew-holds` |
+| `CRON_SECRET` | web, cron | Generated; authorizes `POST /api/jobs/renew-holds` and `POST /api/jobs/reset-demo` |
+| `DEMO_RESET` | web | `true` only on the public demo: the [daily demo reset](#daily-demo-reset) deletes every rental and seeds the sample ones again. Refused with live PayPal |
+| `DEMO_RESET_HOUR` | web, cron | Hour of the daily reset in UTC, 0 to 23; default 20. `render.yaml` copies the web service's value to the cron job |
 | `SHOP_ACCESS_CODE` | web | The counter's shared access code, at least 12 characters; unset leaves the counter open, shorter closes it |
 | `STAFF_COOKIE_SECRET` | web | Generated; mixed into the staff cookie's key |
 | `TRUSTED_PROXY_HOPS` | web | `X-Forwarded-For` entries after the client's address added by proxies; default 0 |
@@ -189,6 +216,9 @@ The button creates the same paid services in the account of whoever clicks it. L
 | The sign-in page says "Too many wrong codes" | Five wrong codes from one address, or 100 from everyone, in 15 minutes (`/api/health` shows `"signInLocked": true` for the second). Wait for the window to end, or restart the web service, which resets the counts |
 | The sign-in page says "The counter is closed" | `SHOP_ACCESS_CODE` is set but shorter than 12 characters, or only spaces; `/api/health` shows `"mode": "misconfigured"` |
 | Anyone can open `/shop` | `SHOP_ACCESS_CODE` is not set on `handback` |
+| Cron run fails with "The demo reset did not run: PAYPAL_ENVIRONMENT is live" | `DEMO_RESET=true` on a live deployment. Clear it |
+| Cron run fails with "The demo reset did not run" and another reason | The web service's log has the error. The day is marked failed; call the route by hand to retry ([Daily demo reset](#daily-demo-reset)) |
+| The counter is empty after a reset in sandbox mode | `SEED_VAULT_ID` is unset or `latest`; set it to a saved wallet's id |
 
 ## What has been verified
 
@@ -202,7 +232,8 @@ On Oct 2, 2026, on a development machine, not yet on Render:
 | "Compare the photos" in sandbox mode with live Gemini, through the task server | Run `trn-davm4gq7tef5e1aqc45g`, 6.8 s; found the lens barrel dent and proposed the $140 repair from the price list |
 | Cron script, web route and `renew-holds` run against three real sandbox holds | `HTTP 200`, run `trn-davm4cq7tef5e1aqc450`, all three `not-due` |
 | Seed against the PayPal sandbox and live Gemini on Postgres 18 | Six rentals; six fee captures, five deposit holds (for example `3VM4358255896500L`), then a $55 capture `8EK84013W6902232K` with $95 released and one full release; a second run changed nothing |
+| Daily demo reset (Oct 7), demo mode, `next dev` on an in-memory database | `POST /api/jobs/reset-demo` answered `"status":"reset"` with 6 counter and 26 schedule rentals seeded (the schedule seed skips one drone kit booking that the counter seed's drone kit takes, as on a fresh deployment); a second call answered `already-done`; the counter and booking page showed the reset line, and `/api/health` showed `lastResetAt` |
 
 Running the app on a real Postgres turned up a bug the PGlite-based tests could not: postgres.js encoded every jsonb parameter a second time, so findings and audit data came back as strings. It is fixed in `lib/db/client.ts`. `lib/db/client.test.ts` checks the driver's json and jsonb handling on every test run, and the round trip through a database whenever `TEST_DATABASE_URL` points at a Postgres.
 
-Not verified yet: the Blueprint sync on Render itself, task runs on Render's infrastructure (including whether Render passes the run id to the task), the cron job's private-network call, and the first-deploy hook. Check them with the smoke test above after the first deploy.
+Not verified yet: the Blueprint sync on Render itself, task runs on Render's infrastructure (including whether Render passes the run id to the task), the cron job's private-network call, the first-deploy hook, and the daily demo reset on Render. The reset's voids of open sandbox holds are tested against a scripted gateway, not yet against the PayPal sandbox. Check them with the smoke test above after the first deploy.

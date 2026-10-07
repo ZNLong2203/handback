@@ -5,7 +5,8 @@
 #   handback-db             Render Postgres (rentals, photos, audit log)
 #   handback-workflows      Render Workflows: the two-look photo inspection and the
 #                           hold-renewal sweep, each run on its own instance with retries
-#   handback-renew-holds    hourly cron job that asks the web service to renew holds
+#   handback-renew-holds    hourly cron job that asks the web service to renew holds,
+#                           and once a day to reset the demo (only with DEMO_RESET=true)
 #
 # Paid plans on purpose: a free web service sleeps after 15 idle minutes and a
 # free database expires 30 days after creation, both before judging ends on
@@ -73,6 +74,16 @@ services:
       # code is in the Devpost testing instructions.
       - key: PUBLIC_DEMO
         sync: false
+      # "true" only on the public demo. Once a day the cron job asks this
+      # service to DELETE EVERY RENTAL and seed the sample ones again (holds
+      # still open in the sandbox are voided first). Refused with live PayPal.
+      # Leave it empty anywhere else. docs/deploy.md, "Daily demo reset".
+      - key: DEMO_RESET
+        sync: false
+      # The reset's hour in UTC, 0 to 23: 20 is 3:00 in Vietnam and noon or
+      # 1 p.m. in California. The cron job reads this same value.
+      - key: DEMO_RESET_HOUR
+        value: "20"
       # Render Workflows: the slug comes from the workflow service below. Jobs run
       # in the web process until a Render API key is added.
       - key: RENDER_WORKFLOW_SLUG
@@ -137,3 +148,10 @@ services:
           type: web
           name: handback
           envVarKey: CRON_SECRET
+      # On the run in this hour the job also asks for the demo reset; the web
+      # service resets only if its DEMO_RESET is "true".
+      - key: DEMO_RESET_HOUR
+        fromService:
+          type: web
+          name: handback
+          envVarKey: DEMO_RESET_HOUR
