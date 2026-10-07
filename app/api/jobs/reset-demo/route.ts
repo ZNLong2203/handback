@@ -1,3 +1,4 @@
+import { bearerMatches } from "@/lib/cron-auth";
 import { resetDemo } from "@/lib/demo-reset/reset";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return Response.json({ error: "CRON_SECRET is not set" }, { status: 503 });
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (!bearerMatches(req.headers.get("authorization"), secret)) return Response.json({ error: "unauthorized" }, { status: 401 });
   try {
     const result = await resetDemo();
     if (result.status === "refused") return Response.json({ ok: false, ...result }, { status: 403 });
