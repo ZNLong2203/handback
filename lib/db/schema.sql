@@ -48,6 +48,17 @@ alter table rentals add column if not exists mandate_sha256 text;
 -- (get_rental_status). Unlike `token`, it cannot act on the rental.
 alter table rentals add column if not exists status_token text;
 create unique index if not exists rentals_status_token on rentals (status_token);
+-- Cancelling before pickup (lib/rentals/cancel.ts): when, by whom (renter or
+-- staff), the reason the renter sees, and the part of the fee refunded. A
+-- booking PayPal declined is cancelled too, but has no cancelled_at.
+alter table rentals add column if not exists cancelled_at timestamptz;
+alter table rentals add column if not exists cancelled_by text;
+alter table rentals add column if not exists cancel_reason text;
+alter table rentals add column if not exists cancel_refund_cents integer;
+-- Set under the row lock just before the deposit hold is sent to PayPal, so a
+-- cancellation racing the pickup cannot slip in while PayPal answers. Cleared
+-- when PayPal definitely refuses the hold.
+alter table rentals add column if not exists hold_requested_at timestamptz;
 
 -- Content-addressed photo store: the key is the SHA-256 of the bytes, so the
 -- hash a customer acknowledged always points at exactly the same image.

@@ -10,7 +10,7 @@ export const STATUS: Record<RentalStatus, { label: string; customerLabel?: strin
   customer_review: { label: "With customer", customerLabel: "Your review needed", tone: "held", staffNext: "Waiting for the customer's answers", customer: "Please review what the shop found." },
   responded: { label: "Customer answered", customerLabel: "Answers sent", tone: "charged", staffNext: "Read the answers and settle", customer: "Thanks. The shop is reading your answers." },
   settled: { label: "Settled", tone: "released", staffNext: "Done", customer: "All settled." },
-  cancelled: { label: "Cancelled", tone: "neutral", staffNext: "Done", customer: "This booking was cancelled." },
+  cancelled: { label: "Cancelled", tone: "neutral", staffNext: "Nothing; the unit is free again", customer: "This booking was cancelled." },
   disputed: { label: "Disputed", customerLabel: "Case with PayPal", tone: "charged", customerTone: "neutral", staffNext: "Answer the PayPal dispute", customer: "PayPal is looking at a case about this rental." },
 };
 
@@ -42,6 +42,8 @@ const EVENT_LABEL: Record<string, string> = {
   "booking.pending": "Rental fee approved; PayPal is still processing it",
   "booking.declined": "PayPal did not take the rental fee",
   "booking.not_captured": "The renter approved in PayPal, but the booking could not be taken",
+  "booking.cancelled": "Booking cancelled before pickup",
+  "booking.paid_after_cancel": "PayPal took the fee after the booking was cancelled; refunded in full",
   "photo.added": "Photo recorded",
   "deposit.held": "Deposit held on PayPal",
   "checkout.acknowledged": "Customer confirmed the pickup photos",
@@ -55,7 +57,7 @@ const EVENT_LABEL: Record<string, string> = {
   "contest.waived": "Counter waived a questioned charge",
   "deposit.settled": "Deposit settled: charge captured, rest released",
   "deposit.released": "Whole deposit released",
-  "refund.issued": "Shop refunded money it had kept, on PayPal",
+  "refund.issued": "Refunded on PayPal",
   "refund.recorded": "PayPal reported a refund made outside the counter",
   "paypal.error": "PayPal refused a step",
   "webhook.received": "PayPal confirmed by webhook",

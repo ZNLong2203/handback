@@ -51,6 +51,15 @@ export type Rental = {
   statusToken: string | null;
   createdAt: string;
   updatedAt: string;
+  /** When the renter or the counter cancelled the booking (cancel.ts); null when PayPal declined it, or it was never cancelled. */
+  cancelledAt: string | null;
+  cancelledBy: "renter" | "staff" | null;
+  /** The counter's reason, shown to the renter. */
+  cancelReason: string | null;
+  /** The part of the fee refunded when it was cancelled. */
+  cancelRefundCents: Cents | null;
+  /** When the counter sent the deposit hold to PayPal; a cancellation waits for its answer. */
+  holdRequestedAt: string | null;
   /** The physical unit promised to this customer (see lib/schedule). */
   unitId?: string | null;
 };

@@ -50,7 +50,7 @@ const CODE = "open-sesame-door";
 const { spacedDates } = await import("@/test/dates");
 
 /** The renter's side: anyone may call these, as before. */
-const CUSTOMER_ACTIONS = ["startBookingAction", "confirmBookingAction", "acknowledgeCheckoutAction", "respondAction"];
+const CUSTOMER_ACTIONS = ["startBookingAction", "confirmBookingAction", "acknowledgeCheckoutAction", "respondAction", "cancelBookingAction"];
 const REFUSED = /Staff sign-in needed/;
 
 async function bookedWithPhoto() {

@@ -3,7 +3,8 @@
 import { refresh } from "next/cache";
 import * as desk from "@/lib/disputes/service";
 import { after } from "next/server";
-import { parseUsdInput } from "@/lib/money";
+import { formatUsd, parseUsdInput } from "@/lib/money";
+import { cancelAsRenter, cancelAtCounter, type CancelResult } from "@/lib/rentals/cancel";
 import { refundCharge, resendRefund } from "@/lib/rentals/refunds";
 import * as svc from "@/lib/rentals/service";
 import { polishMessages } from "@/lib/schedule/agent";
@@ -70,6 +71,23 @@ export async function respondAction(token: string, answers: { findingId: string;
   return run(() => svc.respondAsCustomer(token, answers));
 }
 
+/** What a cancel button says afterwards: nothing when it all went through, else what is still waiting. */
+function cancelOutcome(r: CancelResult): string | undefined {
+  if (!r.cancelled) return "This booking was already cancelled.";
+  if (r.refundProblem) return `Cancelled. The refund has not gone through yet: ${r.refundProblem}`;
+  if (r.refund && r.refund.state !== "done") return `Cancelled. The refund of ${formatUsd(r.refund.amountCents)} was sent to PayPal; its answer has not arrived yet.`;
+  return undefined;
+}
+
+/**
+ * The renter cancels on their own page. `expectedRefundCents` is the refund
+ * the page showed them; if the policy has moved on since, nothing is
+ * cancelled and they see the new amount.
+ */
+export async function cancelBookingAction(token: string, expectedRefundCents: number | null) {
+  return run(async () => cancelOutcome(await cancelAsRenter(String(token), typeof expectedRefundCents === "number" ? expectedRefundCents : null)));
+}
+
 // ─── Counter ────────────────────────────────────────────────
 
 export async function addPhotoAction(form: FormData) {
@@ -129,6 +147,15 @@ export async function refundAction(rentalId: string, input: { captureId: string;
     const cents = parseUsdInput(String(input?.amount ?? ""));
     if (cents === null) throw new UserError("Enter the amount in dollars and cents, for example 12.50.");
     await refundCharge(String(rentalId), { captureId: String(input?.captureId ?? ""), cents, reason: String(input?.reason ?? ""), seq: Number(input?.seq) });
+  });
+}
+
+/** The counter cancels a booking before pickup, refunding the amount typed (from $0.00 up to the fee left), with a reason the renter sees. */
+export async function cancelAtCounterAction(rentalId: string, input: { amount: string; reason: string }) {
+  return asStaff(async () => {
+    const cents = parseUsdInput(String(input?.amount ?? ""));
+    if (cents === null) throw new UserError("Enter the refund in dollars and cents, for example 45.00, or 0.");
+    return cancelOutcome(await cancelAtCounter(String(rentalId), { refundCents: cents, reason: String(input?.reason ?? "") }));
   });
 }
 
