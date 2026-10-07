@@ -12,8 +12,16 @@ import { fromGeminiResponse, toGeminiRequest, type LlmRequest, type LlmResponse 
 
 type Env = Record<string, string | undefined>;
 
-/** Whether the dashboard's agent can run: it needs GEMINI_API_KEY on the server. The dashboard itself does not. */
-export const insightsAiConfigured = (env: Env = process.env) => Boolean(env.GEMINI_API_KEY?.trim());
+/**
+ * For the browser test only: INSIGHTS_AGENT_SCRIPT=e2e answers every turn
+ * from a fixed script (scriptedTurn) instead of Gemini, so the end-to-end
+ * test can drive the agent through Studio, this route and the tools without
+ * a key. It never calls Gemini.
+ */
+export const scriptedAgent = (env: Env = process.env) => env.INSIGHTS_AGENT_SCRIPT === "e2e";
+
+/** Whether the dashboard's agent can run: it needs GEMINI_API_KEY on the server (or the test script). The dashboard itself does not. */
+export const insightsAiConfigured = (env: Env = process.env) => Boolean(env.GEMINI_API_KEY?.trim()) || scriptedAgent(env);
 
 export const insightsModel = (env: Env = process.env) => env.AI_MODEL || DEFAULT_VISION_MODEL;
 
@@ -50,8 +58,26 @@ export function geminiParams(req: LlmRequest, signal?: AbortSignal) {
   };
 }
 
-/** One turn on Gemini. */
+/** The test script's turn: ask for the holds, then say how many need a person. Anything else gets a fixed answer. */
+export function scriptedTurn(req: LlmRequest): LlmResponse {
+  const reply = (output: LlmResponse["output"]): LlmResponse => ({ id: `script_${randomUUID().slice(0, 8)}`, createdAt: Date.now(), status: "completed", output, model: "test-script" });
+  const text = (t: string) => reply([{ id: `msg_${randomUUID().slice(0, 8)}`, kind: "output", type: "message", role: "assistant", status: "completed", content: [{ type: "text", text: t, annotations: [] }] }]);
+  const last = req.input.at(-1);
+  if (last?.type === "function_call_output") {
+    const n = /"needing_attention":\s*(\d+)/.exec(last.output)?.[1];
+    return text(n === undefined ? "The test script read the tool's answer." : `Test script: ${n} running hold${n === "1" ? "" : "s"} need${n === "1" ? "s" : ""} a person now.`);
+  }
+  const asked = req.input.filter((i) => i.type === "message" && i.role === "user").at(-1);
+  const words = asked && asked.type === "message" ? JSON.stringify(asked.content) : "";
+  if (/hold/i.test(words) && req.tools?.some((t) => t.name === "holds_needing_attention")) {
+    return reply([{ id: `fc_${randomUUID().slice(0, 8)}`, kind: "output", type: "function_call", callId: `call_script_${randomUUID().slice(0, 8)}`, name: "holds_needing_attention", arguments: "{}", status: "completed" }]);
+  }
+  return text("Test script: I only answer questions about holds.");
+}
+
+/** One turn on Gemini (or the test script). */
 export const runTurn: TurnRunner = async (req, signal) => {
+  if (scriptedAgent()) return scriptedTurn(req);
   const { params, wrapped } = geminiParams(req, signal);
   const res = await ai().models.generateContent(params);
   return fromGeminiResponse(res, wrapped, () => randomUUID().slice(0, 12));

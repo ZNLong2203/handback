@@ -43,7 +43,8 @@ export default defineConfig({
           url: baseURL,
           timeout: 240_000,
           reuseExistingServer: false,
-          env: demo(baseURL),
+          // The dashboard's agent answers from a fixed script here, never Gemini (lib/insights/llm.ts).
+          env: { ...demo(baseURL), INSIGHTS_AGENT_SCRIPT: "e2e" },
         },
         {
           // Starts once the first server answers, so the build is finished.

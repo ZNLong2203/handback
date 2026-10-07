@@ -2,7 +2,7 @@ import { Bot, KeyRound, ShieldCheck } from "lucide-react";
 import { ShopHeader } from "@/components/headers";
 import { InsightsBoard } from "@/components/insights/insights-board";
 import { Badge, Eyebrow } from "@/components/ui";
-import { agentRefusal } from "@/lib/insights/llm";
+import { agentRefusal, scriptedAgent } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
 import { seedInsightsHistory } from "@/lib/insights/seed";
 import { studioData } from "@/lib/insights/studio-data";
@@ -40,7 +40,7 @@ export default async function InsightsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <Badge tone={ai ? "brand" : "neutral"}>
-              <Bot className="h-3.5 w-3.5" aria-hidden /> {ai ? "Deposit desk agent on Gemini" : agentOff.includes("GEMINI_API_KEY") ? "AI assistant needs a Gemini key" : "AI assistant needs an access code"}
+              <Bot className="h-3.5 w-3.5" aria-hidden /> {ai ? (scriptedAgent() ? "Deposit desk agent on a test script" : "Deposit desk agent on Gemini") : agentOff.includes("GEMINI_API_KEY") ? "AI assistant needs a Gemini key" : "AI assistant needs an access code"}
             </Badge>
             <Badge tone="released">
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> The agent can draft a refund, never send one

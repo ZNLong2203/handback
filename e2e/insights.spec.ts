@@ -15,8 +15,8 @@ test("the insights dashboard shows where the deposits went, the hold clock, and 
   await page.setViewportSize({ width: 1500, height: 1100 });
   await page.goto("/shop/insights");
   await expect(page.getByRole("heading", { name: "Where the deposit money went" })).toBeVisible();
-  // The assistant is on with a Gemini key and says plainly that it needs one without.
-  await expect(page.getByText(/Deposit desk agent on Gemini|AI assistant needs a Gemini key/).first()).toBeVisible();
+  // The assistant says plainly whether it is on, and what it needs when it is not.
+  await expect(page.getByText(/Deposit desk agent on (Gemini|a test script)|AI assistant needs (a Gemini key|an access code)/).first()).toBeVisible();
   await expect(page.getByText(/AG Studio, a commercial component/)).toBeVisible();
 
   // KPIs from AG Studio's value widgets.

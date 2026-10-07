@@ -52,6 +52,7 @@ const desk = await import("@/lib/disputes/service");
 const { runAgentTool } = await import("@/lib/insights/agent-tools");
 const { readDraft } = await import("@/lib/insights/draft-link");
 const { issueStaffToken } = await import("@/lib/staff-access");
+const { scriptedAgent, scriptedTurn, insightsAiConfigured } = await import("@/lib/insights/llm");
 const { safeError, createTurnLimiter, createTokenBudget, geminiParams, tokenBudget, LLM_PER_SESSION, TOKENS_PER_HOUR, MAX_OUTPUT_TOKENS } = await import("@/lib/insights/llm");
 const { LlmRequestSchema, LLM_LIMITS } = await import("@/lib/insights/gemini");
 const { spacedDates } = await import("@/test/dates");
@@ -226,6 +227,23 @@ describe("/api/insights/llm", () => {
     // Under the hourly cap every hour, over the daily one by the fifth.
     for (let i = 0; i < 5; i++) budget.spend(900, t + 4_000_000 + i * 3_600_000);
     expect(budget.waitMs(t + 4_000_000 + 4 * 3_600_000 + 1)).toBeGreaterThan(3_600_000);
+  });
+
+  it("has a test script for the browser test that is off unless asked for, and never needs a key", () => {
+    expect(scriptedAgent({})).toBe(false);
+    expect(insightsAiConfigured({})).toBe(false);
+    expect(insightsAiConfigured({ INSIGHTS_AGENT_SCRIPT: "e2e" })).toBe(true);
+    const tools = [{ name: "holds_needing_attention", description: "d", parameters: { type: "object", properties: {} } }];
+    const ask = scriptedTurn(LlmRequestSchema.parse({ input: turnBody.request.input, tools }));
+    expect(ask.output).toEqual([expect.objectContaining({ type: "function_call", name: "holds_needing_attention", arguments: "{}" })]);
+    const call = ask.output[0] as { callId: string };
+    const answer = scriptedTurn(
+      LlmRequestSchema.parse({
+        input: [...turnBody.request.input, { ...ask.output[0] }, { type: "function_call_output", callId: call.callId, output: JSON.stringify({ needing_attention: 2 }) }],
+        tools,
+      }),
+    );
+    expect(answer.output).toEqual([expect.objectContaining({ type: "message", content: [expect.objectContaining({ text: "Test script: 2 running holds need a person now." })] })]);
   });
 
   it("limits turns per session and over everyone", () => {
