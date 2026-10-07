@@ -67,6 +67,23 @@ describe("checkHealth", () => {
     expect(other).toMatchObject({ paypal: { mode: "demo" }, ai: { mode: "recorded-replies", model: null }, jobs: { runner: "web" }, build: { commit: null } });
   });
 
+  it("reports the nightly demo reset: off, or on with its hour and when it last ran", async () => {
+    Object.assign(process.env, { DATABASE_URL: "memory", DEMO_RESET: "", DEMO_RESET_HOUR: "", PAYPAL_ENVIRONMENT: "sandbox" });
+    let asked = 0;
+    const lastReset = async () => (asked++, "2026-11-20T20:17:42.000Z");
+    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: false, hourUtc: 20, refused: null, lastResetAt: null });
+    expect(asked).toBe(0);
+
+    Object.assign(process.env, { DEMO_RESET: "true", DEMO_RESET_HOUR: "3" });
+    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: true, hourUtc: 3, refused: null, lastResetAt: "2026-11-20T20:17:42.000Z" });
+    // A slow or failing lookup leaves lastResetAt empty rather than failing the check.
+    const failing = await checkHealth(async () => {}, () => Promise.reject(new Error("relation does not exist")));
+    expect(failing).toMatchObject({ ok: true, demoReset: { enabled: true, lastResetAt: null } });
+
+    process.env.PAYPAL_ENVIRONMENT = "live";
+    expect((await checkHealth(async () => {}, lastReset)).demoReset.refused).toMatch(/live PayPal/);
+  });
+
   it("says whether the counter needs a code, and closes it when the code is too short", async () => {
     Object.assign(process.env, { DATABASE_URL: "memory", SHOP_ACCESS_CODE: "" });
     expect((await checkHealth(async () => {})).staffAccess).toEqual({ mode: "open", signInLocked: false });

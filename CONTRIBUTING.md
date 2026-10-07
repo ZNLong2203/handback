@@ -51,16 +51,18 @@ To try a whole rental, follow the six steps under [Run it in two minutes](README
    | `DEMO_MODE` | `true` forces the PayPal stand-in, recorded AI replies and template texts. | `lib/paypal/config.ts`, `lib/inspection/run.ts`, `lib/disputes/narrative.ts` |
    | `DATABASE_URL` | Postgres URL, `memory`, or unset for PGlite in `.data/`. Not in `.env.example`. | `lib/db/client.ts`, `lib/health.ts` |
    | `PAYPAL_WEBHOOK_ID` | Id of the registered webhook. Without it the webhook route answers 503. | `lib/paypal/config.ts` |
-   | `CRON_SECRET` | Bearer token for `POST /api/jobs/renew-holds`. Without it the route answers 503. | `app/api/jobs/renew-holds/route.ts`, `scripts/cron/renew-holds.mjs` |
+   | `CRON_SECRET` | Bearer token for `POST /api/jobs/renew-holds` and `POST /api/jobs/reset-demo`. Without it both routes answer 503. | `app/api/jobs/renew-holds/route.ts`, `app/api/jobs/reset-demo/route.ts`, `scripts/cron/renew-holds.mjs` |
    | `SHOP_ACCESS_CODE` | The counter's shared access code, at least 12 characters. Set: every `/shop` page, every counter, dispute-desk and schedule server action, `/api/live/shop` and `/api/evidence/*` need the staff cookie that `/shop/sign-in` issues for this code; changing it signs everyone out. Unset or empty (local, demo clones, CI, tests): the counter is open, as before. Set but shorter, or only spaces: the counter is closed to everyone. | `lib/staff-access.ts` |
    | `STAFF_COOKIE_SECRET` | Optional server secret mixed into the staff cookie's key, so a leaked cookie cannot be tested against guessed codes offline. `render.yaml` generates one. Changing it signs everyone out. | `lib/staff-access.ts` |
    | `TRUSTED_PROXY_HOPS` | How many `X-Forwarded-For` entries at the end were added by proxies after the one that saw the client (default 0: the last entry). Wrong codes are counted against that address; `/api/health` shows it as `staffAccess.countedAs`. | `lib/staff-access.ts` |
    | `PUBLIC_DEMO` | `true` on a copy shared with hackathon judges: the sign-in page then says the code is in the Devpost testing instructions. Otherwise it gives a neutral hint. | `lib/staff-access.ts` |
+   | `DEMO_RESET` | `true` only on a public demo: once a day `POST /api/jobs/reset-demo` **deletes every rental** and seeds the sample ones again (see [Daily demo reset](#daily-demo-reset)). Refused when `PAYPAL_ENVIRONMENT` is `live`. | `lib/demo-reset/config.ts` |
+   | `DEMO_RESET_HOUR` | Hour of that reset in UTC, 0 to 23 (default 20, 3:00 in Vietnam). The cron job calls the reset on its run in this hour. | `scripts/cron/demo-reset-hour.mjs`, `scripts/cron/renew-holds.mjs`, `lib/demo-reset/config.ts` |
    | `RENDER_WORKFLOW_SLUG`, `RENDER_API_KEY` | With both, photo comparisons and hold renewals run as Render Workflows tasks; otherwise in the web process. `render.yaml` sets the slug. | `lib/workflows/config.ts` |
    | `RENDER_WORKFLOWS` | `off` keeps jobs in the web process even when Render Workflows is set up. Not in `.env.example`. | `lib/workflows/config.ts` |
    | `RENDER_USE_LOCAL_DEV`, `RENDER_LOCAL_DEV_URL` | Send task runs to `render workflows dev` (the Render SDK's default is `http://localhost:8120`). | `lib/workflows/config.ts` |
    | `HANDBACK_URL`, `HANDBACK_HOSTPORT` | Where the cron job finds the web service. `render.yaml` sets `HANDBACK_HOSTPORT`. Not in `.env.example`. | `scripts/cron/renew-holds.mjs` |
-   | `SEED_VAULT_ID` | A saved sandbox wallet, or `latest`, for `npm run seed:demo` in sandbox mode. | `scripts/seed-demo.ts` |
+   | `SEED_VAULT_ID` | A saved sandbox wallet, or `latest`, for `npm run seed:demo` in sandbox mode. The daily demo reset seeds with it too, but never with `latest`. | `scripts/seed-demo.ts`, `lib/demo-reset/config.ts` |
    | `ANTHROPIC_API_KEY` | The MCP demo client uses Claude when this is set, Gemini otherwise. | `scripts/agent-books.ts` |
    | `AGENT_MODEL` | Model for the MCP demo client (default `claude-opus-5-5` with Claude, `gemini-3.8-flash` with Gemini). | `scripts/agent-books.ts` |
    | `MCP_URL` | Endpoint for the MCP demo client. Default `$APP_URL/api/mcp`. | `scripts/agent-books.ts` |
@@ -97,6 +99,19 @@ Sandbox buyer passwords often contain `#`. In `.env.local`, wrap such a value in
 - `npm run seed:demo` walks six rentals to six different steps of the counter. In sandbox mode it needs `SEED_VAULT_ID`; see [docs/deploy.md](docs/deploy.md).
 - PayPal only delivers webhooks to public HTTPS URLs on port 443. To receive them, deploy the app, then register its URL with `npm run paypal:webhook -- https://<your-host>` and put the printed id in `PAYPAL_WEBHOOK_ID`. Run it again after this list of events grows (it now includes `CHECKOUT.ORDER.APPROVED`): for a URL already registered it adds the missing event types.
 - The scripts that drive the counter in a browser (`sandbox-walkthrough.ts`, `sandbox-agent-booking.ts --settle`, `spike-dispute.ts`) expect a server without `SHOP_ACCESS_CODE`.
+
+### Daily demo reset
+
+The public copy for judges starts over once a day. With `DEMO_RESET=true`, the hourly cron job's run in `DEMO_RESET_HOUR` (UTC) calls `POST /api/jobs/reset-demo` (`lib/demo-reset/reset.ts`). In the sandbox it first voids the deposit holds that are still open, and never captures or refunds. Then, in one transaction, it deletes all rental data: rentals, the audit log, photos, inspections, assessments, refunds, disputes, evidence packs, schedule blocks and proposals, webhook events, the PayPal stand-in's state and the demo seed markers. The units stay. Finally it seeds the counter as a fresh deployment is seeded. It runs at most once a day, and refuses live PayPal. The counter and the booking page say when it happens, and `/api/health` shows `demoReset`.
+
+It destroys every rental, so leave `DEMO_RESET` unset on your own copy. To watch it once, on a throwaway database:
+
+```bash
+DEMO_RESET=true CRON_SECRET=local-secret DATABASE_URL=memory npm run dev
+curl -s -X POST -H "Authorization: Bearer local-secret" http://localhost:3000/api/jobs/reset-demo
+```
+
+[docs/deploy.md](docs/deploy.md#daily-demo-reset) covers turning it on for the deployed demo.
 
 ## Tests
 

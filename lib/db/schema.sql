@@ -213,6 +213,18 @@ create table if not exists demo_paypal (
   state jsonb not null
 );
 
+-- One row per day of the nightly demo reset (lib/demo-reset/reset.ts), so a
+-- second call on the same day does nothing. A day starts at DEMO_RESET_HOUR.
+-- The reset never empties this table.
+create table if not exists demo_resets (
+  day date primary key,
+  status text not null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  summary jsonb,
+  error text
+);
+
 -- ─── Schedule ────────────────────────────────────────────────
 
 -- The shop stocks each catalog item as two or three physical units. Every
