@@ -60,7 +60,8 @@ describe("toGeminiRequest", () => {
       responseFormat: { type: "text" },
     });
     const { contents, config } = toGeminiRequest(req);
-    expect(config.systemInstruction).toBe("You are the deposit desk.\n\nExtra system note.");
+    // A system message in the conversation is left out: the system prompt is the turn's instructions only.
+    expect(config.systemInstruction).toBe("You are the deposit desk.");
     expect(config.toolConfig).toEqual({ functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["holds_needing_attention"] } });
     expect(contents.map((c) => c.role)).toEqual(["user", "model", "user"]);
     expect(contents[1].parts).toEqual([

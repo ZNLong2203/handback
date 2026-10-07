@@ -2,12 +2,12 @@ import { Bot, KeyRound, ShieldCheck } from "lucide-react";
 import { ShopHeader } from "@/components/headers";
 import { InsightsBoard } from "@/components/insights/insights-board";
 import { Badge, Eyebrow } from "@/components/ui";
-import { insightsAiConfigured } from "@/lib/insights/llm";
+import { agentRefusal } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
 import { seedInsightsHistory } from "@/lib/insights/seed";
 import { studioData } from "@/lib/insights/studio-data";
 import { paypalConfig } from "@/lib/paypal/config";
-import { requireStaffPage } from "@/lib/staff-access";
+import { clientAddress, requireStaffPage } from "@/lib/staff-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Insights" };
@@ -19,7 +19,9 @@ export default async function InsightsPage() {
   const now = new Date();
   const data = await loadInsights(now);
   const spec = studioData(data);
-  const ai = insightsAiConfigured();
+  // The agent needs a Gemini key, and an access code on a counter others can reach (lib/insights/llm.ts).
+  const agentOff = agentRefusal(await clientAddress());
+  const ai = agentOff === null;
   // A front-end licence key reaches the browser by design; it is set on the host, never in the repository.
   const licenseKey = process.env.AG_STUDIO_LICENSE_KEY?.trim() || null;
 
@@ -38,7 +40,7 @@ export default async function InsightsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <Badge tone={ai ? "brand" : "neutral"}>
-              <Bot className="h-3.5 w-3.5" aria-hidden /> {ai ? "Deposit desk agent on Gemini" : "AI assistant needs a Gemini key"}
+              <Bot className="h-3.5 w-3.5" aria-hidden /> {ai ? "Deposit desk agent on Gemini" : agentOff.includes("GEMINI_API_KEY") ? "AI assistant needs a Gemini key" : "AI assistant needs an access code"}
             </Badge>
             <Badge tone="released">
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> The agent can draft a refund, never send one
@@ -47,11 +49,7 @@ export default async function InsightsPage() {
         </div>
         <InsightsBoard spec={spec} month={now.toISOString().slice(0, 7)} licenseKey={licenseKey} ai={ai} />
         <div className="space-y-1 text-xs text-muted">
-          {!ai && (
-            <p>
-              The AI assistant needs a Gemini key: set <code>GEMINI_API_KEY</code> on the server to turn on the deposit desk agent. The dashboard works without it.
-            </p>
-          )}
+          {agentOff && <p>{agentOff}</p>}
           <p className="flex items-start gap-1.5">
             <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>

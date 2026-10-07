@@ -37,7 +37,7 @@ const ToolCall = z.object({
   type: z.literal("function_call"),
   callId: z.string().max(12_000),
   name: z.string().max(128),
-  arguments: z.string().max(100_000),
+  arguments: z.string().max(60_000),
   status: z.string().optional(),
 });
 const ToolResult = z.object({
@@ -45,7 +45,7 @@ const ToolResult = z.object({
   kind: z.literal("input").optional(),
   type: z.literal("function_call_output"),
   callId: z.string().max(12_000),
-  output: z.string().max(200_000),
+  output: z.string().max(60_000),
   status: z.string().optional(),
 });
 const Reasoning = z.looseObject({ type: z.literal("reasoning") });
@@ -59,13 +59,34 @@ const ToolSchema = z.object({
   kind: z.enum(["client", "server", "provided"]).optional(),
 });
 
+/**
+ * Limits measured against what Studio sends: in a demo session the largest
+ * turn was 80 KB, with instructions up to 17 K characters, seven to nine
+ * tools of 55 K characters together, plain-text answers and no system
+ * messages. The limits leave room for longer conversations and refuse
+ * anything that would make this a general-purpose Gemini endpoint.
+ */
+export const LLM_LIMITS = { instructions: 40_000, toolsJson: 120_000, schemaJson: 20_000 } as const;
+
 export const LlmRequestSchema = z.object({
   input: z.array(Item).max(400),
-  instructions: z.string().max(120_000).optional(),
-  tools: z.array(ToolSchema).max(64).optional(),
+  instructions: z.string().max(LLM_LIMITS.instructions).optional(),
+  tools: z
+    .array(ToolSchema)
+    .max(64)
+    .refine((tools) => JSON.stringify(tools).length <= LLM_LIMITS.toolsJson, "The tools are larger than Studio's.")
+    .optional(),
   toolChoice: z.union([z.enum(["auto", "none", "required"]), z.object({ name: z.string().max(128) })]).optional(),
   responseFormat: z
-    .union([z.object({ type: z.literal("text") }), z.object({ type: z.literal("json"), name: z.string().max(128), description: z.string().max(2_000).optional(), schema: z.record(z.string(), z.unknown()) })])
+    .union([
+      z.object({ type: z.literal("text") }),
+      z.object({
+        type: z.literal("json"),
+        name: z.string().max(128),
+        description: z.string().max(2_000).optional(),
+        schema: z.record(z.string(), z.unknown()).refine((schema) => JSON.stringify(schema).length <= LLM_LIMITS.schemaJson, "The response schema is larger than Studio's."),
+      }),
+    ])
     .optional(),
   model: z.object({ id: z.string().max(80), effort: z.string().max(40).optional() }).optional(),
 });
@@ -215,10 +236,9 @@ export function toGeminiRequest(req: LlmRequest): { contents: Content[]; config:
   let firstCallOfTurn = true;
   for (const item of req.input) {
     if (item.type === "reasoning") continue;
-    if (item.type === "message" && item.role === "system") {
-      system.push(textOf(item.content));
-      continue;
-    }
+    // The system prompt is the turn's instructions only. Studio sends no
+    // system messages of its own; one in the conversation is left out.
+    if (item.type === "message" && item.role === "system") continue;
     if (item.type === "message" && item.role === "user") {
       firstCallOfTurn = true;
       const text = textOf(item.content);
