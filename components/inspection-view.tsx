@@ -20,6 +20,8 @@ const KIND: Record<ReviewedFinding["kind"], { label: string; tone: "charged" | "
 };
 
 const isCharge = (f: ReviewedFinding) => f.decision !== "note" && Boolean(f.price);
+/** Waived by the counter, either before sending or after the customer questioned it. */
+const isWaived = (f: ReviewedFinding) => f.staff === "waive" || f.resolution === "waive";
 
 function boxStyle(b: Box) {
   const [ymin, xmin, ymax, xmax] = b;
@@ -52,7 +54,7 @@ function Photo({
         {findings.map((f, i) => {
           const box = which === "before" ? f.boxBefore : f.boxAfter;
           if (!box) return null;
-          const charge = isCharge(f) && f.staff === "keep";
+          const charge = isCharge(f) && !isWaived(f);
           const on = active === f.id;
           return (
             <button
@@ -103,6 +105,8 @@ export function InspectionView({
   rentalId?: string;
   token?: string;
 }) {
+  // The renter's page passes its token; the counter passes the rental id.
+  const renter = token !== undefined;
   const [active, setActive] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, { answer: "accept" | "contest"; note: string }>>({});
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +141,7 @@ export function InspectionView({
           {findings.map((f, i) => {
             const kind = KIND[f.kind];
             const charge = isCharge(f);
+            const waived = charge && isWaived(f);
             const a = answers[f.id];
             return (
               <li
@@ -144,137 +149,138 @@ export function InspectionView({
                 onMouseEnter={() => setActive(f.id)}
                 onMouseLeave={() => setActive(null)}
                 className={cx(
-                  "rounded-2xl border bg-card p-4 transition",
+                  "rounded-2xl border p-4 transition",
                   active === f.id ? "border-ink/30 shadow-[var(--shadow-card)]" : "border-line",
-                  charge && f.staff === "waive" ? "opacity-60" : "",
+                  waived ? "border-dashed bg-paper/60" : "bg-card",
                 )}
               >
-                <div className="flex flex-wrap items-start gap-3">
+                <div className="flex items-start gap-3">
                   <span
                     className={cx(
                       "grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-bold text-white",
-                      charge && f.staff === "keep" ? "bg-charged" : f.kind === "pre_existing" ? "bg-held" : "bg-note",
+                      charge && !waived ? "bg-charged" : f.kind === "pre_existing" ? "bg-held" : "bg-note",
                     )}
                   >
                     {i + 1}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={kind.tone}>{kind.label}</Badge>
-                      <span className="font-semibold capitalize">{f.item}</span>
-                      {charge && f.price && (
-                        <span className="ml-auto text-right">
-                          <span className={cx("tabular font-semibold", f.staff === "waive" ? "text-muted line-through" : "text-charged")}>
-                            {formatUsd(f.price.cents)}
-                          </span>
-                          <span className="block text-xs text-muted">{f.price.label}</span>
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{f.description}</p>
-                    <details className="mt-1.5 text-sm text-muted">
-                      <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-medium hover:text-ink">
-                        <Eye className="h-3.5 w-3.5" aria-hidden /> Why
-                      </summary>
-                      <p className="mt-1 leading-relaxed">{f.evidence}</p>
-                      <p className="mt-1 leading-relaxed">
-                        {f.reason} Confidence: {f.confidence}.
-                      </p>
-                    </details>
-
-                    {mode === "staff" && charge && (
-                      <div className="mt-3 flex gap-2">
-                        <Button
-                          size="sm"
-                          variant={f.staff === "keep" ? "charged" : "outline"}
-                          disabled={pending}
-                          onClick={() => act(() => setStaffDecisionAction(rentalId!, f.id, "keep"))}
-                        >
-                          <HandCoins className="h-4 w-4" aria-hidden /> Keep
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={f.staff === "waive" ? "primary" : "outline"}
-                          disabled={pending}
-                          onClick={() => act(() => setStaffDecisionAction(rentalId!, f.id, "waive"))}
-                        >
-                          <Undo2 className="h-4 w-4" aria-hidden /> Waive
-                        </Button>
-                      </div>
-                    )}
-
-                    {mode === "customer" && charge && f.staff === "keep" && (
-                      <fieldset className="mt-3">
-                        <legend className="sr-only">Your answer for {f.item}</legend>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            type="button"
-                            variant={a?.answer === "accept" ? "primary" : "outline"}
-                            aria-pressed={a?.answer === "accept"}
-                            onClick={() => setAnswers((s) => ({ ...s, [f.id]: { answer: "accept", note: "" } }))}
-                          >
-                            <Check className="h-4 w-4" aria-hidden /> That&apos;s fair
-                          </Button>
-                          <Button
-                            size="sm"
-                            type="button"
-                            variant={a?.answer === "contest" ? "primary" : "outline"}
-                            aria-pressed={a?.answer === "contest"}
-                            onClick={() => setAnswers((s) => ({ ...s, [f.id]: { answer: "contest", note: s[f.id]?.note ?? "" } }))}
-                          >
-                            <CircleHelp className="h-4 w-4" aria-hidden /> I question this
-                          </Button>
-                        </div>
-                        {a?.answer === "contest" && (
-                          <label className="mt-2 block text-sm">
-                            <span className="text-muted">What happened? The shop reads this before deciding.</span>
-                            <textarea
-                              value={a.note}
-                              onChange={(e) => setAnswers((s) => ({ ...s, [f.id]: { answer: "contest", note: e.target.value } }))}
-                              rows={2}
-                              maxLength={500}
-                              className="mt-1 w-full rounded-xl border border-line-strong bg-paper px-3 py-2 text-ink"
-                            />
-                          </label>
-                        )}
-                      </fieldset>
-                    )}
-
-                    {(mode === "resolve" || mode === "readonly") && f.customer && (
-                      <div className="mt-3 rounded-xl bg-paper px-3 py-2 text-sm">
-                        <span className="font-semibold">{f.customer === "accept" ? "Customer accepted." : "Customer questioned this:"}</span>
-                        {f.customerNote && <q className="ml-1 text-ink-soft">{f.customerNote}</q>}
-                      </div>
-                    )}
-
-                    {mode === "resolve" && f.customer === "contest" && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant={f.resolution === "waive" ? "released" : "outline"}
-                          disabled={pending}
-                          onClick={() => act(() => resolveContestAction(rentalId!, f.id, "waive"))}
-                        >
-                          <Undo2 className="h-4 w-4" aria-hidden /> Waive it
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={f.resolution === "charge" ? "charged" : "outline"}
-                          disabled={pending}
-                          onClick={() => act(() => resolveContestAction(rentalId!, f.id, "charge"))}
-                        >
-                          <HandCoins className="h-4 w-4" aria-hidden /> Keep the charge
-                        </Button>
-                      </div>
-                    )}
-
-                    {mode === "readonly" && charge && (
-                      <p className={cx("mt-2 text-sm font-semibold", isCharged(f) ? "text-charged" : "text-released")}>
-                        {isCharged(f) ? `Charged ${formatUsd(f.price!.cents)}` : "Not charged"}
-                      </p>
-                    )}
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
+                    <Badge tone={kind.tone}>{kind.label}</Badge>
+                    <span className="font-semibold first-letter:uppercase">{f.item}</span>
                   </div>
+                  {charge && f.price && (
+                    <span className="max-w-24 shrink-0 text-right sm:max-w-none">
+                      <span className={cx("tabular font-semibold", waived ? "text-muted line-through" : "text-charged")}>{formatUsd(f.price.cents)}</span>
+                      <span className="block text-xs text-muted">{f.price.label}</span>
+                    </span>
+                  )}
+                </div>
+                {/* On a phone the body uses the card's full width; from sm up it lines up under the item name. */}
+                <div className="mt-2 sm:pl-10">
+                  <p className="text-sm leading-relaxed text-ink-soft">{f.description}</p>
+                  <details className="mt-1.5 text-sm text-muted">
+                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-medium hover:text-ink">
+                      <Eye className="h-3.5 w-3.5" aria-hidden /> Why
+                    </summary>
+                    <p className="mt-1 leading-relaxed">{f.evidence}</p>
+                    <p className="mt-1 leading-relaxed">
+                      {f.reason} Confidence: {f.confidence}.
+                    </p>
+                  </details>
+
+                  {mode === "staff" && charge && (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        variant={f.staff === "keep" ? "charged" : "outline"}
+                        disabled={pending}
+                        onClick={() => act(() => setStaffDecisionAction(rentalId!, f.id, "keep"))}
+                      >
+                        <HandCoins className="h-4 w-4" aria-hidden /> Keep
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={f.staff === "waive" ? "primary" : "outline"}
+                        disabled={pending}
+                        onClick={() => act(() => setStaffDecisionAction(rentalId!, f.id, "waive"))}
+                      >
+                        <Undo2 className="h-4 w-4" aria-hidden /> Waive
+                      </Button>
+                    </div>
+                  )}
+
+                  {mode === "customer" && charge && f.staff === "keep" && (
+                    <fieldset className="mt-3">
+                      <legend className="sr-only">Your answer for {f.item}</legend>
+                      <div className="grid gap-2 sm:flex sm:flex-wrap">
+                        <Button
+                          size="sm"
+                          type="button"
+                          variant={a?.answer === "accept" ? "primary" : "outline"}
+                          aria-pressed={a?.answer === "accept"}
+                          onClick={() => setAnswers((s) => ({ ...s, [f.id]: { answer: "accept", note: "" } }))}
+                        >
+                          <Check className="h-4 w-4" aria-hidden /> That&apos;s fair
+                        </Button>
+                        <Button
+                          size="sm"
+                          type="button"
+                          variant={a?.answer === "contest" ? "primary" : "outline"}
+                          aria-pressed={a?.answer === "contest"}
+                          onClick={() => setAnswers((s) => ({ ...s, [f.id]: { answer: "contest", note: s[f.id]?.note ?? "" } }))}
+                        >
+                          <CircleHelp className="h-4 w-4" aria-hidden /> I question this
+                        </Button>
+                      </div>
+                      {a?.answer === "contest" && (
+                        <label className="mt-2 block text-sm">
+                          <span className="text-muted">What happened? The shop reads this before deciding.</span>
+                          <textarea
+                            value={a.note}
+                            onChange={(e) => setAnswers((s) => ({ ...s, [f.id]: { answer: "contest", note: e.target.value } }))}
+                            rows={2}
+                            maxLength={500}
+                            className="mt-1 w-full rounded-xl border border-line-strong bg-paper px-3 py-2 text-ink"
+                          />
+                        </label>
+                      )}
+                    </fieldset>
+                  )}
+
+                  {(mode === "resolve" || mode === "readonly") && f.customer && (
+                    <div className="mt-3 rounded-xl bg-paper px-3 py-2 text-sm">
+                      <span className="font-semibold">
+                        {f.customer === "accept" ? (renter ? "You accepted this." : "Customer accepted.") : renter ? "You questioned this:" : "Customer questioned this:"}
+                      </span>
+                      {f.customerNote && <q className="ml-1 text-ink-soft">{f.customerNote}</q>}
+                    </div>
+                  )}
+
+                  {mode === "resolve" && f.customer === "contest" && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant={f.resolution === "waive" ? "released" : "outline"}
+                        disabled={pending}
+                        onClick={() => act(() => resolveContestAction(rentalId!, f.id, "waive"))}
+                      >
+                        <Undo2 className="h-4 w-4" aria-hidden /> Waive it
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={f.resolution === "charge" ? "charged" : "outline"}
+                        disabled={pending}
+                        onClick={() => act(() => resolveContestAction(rentalId!, f.id, "charge"))}
+                      >
+                        <HandCoins className="h-4 w-4" aria-hidden /> Keep the charge
+                      </Button>
+                    </div>
+                  )}
+
+                  {mode === "readonly" && charge && (
+                    <p className={cx("mt-2 text-sm font-semibold", isCharged(f) ? "text-charged" : "text-released")}>
+                      {isCharged(f) ? `Charged ${formatUsd(f.price!.cents)}` : "Not charged"}
+                    </p>
+                  )}
                 </div>
               </li>
             );
@@ -287,6 +293,7 @@ export function InspectionView({
           <Button
             variant="brand"
             size="lg"
+            className="w-full sm:w-auto"
             disabled={pending || unanswered.length > 0}
             onClick={() =>
               act(() =>

@@ -26,6 +26,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Your rental", robots: { index: false } };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+/** "Oct 8, 10:39 AM", as the timeline writes times. */
+const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export default async function CustomerRental(props: PageProps<"/r/[token]">) {
   const { token } = await props.params;
@@ -68,7 +70,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                 {shortDate(rental.startDate)} → {shortDate(rental.endDate)} · {rental.days} day{rental.days > 1 ? "s" : ""} · {SHOP.name}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
               <Badge tone={processing ? "held" : (status.customerTone ?? status.tone)}>{processing ? "Payment processing" : (status.customerLabel ?? status.label)}</Badge>
               <LiveRefresh channel={rental.id} />
             </div>
@@ -87,7 +89,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
                   refundedCents={view.refundedCents}
                 />
               ) : rental.authorizedCents && plan && (rental.status === "customer_review" || rental.status === "responded") ? (
-                <MoneyBar state="proposed" size="lg" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
+                <MoneyBar state="proposed" size="lg" audience="renter" authorizedCents={rental.authorizedCents} proposedCents={plan.totalCents} />
               ) : rental.authorizedCents ? (
                 <MoneyBar state="held" size="lg" authorizedCents={rental.authorizedCents} />
               ) : (
@@ -207,7 +209,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
             <p className="mt-2 break-all font-mono text-[11px] text-muted">sha256 {checkout.photoSha}</p>
             {checkout.acknowledgedAt ? (
               <p className="mt-3 flex items-center gap-2 text-sm font-medium text-released">
-                <CheckCircle2 className="h-4 w-4" aria-hidden /> You confirmed this photo on {new Date(checkout.acknowledgedAt).toLocaleString("en-US")}.
+                <CheckCircle2 className="h-4 w-4" aria-hidden /> You confirmed this photo on {when(checkout.acknowledgedAt)}.
               </p>
             ) : (
               <ActionButton className="mt-4" variant="brand" action={acknowledgeCheckoutAction.bind(null, token)} pendingLabel="Saving…">
@@ -318,8 +320,8 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
               </div>
             </dl>
             <p className="mt-3 text-xs text-muted">
-              Released on PayPal {rental.settledAt ? new Date(rental.settledAt).toLocaleString("en-US") : ""}. If your PayPal is funded by a card, your card
-              issuer decides when its pending line disappears.
+              Released on PayPal{rental.settledAt ? ` ${when(rental.settledAt)}` : ""}. If your PayPal is funded by a card, your card issuer decides when its
+              pending line disappears.
             </p>
           </Card>
         )}

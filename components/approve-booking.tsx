@@ -31,7 +31,7 @@ export function ApproveBooking({
         {formatUsd(rental.depositCents)} deposit at pickup on the terms below. Nothing is paid until you approve.
       </p>
       {rental.approveUrl ? (
-        <ButtonAnchor href={rental.approveUrl} variant="brand" size="lg" className="mt-4">
+        <ButtonAnchor href={rental.approveUrl} variant="brand" size="lg" className="mt-4 w-full max-sm:px-4 max-sm:text-sm sm:w-auto">
           Review and pay {formatUsd(rental.feeCents)} in PayPal <ExternalLink className="h-4 w-4" aria-hidden />
         </ButtonAnchor>
       ) : (

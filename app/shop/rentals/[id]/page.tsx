@@ -342,6 +342,7 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
                     action={settleAction.bind(null, rental.id)}
                     variant={plan.captureCents > 0 ? "charged" : "released"}
                     size="lg"
+                    disabled={awaitingResolution(assessment.findings).length > 0}
                     pendingLabel="Settling on PayPal…"
                   >
                     {plan.totalCents > 0

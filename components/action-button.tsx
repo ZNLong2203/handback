@@ -20,6 +20,7 @@ export function ActionButton({
   confirmLabel,
   variant = "primary",
   size = "md",
+  disabled = false,
   className,
 }: {
   action: () => Promise<ActionResult<unknown>>;
@@ -28,6 +29,8 @@ export function ActionButton({
   confirmLabel?: string;
   variant?: Variant;
   size?: "sm" | "md" | "lg";
+  /** Not ready yet, for example while a decision on the page is still open; the server checks again either way. */
+  disabled?: boolean;
   className?: string;
 }) {
   const [pending, startTransition] = useTransition();
@@ -46,7 +49,7 @@ export function ActionButton({
   return (
     <div className={className}>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant={variant} size={size} disabled={pending} onClick={() => (confirmLabel && !asking ? setAsking(true) : run())}>
+        <Button variant={variant} size={size} disabled={pending || disabled} onClick={() => (confirmLabel && !asking ? setAsking(true) : run())}>
           {pending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
           {pending && pendingLabel ? pendingLabel : asking && confirmLabel ? confirmLabel : children}
         </Button>

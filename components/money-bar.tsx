@@ -4,7 +4,7 @@ import { cx } from "./ui";
 type Props =
   | { state: "none"; depositCents: number }
   | { state: "held"; authorizedCents: number }
-  | { state: "proposed"; authorizedCents: number; proposedCents: number }
+  | { state: "proposed"; authorizedCents: number; proposedCents: number; audience?: "renter" | "staff" }
   | { state: "settled"; authorizedCents: number; capturedCents: number; releasedCents: number; extraCents?: number; refundedCents?: number; voided?: boolean };
 
 const pct = (part: number, whole: number) => (whole <= 0 ? 0 : Math.max(0, Math.min(100, (part / whole) * 100)));
@@ -50,7 +50,8 @@ export function MoneyBar(props: Props & { className?: string; size?: "md" | "lg"
         </div>
         <p className="mt-2 text-sm text-muted">
           Proposed: keep <span className="tabular font-semibold text-charged">{formatUsd(props.proposedCents)}</span> of the{" "}
-          <span className="tabular font-semibold text-held">{formatUsd(props.authorizedCents)}</span> hold. Nothing moves until the customer has seen it.
+          <span className="tabular font-semibold text-held-ink">{formatUsd(props.authorizedCents)}</span> hold.{" "}
+          {props.audience === "renter" ? "Nothing is taken until the shop has read your answers." : "Nothing is charged until you settle."}
         </p>
       </div>
     );
