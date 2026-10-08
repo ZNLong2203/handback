@@ -38,37 +38,39 @@ export function CancellationReceipt({
   }
   const onFee = refunds.filter((r) => r.captureId === fee.captureId);
   return (
-    <dl className="mt-4 space-y-2 text-sm">
-      <div className="flex justify-between gap-3">
-        <dt className="text-muted">Rental fee {renter ? "you paid" : "paid"} at booking</dt>
-        <dd className="tabular font-semibold">{formatUsd(fee.capturedCents)}</dd>
-      </div>
-      {onFee.map((r) => (
-        <div key={r.id} className="flex justify-between gap-3">
-          <dt className="text-muted">
-            {r.seq === null ? "Refunded outside the app" : `Refund ${r.seq}`}: {refundState(r, renter)}
-          </dt>
-          <dd className={counts(r) ? "tabular font-semibold text-released" : "tabular text-muted line-through"}>−{formatUsd(r.amountCents)}</dd>
-        </div>
-      ))}
-      {fee.disputeCents > 0 && (
+    <>
+      <dl className="mt-4 space-y-2 text-sm">
         <div className="flex justify-between gap-3">
-          <dt className="text-muted">Returned through the PayPal dispute</dt>
-          <dd className="tabular font-semibold text-released">−{formatUsd(fee.disputeCents)}</dd>
+          <dt className="text-muted">Rental fee {renter ? "you paid" : "paid"} at booking</dt>
+          <dd className="tabular font-semibold">{formatUsd(fee.capturedCents)}</dd>
         </div>
-      )}
-      <div className="flex justify-between gap-3 border-t border-line pt-2">
-        <dt className="font-semibold">{renter ? "The shop keeps" : "Kept of the fee"}</dt>
-        <dd className="tabular font-bold">{formatUsd(fee.leftCents)}</dd>
-      </div>
-      <div className="flex justify-between gap-3">
-        <dt className="text-muted">Deposit</dt>
-        <dd>None held: cancelled before pickup</dd>
-      </div>
-      <p className="pt-1 text-xs text-muted">
+        {onFee.map((r) => (
+          <div key={r.id} className="flex justify-between gap-3">
+            <dt className="text-muted">
+              {r.seq === null ? "Refunded outside the app" : `Refund ${r.seq}`}: {refundState(r, renter)}
+            </dt>
+            <dd className={counts(r) ? "tabular font-semibold text-released" : "tabular text-muted line-through"}>−{formatUsd(r.amountCents)}</dd>
+          </div>
+        ))}
+        {fee.disputeCents > 0 && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">Returned through the PayPal dispute</dt>
+            <dd className="tabular font-semibold text-released">−{formatUsd(fee.disputeCents)}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-3 border-t border-line pt-2">
+          <dt className="font-semibold">{renter ? "The shop keeps" : "Kept of the fee"}</dt>
+          <dd className="tabular font-bold">{formatUsd(fee.leftCents)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted">Deposit</dt>
+          <dd className="text-right">None held: cancelled before pickup</dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-muted">
         Cancelled {shortDate(rental.cancelledAt)}.{" "}
         {renter ? "PayPal sends a refund back the way you paid. If a card funds your PayPal, your card issuer decides when it shows." : null}
       </p>
-    </dl>
+    </>
   );
 }

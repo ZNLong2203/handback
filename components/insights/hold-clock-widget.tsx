@@ -123,7 +123,7 @@ export default function HoldClockWidget(params: AgWidgetParams<HoldClockWidget>)
   return (
     <div ref={ref} className="hb-widget hb-clock h-full w-full overflow-y-auto" onClick={() => widgetApi.resetCrossFilter()} data-testid="hold-clock">
       {holds && box.width > 0 && (
-        <svg width={box.width} height={bottom + 30} role="img" aria-label={`Hold clock: ${holds.length} running deposit hold${holds.length === 1 ? "" : "s"}`}>
+        <svg width={box.width} height={bottom + 30} role="group" aria-label={`Hold clock: ${holds.length} running deposit hold${holds.length === 1 ? "" : "s"}`}>
           {/* Day axis: the same 29 days for every hold, from its first authorization. */}
           <g className="hb-clock-axis">
             {TICKS.map((d) => (

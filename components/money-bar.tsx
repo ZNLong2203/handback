@@ -4,7 +4,7 @@ import { cx } from "./ui";
 type Props =
   | { state: "none"; depositCents: number }
   | { state: "held"; authorizedCents: number }
-  | { state: "proposed"; authorizedCents: number; proposedCents: number }
+  | { state: "proposed"; authorizedCents: number; proposedCents: number; audience?: "renter" | "staff" }
   | { state: "settled"; authorizedCents: number; capturedCents: number; releasedCents: number; extraCents?: number; refundedCents?: number; voided?: boolean };
 
 const pct = (part: number, whole: number) => (whole <= 0 ? 0 : Math.max(0, Math.min(100, (part / whole) * 100)));
@@ -33,7 +33,7 @@ export function MoneyBar(props: Props & { className?: string; size?: "md" | "lg"
           <div className="h-full w-full origin-left animate-[grow_0.9s_cubic-bezier(0.2,0.8,0.2,1)_both] rounded-full bg-held" />
         </div>
         <p className="mt-2 text-sm text-muted">
-          <span className="tabular font-semibold text-held">{formatUsd(props.authorizedCents)}</span> held on PayPal. Nothing has been charged.
+          <span className="tabular font-semibold text-held-ink">{formatUsd(props.authorizedCents)}</span> held on PayPal. Nothing has been charged.
         </p>
       </div>
     );
@@ -50,7 +50,8 @@ export function MoneyBar(props: Props & { className?: string; size?: "md" | "lg"
         </div>
         <p className="mt-2 text-sm text-muted">
           Proposed: keep <span className="tabular font-semibold text-charged">{formatUsd(props.proposedCents)}</span> of the{" "}
-          <span className="tabular font-semibold text-held">{formatUsd(props.authorizedCents)}</span> hold. Nothing moves until the customer has seen it.
+          <span className="tabular font-semibold text-held-ink">{formatUsd(props.authorizedCents)}</span> hold.{" "}
+          {props.audience === "renter" ? "Nothing is taken until the shop has read your answers." : "Nothing is charged until you settle."}
         </p>
       </div>
     );

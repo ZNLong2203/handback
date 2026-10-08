@@ -14,7 +14,7 @@ export default function Storefront() {
       <StoreHeader />
       <main className="mx-auto max-w-6xl px-5 pb-16">
         <Eyebrow>Rent by the day</Eyebrow>
-        <h1 className="mt-2 font-display text-4xl font-bold tracking-tight">Cameras, drones and gear for the weekend</h1>
+        <h1 className="mt-2 font-display text-4xl font-bold tracking-tight">Bikes, cameras and gear for the weekend</h1>
         <p className="mt-2 max-w-2xl text-ink-soft">
           Pay the rental fee now. The deposit is only held at pickup, and you see every proposed charge before anything is taken from it.
         </p>
@@ -31,7 +31,7 @@ export default function Storefront() {
                     <span className="tabular font-semibold">{formatUsd(item.dailyCents)}</span>
                     <span className="text-muted"> / day</span>
                   </p>
-                  <p className="text-xs text-held">{formatUsd(item.depositCents)} deposit, held at pickup</p>
+                  <p className="text-xs text-held-ink">{formatUsd(item.depositCents)} deposit, held at pickup</p>
                 </div>
               </Link>
             </li>

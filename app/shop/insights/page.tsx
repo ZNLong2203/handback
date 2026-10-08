@@ -27,7 +27,7 @@ export default async function InsightsPage() {
 
   return (
     <>
-      <ShopHeader />
+      <ShopHeader width="max-w-[96rem]" />
       <main className="mx-auto max-w-[96rem] space-y-5 px-5 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

@@ -9,7 +9,7 @@ type Tone = "brand" | "held" | "released" | "charged" | "note" | "neutral";
 
 const toneBadge: Record<Tone, string> = {
   brand: "bg-brand-soft text-brand-ink",
-  held: "bg-held-soft text-held",
+  held: "bg-held-soft text-held-ink",
   released: "bg-released-soft text-released",
   charged: "bg-charged-soft text-charged",
   note: "bg-note-soft text-note",
@@ -18,7 +18,7 @@ const toneBadge: Record<Tone, string> = {
 
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold", toneBadge[tone], className)}>
+    <span className={cx("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold", toneBadge[tone], className)}>
       {children}
     </span>
   );
@@ -33,7 +33,7 @@ export function Card({ className, children, ...rest }: ComponentProps<"section">
 }
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-full text-center font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
 const buttonVariant = {
   primary: "bg-ink text-white hover:bg-ink-soft",
   brand: "bg-brand text-white hover:bg-brand-ink",
@@ -42,7 +42,8 @@ const buttonVariant = {
   outline: "border border-line-strong bg-card text-ink hover:border-ink/40",
   ghost: "text-ink-soft hover:bg-line/50",
 } as const;
-const buttonSize = { sm: "h-9 px-4 text-sm", md: "h-11 px-5 text-sm", lg: "h-13 px-7 text-base" } as const;
+// A minimum height, not a fixed one: a label that wraps on a phone grows the button instead of spilling out of it.
+const buttonSize = { sm: "min-h-9 px-4 py-1.5 text-sm", md: "min-h-11 px-5 py-2 text-sm", lg: "min-h-13 px-7 py-2.5 text-base" } as const;
 
 type ButtonStyle = { variant?: keyof typeof buttonVariant; size?: keyof typeof buttonSize };
 

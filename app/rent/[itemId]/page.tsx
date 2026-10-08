@@ -40,7 +40,7 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
             <h1 className="mt-2 font-display text-4xl font-bold tracking-tight">{item.name}</h1>
             <p className="mt-2 text-ink-soft">
               <span className="tabular font-semibold text-ink">{formatUsd(item.dailyCents)}</span> per day ·{" "}
-              <span className="text-held">{formatUsd(item.depositCents)} deposit held at pickup</span>
+              <span className="text-held-ink">{formatUsd(item.depositCents)} deposit held at pickup</span>
             </p>
           </div>
         </div>
@@ -49,7 +49,7 @@ export default async function BookItem(props: PageProps<"/rent/[itemId]">) {
           <p className="mt-1 text-sm text-muted">Pick up and return at {SHOP.name}, {SHOP.city}.</p>
           <DemoResetNote audience="renter" className="mt-2" />
           {later && (
-            <p className="mt-2 text-sm text-held" data-testid="first-free">
+            <p className="mt-2 text-sm text-held-ink" data-testid="first-free">
               No {item.name.toLowerCase()} is free for {FIRST_STAY_DAYS} days from today, so the dates below start on the first free ones, {spanLabel(later)}.
             </p>
           )}

@@ -65,6 +65,8 @@ export function PhotoCapture({
             accept="image/*"
             capture="environment"
             className="sr-only"
+            tabIndex={-1}
+            aria-label="Photo from the camera or files"
             onChange={(e) => {
               const file = e.target.files?.[0];
               e.target.value = "";
@@ -81,9 +83,9 @@ export function PhotoCapture({
 
       {samples.length > 0 && (
         <div>
-          <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-            <ImageUp className="h-4 w-4" aria-hidden /> Or use a sample photo
-            <span className="font-normal text-muted">(AI-generated, for trying the demo)</span>
+          <p className="mb-2 text-sm font-semibold">
+            <ImageUp className="mr-1.5 inline h-4 w-4 align-[-3px]" aria-hidden />
+            Or use a sample photo <span className="font-normal text-muted">(AI-generated, for trying the demo)</span>
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {samples.map((s) => (

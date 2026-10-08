@@ -98,7 +98,7 @@ export function BookingForm(props: Props) {
           <dt className="font-semibold">Pay today</dt>
           <dd className="tabular font-bold">{formatUsd(b.feeCents)}</dd>
         </div>
-        <div className="flex justify-between text-held">
+        <div className="flex justify-between text-held-ink">
           <dt>Deposit, held at pickup (not charged)</dt>
           <dd className="tabular font-semibold">{formatUsd(props.depositCents)}</dd>
         </div>
@@ -164,7 +164,8 @@ function PayPalButtonArea({ booking }: { booking: Booking }) {
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {pending ? "Confirming your booking…" : "Loading PayPal…"}
         </div>
       ) : (
-        <div className={cx(booking.problem && "pointer-events-none opacity-50")} aria-disabled={Boolean(booking.problem)}>
+        // The button dims itself when disabled; the wrapper only stops clicks.
+        <div className={cx(booking.problem && "pointer-events-none")} aria-disabled={Boolean(booking.problem)}>
           <PayPalOneTimePaymentButton
             type="pay"
             disabled={Boolean(booking.problem)}
@@ -218,8 +219,8 @@ function DemoPay({ booking }: { booking: Booking }) {
         {pending || starting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
         Pay {formatUsd(booking.feeCents)} (demo PayPal)
       </Button>
-      <p className="text-xs text-muted">Demo mode: no PayPal keys are set, so a stand-in that follows PayPal&apos;s sandbox rules approves the payment.</p>
       {booking.problem && <p className="text-sm text-muted">{booking.problem}</p>}
+      <p className="text-xs text-muted">Demo mode: no PayPal keys are set, so a stand-in that follows PayPal&apos;s sandbox rules approves the payment.</p>
       {error && (
         <p role="alert" className="text-sm font-medium text-charged">
           {error}

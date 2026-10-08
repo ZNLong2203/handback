@@ -55,13 +55,18 @@ function RentalRow({ r, unit, refunded = 0, fee = { refundedCents: 0, waitingCen
         href={`/shop/rentals/${r.id}`}
         className="group grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3 transition hover:border-ink/25 sm:grid-cols-[7rem_1fr_auto_auto]"
       >
-        <span className="font-mono text-xs text-muted">{r.id}</span>
+        <span className="hidden font-mono text-xs text-muted sm:block">{r.id}</span>
         <span className="min-w-0">
-          <span className="block truncate font-semibold">{r.customerName}</span>
+          <span className="block truncate font-semibold">
+            {r.customerName}
+            {/* On a phone the id and the money sit inside this column instead of their own. */}
+            <span className="ml-2 font-mono text-xs font-normal text-muted sm:hidden">{r.id}</span>
+          </span>
           <span className="block truncate text-sm text-muted">
             {item.name} · {unit && r.status !== "cancelled" ? `${r.status === "booked" ? "hand over " : ""}${unit.label} · ` : ""}
             {shortDate(r.startDate)}–{shortDate(r.endDate)}
           </span>
+          <span className="tabular block truncate text-sm text-ink-soft sm:hidden">{money}</span>
           {unit?.warning && <span className="block truncate text-xs font-medium text-charged">{unit.warning}</span>}
           {flag && <span className="block truncate text-xs font-medium text-charged">{flag}</span>}
         </span>
@@ -108,16 +113,16 @@ export default async function Counter() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {[
             { label: "Held on PayPal now", value: formatUsd(held), tone: "text-held" },
             { label: "Released to customers", value: formatUsd(released), tone: "text-released" },
             { label: "Kept for repairs", value: formatUsd(kept), tone: "text-charged" },
             { label: "Need your eyes", value: String(attention), tone: attention ? "text-charged" : "text-ink" },
           ].map((k) => (
-            <Card key={k.label} className="p-5">
+            <Card key={k.label} className="flex flex-col justify-between p-4 sm:p-5">
               <p className="text-sm text-muted">{k.label}</p>
-              <p className={`tabular mt-1 font-display text-3xl font-bold ${k.tone}`}>{k.value}</p>
+              <p className={`tabular mt-1 font-display text-2xl font-bold sm:text-3xl ${k.tone}`}>{k.value}</p>
             </Card>
           ))}
         </div>
@@ -136,7 +141,7 @@ export default async function Counter() {
             if (list.length === 0) return null;
             return (
               <section key={g.title}>
-                <div className="mb-3 flex items-baseline gap-3">
+                <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                   <h2 className="font-display text-xl font-bold">{g.title}</h2>
                   <span className="text-sm text-muted">{g.hint}</span>
                 </div>

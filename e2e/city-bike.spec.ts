@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The demo video's story, from a bicycle rental shop's most common losses:
 // a city bike comes back without its phone holder and rear light. The renter
@@ -11,6 +11,15 @@ const shot = async (page: Page, name: string) => {
   // Let the money-bar animation finish so the screenshot shows the final state.
   await page.waitForTimeout(1400);
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+};
+/** One card of the page, for the README: docs/images/customer-review.png is this shot of the review card. */
+const shotOf = async (card: Locator, name: string) => {
+  if (!SHOTS) return;
+  // Playwright's clicks are mouse clicks even here, so move the pointer off the cards first:
+  // a finger on a real phone leaves no hover highlight behind.
+  await card.page().mouse.move(0, 0);
+  await card.page().waitForTimeout(400);
+  await card.screenshot({ path: `${SHOTS}/${name}.png` });
 };
 
 test("a city bike back without its phone holder and rear light: one charge accepted, one questioned and waived", async ({ browser }) => {
@@ -57,6 +66,7 @@ test("a city bike back without its phone holder and rear light: one charge accep
   await rearLight.getByRole("button", { name: "I question this" }).click();
   await rearLight.getByRole("textbox").fill("It's in my backpack");
   await shot(phone, "b05-customer-answers");
+  await shotOf(phone.locator("section", { has: phone.getByRole("heading", { name: "Please review what the shop found" }) }), "b05-customer-review-card");
   await phone.getByRole("button", { name: "Send my answers" }).click();
   await expect(phone.getByText("Thanks. The shop is reading your answers.")).toBeVisible();
 
@@ -65,6 +75,7 @@ test("a city bike back without its phone holder and rear light: one charge accep
   await counter.getByRole("button", { name: "Waive it" }).click();
   await counter.getByRole("button", { name: "Keep $12.00, release $138.00" }).click();
   await expect(counter.getByRole("heading", { name: "Settled" })).toBeVisible();
+  // docs/images/counter-settled.png is this shot.
   await shot(counter, "b06-counter-settled");
   await expect(phone.getByText("Deposit released to your PayPal")).toBeVisible();
   await expect(phone.getByText("$138.00").first()).toBeVisible();

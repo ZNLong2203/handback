@@ -21,7 +21,7 @@ export default async function SchedulePage() {
 
   return (
     <>
-      <ShopHeader live={<LiveRefresh channel="shop" />} />
+      <ShopHeader width="max-w-[96rem]" live={<LiveRefresh channel="shop" />} />
       <main className="mx-auto max-w-[96rem] space-y-6 px-5 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

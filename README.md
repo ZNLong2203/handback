@@ -8,11 +8,11 @@ Handback lets a small rental shop hold a deposit with PayPal and settle it from 
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/images/counter-settled.png" alt="The counter after a return: pickup and return photos with the missing lens hood boxed, the finding the customer accepted, $35.00 kept and $265.00 released, and the hash-chained audit trail"></td>
-    <td width="32%"><img src="docs/images/customer-review.png" alt="The renter's phone: the same two photos and the $35.00 lens hood charge, with buttons to accept it or question it"></td>
+    <td width="70%" valign="top"><img src="docs/images/counter-settled.png" alt="The counter after a city bike came back without its phone holder and rear light: pickup and return photos with both marked, the $12.00 phone holder charge the renter accepted, the $15.00 rear light they questioned with the note 'It's in my backpack' and the counter waived, $12.00 kept and $138.00 released, and the hash-chained audit trail"></td>
+    <td width="30%" valign="top"><img src="docs/images/customer-review.png" alt="The renter's phone: the pickup and return photos of the city bike, the $12.00 phone holder charge accepted, and the $15.00 rear light charge questioned with the note 'It's in my backpack'"></td>
   </tr>
   <tr>
-    <td>The counter after settling: $35.00 kept for the missing lens hood, $265.00 released.</td>
+    <td>The counter after settling: $12.00 kept for the phone holder, the questioned rear light waived, $138.00 released.</td>
     <td>The renter's phone: accept or question each charge.</td>
   </tr>
 </table>

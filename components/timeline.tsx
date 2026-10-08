@@ -60,8 +60,9 @@ export function Timeline({ events, intact }: { events: AuditEvent[]; intact: boo
               <p className="text-xs text-muted">
                 {actor.label} · {new Date(e.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
               </p>
-              {extra && <p className="mt-0.5 break-all font-mono text-[11px] text-muted">{extra}</p>}
-              <p className="font-mono text-[10px] text-line-strong">#{e.hash.slice(0, 16)}</p>
+              {/* Long ids may break anywhere; words such as "renter" stay whole. */}
+              {extra && <p className="mt-0.5 font-mono text-[11px] text-muted [overflow-wrap:anywhere]">{extra}</p>}
+              <p className="font-mono text-[10px] text-muted">#{e.hash.slice(0, 16)}</p>
             </li>
           );
         })}

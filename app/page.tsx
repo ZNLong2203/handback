@@ -148,7 +148,7 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid content-start gap-4 sm:grid-cols-2">
               {fairness.map((f) => (
                 <div key={f.title} className="rounded-2xl border border-line bg-card p-5">
                   <f.icon className="h-6 w-6 text-released" aria-hidden />
