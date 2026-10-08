@@ -9,7 +9,7 @@ type Tone = "brand" | "held" | "released" | "charged" | "note" | "neutral";
 
 const toneBadge: Record<Tone, string> = {
   brand: "bg-brand-soft text-brand-ink",
-  held: "bg-held-soft text-held",
+  held: "bg-held-soft text-held-ink",
   released: "bg-released-soft text-released",
   charged: "bg-charged-soft text-charged",
   note: "bg-note-soft text-note",
@@ -18,7 +18,7 @@ const toneBadge: Record<Tone, string> = {
 
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold", toneBadge[tone], className)}>
+    <span className={cx("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold", toneBadge[tone], className)}>
       {children}
     </span>
   );

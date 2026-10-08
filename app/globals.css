@@ -3,7 +3,9 @@
 /*
  * Handback design tokens. Money has three colours used everywhere:
  * held (amber) while PayPal keeps the deposit, released (green) for what goes
- * back to the customer, charged (coral) for what the shop keeps.
+ * back to the customer, charged (coral) for what the shop keeps. Amber is too
+ * light for small text, so text uses held-ink; every text colour here meets
+ * WCAG AA (4.5:1) on paper, card and its own soft background.
  */
 @theme {
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
@@ -14,7 +16,7 @@
   --color-card: #ffffff;
   --color-ink: #1d1b2f;
   --color-ink-soft: #3d3b52;
-  --color-muted: #6b6a7a;
+  --color-muted: #666577;
   --color-line: #e9e4dc;
   --color-line-strong: #d8d1c5;
 
@@ -23,10 +25,11 @@
   --color-brand-ink: #26217a;
 
   --color-held: #b7791f;
+  --color-held-ink: #8f5a0e;
   --color-held-soft: #fcf3e2;
   --color-released: #1f7a4d;
   --color-released-soft: #e4f3ea;
-  --color-charged: #c2462b;
+  --color-charged: #b74129;
   --color-charged-soft: #fbe8e2;
   --color-note: #475569;
   --color-note-soft: #eef2f6;
@@ -70,6 +73,8 @@
 }
 
 html {
+  /* One light theme; form controls and scrollbars should not turn dark under it. */
+  color-scheme: light;
   background: var(--color-paper);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
@@ -83,10 +88,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The outline follows each element's own corners, so a focused pill stays a pill. */
 :focus-visible {
   outline: 3px solid color-mix(in oklab, var(--color-brand) 55%, transparent);
   outline-offset: 2px;
-  border-radius: 0.5rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

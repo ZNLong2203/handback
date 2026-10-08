@@ -43,7 +43,7 @@ export default async function DemoPayPalApproval(props: PageProps<"/demo/paypal"
               </dt>
               <dd className="tabular font-semibold">{formatUsd(rental.feeCents)}</dd>
             </div>
-            <div className="flex justify-between gap-3 text-held">
+            <div className="flex justify-between gap-3 text-held-ink">
               <dt>Saved for a deposit hold at pickup, up to</dt>
               <dd className="tabular font-semibold">{formatUsd(rental.depositCents)}</dd>
             </div>

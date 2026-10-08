@@ -31,7 +31,7 @@ export default function Storefront() {
                     <span className="tabular font-semibold">{formatUsd(item.dailyCents)}</span>
                     <span className="text-muted"> / day</span>
                   </p>
-                  <p className="text-xs text-held">{formatUsd(item.depositCents)} deposit, held at pickup</p>
+                  <p className="text-xs text-held-ink">{formatUsd(item.depositCents)} deposit, held at pickup</p>
                 </div>
               </Link>
             </li>

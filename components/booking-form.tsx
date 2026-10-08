@@ -98,7 +98,7 @@ export function BookingForm(props: Props) {
           <dt className="font-semibold">Pay today</dt>
           <dd className="tabular font-bold">{formatUsd(b.feeCents)}</dd>
         </div>
-        <div className="flex justify-between text-held">
+        <div className="flex justify-between text-held-ink">
           <dt>Deposit, held at pickup (not charged)</dt>
           <dd className="tabular font-semibold">{formatUsd(props.depositCents)}</dd>
         </div>

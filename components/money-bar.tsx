@@ -33,7 +33,7 @@ export function MoneyBar(props: Props & { className?: string; size?: "md" | "lg"
           <div className="h-full w-full origin-left animate-[grow_0.9s_cubic-bezier(0.2,0.8,0.2,1)_both] rounded-full bg-held" />
         </div>
         <p className="mt-2 text-sm text-muted">
-          <span className="tabular font-semibold text-held">{formatUsd(props.authorizedCents)}</span> held on PayPal. Nothing has been charged.
+          <span className="tabular font-semibold text-held-ink">{formatUsd(props.authorizedCents)}</span> held on PayPal. Nothing has been charged.
         </p>
       </div>
     );

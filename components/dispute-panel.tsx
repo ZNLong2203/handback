@@ -192,7 +192,7 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
             </p>
             <p className="break-all font-mono text-[11px] text-muted">sha256 {pack.sha256}</p>
             {!pack.current && actions.provideEvidence && (
-              <p className="text-sm text-held">The record has changed since this pack was made. Sending builds a fresh one; rebuild first to look at it.</p>
+              <p className="text-sm text-held-ink">The record has changed since this pack was made. Sending builds a fresh one; rebuild first to look at it.</p>
             )}
             <iframe src={`/api/evidence/${pack.sha256}`} title="Evidence pack preview" className="hidden h-[34rem] w-full rounded-xl border border-line md:block" />
           </div>
