@@ -69,6 +69,11 @@ services:
       # counter is open. A shorter code closes the counter to everyone.
       - key: SHOP_ACCESS_CODE
         sync: false
+      # Behind Render's proxies the last X-Forwarded-For entry is a Cloudflare
+      # address; the caller's own is one before it (measured Oct 8, 2026). Sign-in
+      # attempts are counted per that address. /api/health shows it as countedAs.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
       # Mixed into the staff cookie's key, so a leaked cookie cannot be checked
       # against guessed codes offline.
       - key: STAFF_COOKIE_SECRET

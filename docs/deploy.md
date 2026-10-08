@@ -107,7 +107,7 @@ In demo mode the stand-in caches its state in the web process: if you seed after
 ### Smoke test
 
 1. `curl -s https://handback.onrender.com/api/health` should show `"ok": true`, `"driver": "postgres"`, the PayPal and AI modes you chose, `"runner": "render-workflows"` and the commit you deployed. The modes are the web service's; the workflow's are checked on each run, and `"lastSkippedRun"` stays `null` while they agree (check it again after steps 3 and 5).
-2. Open `/shop`: it sends you to `/shop/sign-in`; enter `SHOP_ACCESS_CODE`, and the seeded rentals are grouped by step. `curl -s -o /dev/null -w "%{http_code}" https://handback.onrender.com/api/live/shop` should answer 401. In `/api/health`, `staffAccess.mode` should be `code`, and `staffAccess.countedAs` should be your own public address (compare with what an IP lookup site shows). If it is an address of Cloudflare or Render instead, set `TRUSTED_PROXY_HOPS=1` (or more, one per extra proxy) and check again: wrong codes are counted against that address.
+2. Open `/shop`: it sends you to `/shop/sign-in`; enter `SHOP_ACCESS_CODE`, and the seeded rentals are grouped by step. `curl -s -o /dev/null -w "%{http_code}" https://handback.onrender.com/api/live/shop` should answer 401. In `/api/health`, `staffAccess.mode` should be `code`, and `staffAccess.countedAs` should be your own public address (compare with what an IP lookup site shows). `render.yaml` sets `TRUSTED_PROXY_HOPS=1`, which gave the caller's own address on Oct 8, 2026; if it shows an address of Cloudflare or Render instead, raise it by one per extra proxy and check again: wrong codes are counted against that address.
 3. Run one rental end to end with two screens: `/rent` on a phone (pay with the sandbox buyer), `/shop` on a laptop. Take the pickup photo, hold the deposit, take the return photo, press **Compare the photos**. The audit trail should say "Render Workflows" next to "Two AI looks compared the photos".
 4. In the dashboard, `handback-workflows`, **Tasks**, `inspect-return`, **Runs**: the run has input `["R-…", {"paypal":"sandbox","ai":"gemini"}]` and result `{"status":"inspected"}`.
 5. Trigger the cron job once (`handback-renew-holds`, **Trigger Run**). The log should end with `HTTP 200 {"ok":true,"ranOn":"render-workflows",...}`. In demo mode it says `"ranOn":"web"`.
@@ -188,7 +188,7 @@ Both processes need the same database. PGlite (the default local database) lives
 | `DEMO_RESET_HOUR` | web, cron | Hour of the daily reset in UTC, 0 to 23; default 20. `render.yaml` copies the web service's value to the cron job |
 | `SHOP_ACCESS_CODE` | web | The counter's shared access code, at least 12 characters; unset leaves the counter open, shorter closes it |
 | `STAFF_COOKIE_SECRET` | web | Generated; mixed into the staff cookie's key |
-| `TRUSTED_PROXY_HOPS` | web | `X-Forwarded-For` entries after the client's address added by proxies; default 0 |
+| `TRUSTED_PROXY_HOPS` | web | `X-Forwarded-For` entries after the client's address added by proxies; default 0, `1` in `render.yaml` (measured on Render) |
 | `PUBLIC_DEMO` | web | `true` on the judges' copy: the sign-in page says where the code is published |
 | `HANDBACK_HOSTPORT` or `HANDBACK_URL` | cron | Where the cron job finds the web service |
 | `APP_URL` | web | Public URL for PayPal return links and the customer QR code; defaults to `RENDER_EXTERNAL_URL` |
@@ -225,6 +225,18 @@ The button creates the same paid services in the account of whoever clicks it. L
 | The counter is empty after a reset in sandbox mode | `SEED_VAULT_ID` is unset or `latest`; set it to a saved wallet's id |
 
 ## What has been verified
+
+On Oct 8, 2026, on Render, from this Blueprint (web `0.5c-512mb`, Postgres 18 `0.1c-256mb`, the workflow and the cron job, all in Oregon):
+
+| Check | Result |
+|---|---|
+| Blueprint sync | Refused at first with `workflow."handback-workflows".envVars.DATABASE_URL env var depends on non-existent DB: handback-db`; synced once the workflow's `DATABASE_URL` became `sync: false` |
+| `/api/health` | `ok: true`, `driver: postgres`, PayPal `sandbox`, AI `gemini`, `runner: render-workflows`, `webhookConfigured: true` once `PAYPAL_WEBHOOK_ID` was set |
+| Workflow tasks | `inspect-return` and `renew-holds` registered by the first build |
+| A workflow environment change | Takes effect only on the workflow's next build: a `renew-holds` run (`trn-09t4gdb3g76qt38us73frh890`) started after `DATABASE_URL` was set still returned `skipped` with the missing-database reason. Redeploy the workflow after changing its variables |
+| The skip path end to end | Cron job → web service → workflow run skipped → the web service swept the holds itself and answered `HTTP 200 {"ranOn":"web",...}` → the cron job exited 1, so Render flagged the run, as designed |
+| Client address behind Render's proxies | Without `TRUSTED_PROXY_HOPS`, `staffAccess.countedAs` was a Cloudflare address (`172.68.x.x`); with `TRUSTED_PROXY_HOPS=1` it was the caller's own public address. `render.yaml` now sets 1 |
+| Counter gate | `/shop` and `/shop/insights` answer 307 to `/shop/sign-in`; `/api/live/shop` answers 401 |
 
 On Oct 2, 2026, on a development machine, not yet on Render:
 
