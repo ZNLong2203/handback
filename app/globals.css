@@ -88,6 +88,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * PayPal's v6 button is a web component fixed at 225 x 45 px. In the booking
+ * form it fills the width like the demo-mode button, and takes the pill shape
+ * PayPal offers, to match the app's other buttons.
+ */
+paypal-button {
+  display: block;
+  width: 100%;
+  height: 3rem;
+  --paypal-button-border-radius: 9999px;
+}
+
 /* The outline follows each element's own corners, so a focused pill stays a pill. */
 :focus-visible {
   outline: 3px solid color-mix(in oklab, var(--color-brand) 55%, transparent);

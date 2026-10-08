@@ -164,7 +164,8 @@ function PayPalButtonArea({ booking }: { booking: Booking }) {
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {pending ? "Confirming your booking…" : "Loading PayPal…"}
         </div>
       ) : (
-        <div className={cx(booking.problem && "pointer-events-none opacity-50")} aria-disabled={Boolean(booking.problem)}>
+        // The button dims itself when disabled; the wrapper only stops clicks.
+        <div className={cx(booking.problem && "pointer-events-none")} aria-disabled={Boolean(booking.problem)}>
           <PayPalOneTimePaymentButton
             type="pay"
             disabled={Boolean(booking.problem)}
