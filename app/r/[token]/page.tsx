@@ -57,7 +57,7 @@ export default async function CustomerRental(props: PageProps<"/r/[token]">) {
 
   return (
     <>
-      <StoreHeader />
+      <StoreHeader width="max-w-3xl" />
       <main className="mx-auto max-w-3xl space-y-5 px-5 pb-16">
         <Card className="animate-rise p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">

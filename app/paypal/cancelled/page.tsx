@@ -28,7 +28,7 @@ export default async function LeftPayPal(props: PageProps<"/paypal/cancelled">) 
 
   return (
     <>
-      <StoreHeader />
+      <StoreHeader width="max-w-3xl" />
       <main className="mx-auto max-w-3xl space-y-5 px-5 pb-16">
         <Card className="animate-rise p-6">
           <Eyebrow>Rental {rental.id}</Eyebrow>
