@@ -120,7 +120,7 @@ export default function DepositFlowWidget(params: AgWidgetParams<DepositFlowWidg
   return (
     <div ref={ref} className="hb-widget h-full w-full" onClick={() => widgetApi.resetCrossFilter()} data-testid="deposit-flow">
       {layout && (
-        <svg width={box.width} height={box.height} role="img" aria-label="Where the deposits went: flows from deposits held to released, captured, refunded, disputed and kept">
+        <svg width={box.width} height={box.height} role="group" aria-label="Where the deposits went: flows from deposits held to released, captured, refunded, disputed and kept">
           <g transform={`translate(${pad.left},${pad.top})`}>
             {layout.links.map((l) => {
               const k = key(l);

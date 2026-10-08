@@ -456,48 +456,52 @@ export default async function RentalAtCounter(props: PageProps<"/shop/rentals/[i
           <Card className="p-5">
             <Eyebrow>Deposit on PayPal</Eyebrow>
             {rental.authorizationId ? (
-              <dl className="mt-2 space-y-1.5 text-sm">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted">{settled ? "Was held" : "Held"}</dt>
-                  <dd className="tabular font-semibold text-held">{formatUsd(rental.authorizedCents ?? 0)}</dd>
-                </div>
-                {settled && (
-                  <>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-muted">Kept</dt>
-                      <dd className="tabular font-semibold text-charged">{formatUsd((rental.capturedCents ?? 0) + (rental.extraCents ?? 0))}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-muted">Released</dt>
-                      <dd className="tabular font-semibold text-released">{formatUsd(rental.releasedCents ?? 0)}</dd>
-                    </div>
-                    {view.refundedCents > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted">Refunded since</dt>
-                        <dd className="tabular font-semibold text-released">{formatUsd(view.refundedCents)}</dd>
-                      </div>
-                    )}
-                  </>
-                )}
-                {rental.authorizationExpiresAt && !settled && (
+              <>
+                <dl className="mt-2 space-y-1.5 text-sm">
                   <div className="flex justify-between gap-3">
-                    <dt className="text-muted">Hold expires</dt>
-                    <dd>{shortDate(rental.authorizationExpiresAt)}</dd>
+                    <dt className="text-muted">{settled ? "Was held" : "Held"}</dt>
+                    <dd className="tabular font-semibold text-held-ink">{formatUsd(rental.authorizedCents ?? 0)}</dd>
                   </div>
-                )}
-                {rental.parentAuthorizationId ? (
-                  <p className="pt-1 text-xs text-released">Hold renewed for a fresh 3-day honor period (was {rental.parentAuthorizationId}).</p>
-                ) : (
-                  rental.authorizedAt &&
-                  ["out", "inspecting", "customer_review", "responded"].includes(rental.status) && (
-                    <p className="pt-1 text-xs text-muted">
-                      Renews automatically on {shortDate(renewalDueAt(new Date(rental.authorizedAt), rental.endDate).toISOString())}, the day before it is
-                      due back, so PayPal&apos;s honor period covers the return.
-                    </p>
-                  )
-                )}
-                <div className="break-all font-mono text-[11px] text-muted">authorization {rental.authorizationId}</div>
-              </dl>
+                  {settled && (
+                    <>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted">Kept</dt>
+                        <dd className="tabular font-semibold text-charged">{formatUsd((rental.capturedCents ?? 0) + (rental.extraCents ?? 0))}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted">Released</dt>
+                        <dd className="tabular font-semibold text-released">{formatUsd(rental.releasedCents ?? 0)}</dd>
+                      </div>
+                      {view.refundedCents > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-muted">Refunded since</dt>
+                          <dd className="tabular font-semibold text-released">{formatUsd(view.refundedCents)}</dd>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {rental.authorizationExpiresAt && !settled && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-muted">Hold expires</dt>
+                      <dd>{shortDate(rental.authorizationExpiresAt)}</dd>
+                    </div>
+                  )}
+                </dl>
+                <div className="mt-1.5 space-y-1.5">
+                  {rental.parentAuthorizationId ? (
+                    <p className="pt-1 text-xs text-released">Hold renewed for a fresh 3-day honor period (was {rental.parentAuthorizationId}).</p>
+                  ) : (
+                    rental.authorizedAt &&
+                    ["out", "inspecting", "customer_review", "responded"].includes(rental.status) && (
+                      <p className="pt-1 text-xs text-muted">
+                        Renews automatically on {shortDate(renewalDueAt(new Date(rental.authorizedAt), rental.endDate).toISOString())}, the day before it is
+                        due back, so PayPal&apos;s honor period covers the return.
+                      </p>
+                    )
+                  )}
+                  <p className="break-all font-mono text-[11px] text-muted">authorization {rental.authorizationId}</p>
+                </div>
+              </>
             ) : rental.status === "cancelled" ? (
               <p className="mt-2 text-sm text-muted">None held: the booking was cancelled before pickup.</p>
             ) : (

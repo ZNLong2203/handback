@@ -132,7 +132,8 @@ export function DisputePanel({ desk, rental }: { desk: DisputeDesk; rental: Rent
               ))}
             </ul>
           )}
-          <div className="mt-3 overflow-x-auto">
+          {/* Scrolls sideways on a phone, so it takes keyboard focus too. */}
+          <div className="mt-3 overflow-x-auto" tabIndex={0} role="region" aria-label="What each answer costs">
             <table className="w-full min-w-[30rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-muted">
                 <tr>
