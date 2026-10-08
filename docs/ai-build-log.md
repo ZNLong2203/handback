@@ -67,3 +67,26 @@ Claude Code built the dispute desk (Disputes v1 client, evidence pack, counter p
 - Dispute links were only followed on `api-m.sandbox.paypal.com`. PayPal's own webhook samples write them on `api.sandbox.paypal.com`; both names are now accepted.
 - The first spike script hung: outside the Playwright test runner, locator calls wait forever unless a timeout is set.
 - One sandbox require-evidence call was refused with `MISSING_OR_INVALID_REQUEST_BODY` and the same body succeeded twice later. The cause was not found; the notes say so rather than guess.
+
+### 2026-10-08: The stored photo hid the bike's rear light
+
+With Gemini live, the demo video's story (a city bike back without its phone holder and its small red rear light) proposed only the phone holder, in 4 of 4 tries in the app. The eval had never seen the bytes the app sends: it reads the photo files as they are, while the app compares the photo it stored, which `storePhoto` re-encoded as JPEG quality 85 (mozjpeg) with colour at half resolution (4:2:0). Claude Code measured single looks (gemini-3.8-flash, thinking low, prompt v2) at each encoding, mostly sending the encodings of a pair in turn so that changes in the service over time hit them alike (the q92 looks and the other pairs' q95 looks came in later batches):
+
+| Pair, change | Files as they are | q85 4:2:0 (old) | q85 4:4:4 | q90 4:2:0 | q90 4:4:4 | q92 4:4:4 | q95 4:4:4 (new) |
+|---|---|---|---|---|---|---|---|
+| `city-bike__missing-holder-rear-light`, rear light | 12/12 | 0/6 | 0/6 | 2/6 | 7/12 | 6/6 | 12/12 |
+| the same pair, phone holder | 12/12 | 6/6 | 6/6 | 6/6 | 12/12 | 6/6 | 12/12 |
+| `bike-rack__broken-reflector` (real set) | 6/6 | 6/6 | | | 6/6 | | 6/6 |
+| `dji-mini4__broken-propeller` (real set) | 6/6 | 6/6 | | | 6/6 | | 6/6 |
+| `projector__cracked-lens` (synthetic set) | 6/6 | 6/6 | | | 6/6 | | 6/6 |
+| `sigma-150-600__missing-hood` (real set) | 0/12 | 0/12 | | | 0/6 | | 7/12 |
+| Size of the bike's return photo | 147 KB | 118 KB | 128 KB | 143 KB | 159 KB | 168 KB | 198 KB |
+
+Each cell is the looks that proposed the change as a charge. No look proposed a charge for anything that had not changed.
+
+- **Quality, more than colour resolution.** The guess was that halving colour resolution smeared the small red light. At quality 85 the light was gone with full colour resolution too; at 90 full colour resolution helped a little (2 of 6 to 7 of 12), and from 92 up the model saw it every time. The sample photos are JPEGs already (quality 86, colour at half resolution), as every upload is (the counter's camera button shrinks a photo in the browser and sends a JPEG at quality 0.88), so the app was compressing them a second time, and at 85 mozjpeg's tables leave files 20% smaller than the originals.
+- **The fix.** `lib/photo-encoding.ts` holds the encoding, and `storePhoto` and the eval runner both call it: EXIF orientation, metadata dropped, at most 1600 px, as before, then JPEG quality 95 with full colour resolution. Quality 95 rather than 92 leaves room above where the light disappeared. Over the 116 bundled photos the mean stored size goes from 133 KB to 213 KB (the files themselves average 164 KB), and a detailed photo at 1600 px comes to about 0.9 MB (2.3 MB for fine-grained noise at 1600 × 1200), far below the 8 MB upload limit and PayPal's 10 MB per evidence file. The photo checks' thresholds did not change; a new test runs every sample photo the demo offers through the encoding and the checks, and checks that a blurred photo is still turned away.
+- **Something not explained.** At quality 95 the Sigma lens's removed hood was seen in 7 of 12 looks against 0 of 12 on the files and at the old encoding. One pair cannot say why, and it is not why 95 was chosen.
+- **Considered and not done.** Passing a JPEG that needs no turning or resizing straight through would send the eval's exact bytes, but it would keep any metadata unless the file were rewritten by hand, and it adds a second path; quality 95 did as well as the files on every pair measured.
+- **What it changes elsewhere.** The same photo now gets a different SHA-256 than before. Nothing depends on the old ones: demo mode finds its recorded replies by sample name, not hash; photos already stored keep their bytes and hash; no test pins a photo hash; the README screenshots show hash prefixes from an older run, which nothing checks.
+- **Checked in the app.** On a local server with Gemini live (PayPal on the stand-in), the bike story proposed both the phone holder and the rear light in 5 of 5 runs. Through the eval with the new `--app-encoding` option (two looks, prompt v2, two runs of each set) the real-photo set had 43 of 44 changes charged, against 63 of 66 in the three published runs on the files, and the synthetic set 28 of 28, against 41 of 42; no unchanged pair was charged, and every charge had the right price-list entry. These runs were about twice as slow as the published ones, and so was a run on the files the same day, so the service was slow, not the photos. `eval/README.md` shows them next to the published runs, which stay as they were.

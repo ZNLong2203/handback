@@ -51,6 +51,7 @@ Requests that fail on the network (or get a 429 or 5xx) are sent again, up to tw
 | gemini-3.8-flash, thinking low, 1 look, prompt v1 | 3 | 40/42 (95%) | 40/40 | 1/72 (1%) | 1/72 (1%) | 0 | 0 | 12.7 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v1 | 3 | 41/42 (98%) | 41/41 | 0/72 (0%) | 0/72 (0%) | 0 | 0 | 17.5 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v2 | 3 | 41/42 (98%) | 41/41 | 0/72 (0%) | 1/72 (1%) | 0 | 0 | 11.6 s |
+| gemini-3.8-flash, thinking low, 2 looks, prompt v2, photos as the app stores them | 2 | 28/28 (100%) | 28/28 | 0/48 (0%) | 1/48 (2%) | 0 | 0 | 20.2 s |
 
 ### Real-photo set
 
@@ -59,11 +60,12 @@ Requests that fail on the network (or get a 429 or 5xx) are sent again, up to tw
 | gemini-3.8-flash, thinking low, 1 look, prompt v1 | 3 | 66/66 (100%) | 66/66 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 9.7 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v1 | 3 | 63/66 (95%) | 63/63 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 13.1 s |
 | gemini-3.8-flash, thinking low, 2 looks, prompt v2 | 3 | 63/66 (95%) | 63/63 | 0/99 (0%) | 6/99 (6%) | 0 | 0 | 10.0 s |
+| gemini-3.8-flash, thinking low, 2 looks, prompt v2, photos as the app stores them | 2 | 43/44 (98%) | 43/43 | 0/66 (0%) | 2/66 (3%) | 0 | 0 | 22.2 s |
 
 ### What the real photos showed
 
 - **Charges.** In every run on the real photos, with one look or two and with either prompt, no unchanged pair was charged and every charged change got the right price-list entry.
-- **What two looks cost.** The one real change missed is the removed Sigma lens hood (`sigma-150-600__missing-hood`). Without it the lens ends in a front barrel almost as wide and just as black, and in every two-look run at least one look did not see the hood was gone, so consensus kept it off the bill. With one look it was charged in 3 of 3 runs. Two looks trade a little recall for safety, which is the trade the app makes.
+- **What two looks cost.** The one real change missed is the removed Sigma lens hood (`sigma-150-600__missing-hood`). Without it the lens ends in a front barrel almost as wide and just as black, and in every two-look run on the photo files at least one look did not see the hood was gone, so consensus kept it off the bill. With one look it was charged in 3 of 3 runs. Two looks trade a little recall for safety, which is the trade the app makes. (On the photos as the app stores them, two looks charged it in 1 of 2 runs; see below.)
 - **Findings on unchanged items.** With prompt v1, two unchanged pairs drew high-confidence findings in almost every run. None was charged, because the second look disagreed or no price-list entry fit, but uncharged findings still reach staff and the customer as notes:
   - After a 3° turn of the Nikon photo the model said the "Z 6II" badge was now upside down. It is not: apart from the 3° turn and the crop, the two photos are the same pixels. In one two-look run one look also priced "inverted" lens and mode-dial markings at $120 + $60; the other look disagreed.
   - A glare spot over a textured or painted part was read as damage: the ribbed zoom ring of the Sony lens "worn smooth", and once the e-bike's seat tube "scuffed". The spot also lightens the background around it, which a person would take as a sign of light, not wear.
@@ -107,6 +109,39 @@ Prompt v2 is what the app now sends, because it removes the text mistake; the gl
 
 **Proposed fix for glare (not built yet).** Glare is a photo problem more than a wording problem, so the fix belongs before the model: `lib/photos.ts` already rejects blurry, dark and washed-out photos in code. A local check could compare the check-in photo with the check-out photo and flag a region where brightness rises while contrast and colour drop across both the item and its background, and ask staff to retake the photo away from the light before the condition check runs.
 
+### Photos as the app stores them
+
+The runs above send the model the photo files as they are, except those marked "photos as the app stores them". The app compares the photos it stored, not the files: each upload is turned upright by its EXIF orientation, stripped of metadata, capped at 1600 px and saved as a new JPEG (`lib/photo-encoding.ts`). Until 2026-10-08 it saved JPEG quality 85 with colour at half resolution, and on those bytes the model did not see the city bike sample's missing rear light in any of 6 looks, though it saw it in 12 of 12 on the original files. The app now saves quality 95 with colour at full resolution, where the model saw the rear light in 12 of 12 looks (the measurement is in [`docs/ai-build-log.md`](../docs/ai-build-log.md)). The marked runs (`npm run eval -- --app-encoding`) send every photo through that same encoding first, to see what the change does on these sets.
+
+Real-photo set:
+
+| Two looks, prompt v2 | Photo files as they are | Photos as the app stores them |
+|---|---|---|
+| Runs | 3 | 2 |
+| Real changes proposed as a charge | 63/66 | 43/44 |
+| Right price-list entry | 63/63 | 43/43 |
+| Unchanged pairs charged | 0/99 | 0/66 |
+| Unchanged pairs with any finding (charged or noted) | 6/99 | 2/66 |
+| Extra charges on changed pairs | 0 | 0 |
+| Errors | 0 | 0 |
+
+Synthetic set:
+
+| Two looks, prompt v2 | Photo files as they are | Photos as the app stores them |
+|---|---|---|
+| Runs | 3 | 2 |
+| Real changes proposed as a charge | 41/42 | 28/28 |
+| Right price-list entry | 41/41 | 28/28 |
+| Unchanged pairs charged | 0/72 | 0/48 |
+| Unchanged pairs with any finding (charged or noted) | 1/72 | 1/48 |
+| Extra charges on changed pairs | 0 | 0 |
+| Errors | 0 | 0 |
+
+- **Nothing got worse.** On the stored photos no unchanged pair was charged in any run, and every charged change got the right price-list entry. Unchanged pairs with any finding: 2/66 on the real set (6/99 on the files) and 1/48 on the synthetic set (1/72 on the files), the same glare and light mistakes listed below.
+- **The Sigma lens hood.** Two looks charged the removed hood in 1 of 2 runs on the stored photos and 0 of 3 on the files, in line with the single looks measured for the build log. It is one pair, and it is not why the encoding was chosen.
+- **Too few runs to claim a gain.** 2 runs of each set cannot tell a small gain from the variation between runs; the reason for the change is the bike. The homepage figures and the prompt comparison above still come from the runs on the photo files.
+- **Slower that day, but not because of the photos.** The marked runs' worst p95 latency is about twice the published runs'. The model gets the same number of input tokens per pair either way, and a two-look run of the synthetic set on the photo files the same day (not saved) took 8.7 s p50 and 17.9 s p95, about what the stored photos took.
+
 ### What went wrong, pair by pair
 
 Synthetic set:
@@ -119,6 +154,8 @@ Synthetic set:
 - **gemini-3.8-flash, thinking low, 2 looks, prompt v2** (3 runs):
   - `ebike-rear__bent-fender-mud`: damage: rear mudguard noted but not charged in 1 of 3 runs
   - `pa-speaker__same-pose`: nothing changed, but a finding was noted (not charged) in 1 of 3 runs: new_damage "grille"
+- **gemini-3.8-flash, thinking low, 2 looks, prompt v2, photos as the app stores them** (2 runs):
+  - `ebike-rear__same-light`: nothing changed, but a finding was noted (not charged) in 1 of 2 runs: new_damage "rear light"
 
 Real-photo set:
 
@@ -134,5 +171,9 @@ Real-photo set:
   - `ebike-rear__same-dust-glare`: nothing changed, but both looks agreed on a finding (not charged) in 2 of 3 runs; nothing changed, but a finding was noted (not charged) in 1 of 3 runs: new_damage "seat tube paint", new_damage "seat tube"
   - `sigma-150-600__missing-hood`: missing: lens hood missed in 2 of 3 runs; missing: lens hood noted but not charged in 1 of 3 runs
   - `sony-100-400__same-dust-glare`: nothing changed, but a finding was noted (not charged) in 3 of 3 runs: new_damage "telephoto lens", new_damage "zoom ring rubber grip", wear "telephoto lens"
+- **gemini-3.8-flash, thinking low, 2 looks, prompt v2, photos as the app stores them** (2 runs):
+  - `ebike-rear__same-dust-glare`: nothing changed, but both looks agreed on a finding (not charged) in 1 of 2 runs: new_damage "seat tube"
+  - `sigma-150-600__missing-hood`: missing: lens hood noted but not charged in 1 of 2 runs
+  - `sony-100-400__same-dust-glare`: nothing changed, but a finding was noted (not charged) in 1 of 2 runs: wear "focus ring rubber grip"
 
-Per-pair results and the model's raw replies are in `runs/` and `real/runs/`. Reproduce with `npm run eval:pairs -- --set real`, then `npm run eval -- --set real --passes 2 --tag r1`, then `npm run eval:summary` (leave out `--set real` for the synthetic set).
+Per-pair results and the model's raw replies are in `runs/` and `real/runs/`. Reproduce with `npm run eval:pairs -- --set real`, then `npm run eval -- --set real --passes 2 --tag r1` (add `--app-encoding` to send the photos as the app stores them), then `npm run eval:summary` (leave out `--set real` for the synthetic set).

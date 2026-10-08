@@ -11,7 +11,12 @@
  * --set samples runs the demo-only sample photos (eval/samples), whose
  * recorded replies demo mode also replays.
  *
- *   npm run eval -- [--set synthetic|real|samples] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--only <id-substring>] [--tag r2]
+ * The model normally gets the photo files as they are. --app-encoding first
+ * re-encodes each one the way the app stores an uploaded photo
+ * (lib/photo-encoding.ts), so the run measures what the app sends; its files
+ * get "-app" in their name and its metrics say `photos: "app"`.
+ *
+ *   npm run eval -- [--set synthetic|real|samples] [--model gemini-3.8-flash] [--thinking low|medium|high] [--passes 2] [--app-encoding] [--only <id-substring>] [--tag r2]
  */
 import { ApiError } from "@google/genai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -22,6 +27,7 @@ import { mergeLooks } from "@/lib/inspection/consensus";
 import { PROMPT_VERSION } from "@/lib/inspection/prompt";
 import { assess, type AssessedFinding } from "@/lib/inspection/policy";
 import type { ModelOutput } from "@/lib/inspection/schema";
+import { encodePhoto } from "@/lib/photo-encoding";
 
 type Change = { kind: "missing" | "damage" | "dirt"; item: string; detail: string; match: string[]; price: string };
 type Pair = {
@@ -55,6 +61,8 @@ const only = arg("only");
 const tag = arg("tag");
 /** 2 = two independent looks must agree before a charge is proposed. */
 const passes = Number(arg("passes") ?? "1");
+/** Send the photos as the app stores them instead of the files as they are. */
+const appEncoding = process.argv.includes("--app-encoding");
 const SHOP = "Kestrel Camera Rentals";
 
 const COMPATIBLE: Record<Change["kind"], string[]> = {
@@ -107,7 +115,8 @@ async function withRetry<T>(call: () => Promise<T>, onRetry: () => void): Promis
 }
 
 async function image(rel: string) {
-  return { base64: (await readFile(path.join(ROOT, rel))).toString("base64"), mimeType: "image/jpeg" };
+  const bytes = await readFile(path.join(ROOT, rel));
+  return { base64: (appEncoding ? (await encodePhoto(bytes)).data : bytes).toString("base64"), mimeType: "image/jpeg" };
 }
 
 async function scorePair(pair: Pair): Promise<Scored> {
@@ -184,7 +193,7 @@ const quantile = (xs: number[], q: number) => {
 async function main() {
   const { pairs } = JSON.parse(await readFile(path.join(ROOT, "pairs.json"), "utf8")) as { pairs: Pair[] };
   const todo = only ? pairs.filter((p) => p.id.includes(only)) : pairs;
-  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}) on ${todo.length} ${set} pairs`);
+  console.log(`${model} (thinking ${thinking}, ${passes} look${passes > 1 ? "s" : ""}${appEncoding ? ", photos as the app stores them" : ""}) on ${todo.length} ${set} pairs`);
   const results = await pool(todo, 4, scorePair);
 
   const changes = results.flatMap((r) => r.caught);
@@ -200,6 +209,7 @@ async function main() {
     model,
     thinking,
     passes,
+    photos: appEncoding ? "app" : "original",
     pairs: results.length,
     realChanges: changes.length,
     caughtAny: changes.filter((c) => c.any).length,
@@ -217,7 +227,7 @@ async function main() {
     outputTokensPerPair: Math.round(tokens.o / Math.max(1, results.length)),
   };
 
-  const label = `${model}-${thinking}${passes > 1 ? `-x${passes}` : ""}${tag ? `-${tag}` : ""}`;
+  const label = `${model}-${thinking}${passes > 1 ? `-x${passes}` : ""}${appEncoding ? "-app" : ""}${tag ? `-${tag}` : ""}`;
   await mkdir(path.join(ROOT, "runs"), { recursive: true });
   await writeFile(path.join(ROOT, "runs", `${label}.json`), `${JSON.stringify({ metrics, results }, null, 2)}\n`);
 
@@ -226,6 +236,7 @@ async function main() {
     "",
     `${metrics.pairs} labeled ${SET_DESCRIPTION[set]}: ${changed.length} with real changes (${metrics.realChanges} changes in total) and ${unchanged.length} unchanged pairs that only differ in light, pose, dust or glare.`,
     "",
+    ...(appEncoding ? ["Each photo was re-encoded the way the app stores an uploaded one (`lib/photo-encoding.ts`) before the model saw it.", ""] : []),
     "| Metric | Result |",
     "|---|---|",
     `| Real changes noticed (any confidence) | ${metrics.caughtAny}/${metrics.realChanges} (${pct(metrics.caughtAny, metrics.realChanges)}) |`,
@@ -248,7 +259,8 @@ async function main() {
     "",
   ];
   await writeFile(path.join(ROOT, `report-${label}.md`), lines.join("\n"));
-  console.log(lines.slice(4, 15).join("\n"));
+  const table = lines.indexOf("| Metric | Result |");
+  console.log(lines.slice(table, table + 11).join("\n"));
   console.log(`\nwrote ${ROOT}/report-${label}.md and ${ROOT}/runs/${label}.json`);
 }
 
