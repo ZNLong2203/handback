@@ -13,5 +13,7 @@ export default defineConfig({
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**", ".next/**", ".claude/**"],
     testTimeout: 30_000,
+    // Several files seed a database in beforeAll, which takes longer on CI runners.
+    hookTimeout: 60_000,
   },
 });
