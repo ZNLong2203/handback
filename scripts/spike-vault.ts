@@ -3,7 +3,7 @@
 // present), then settle. The sandbox buyer's approval is automated with
 // Playwright. Run: npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/spike-vault.ts
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { chromium, type Page } from "@playwright/test";
 import { paypalConfig } from "@/lib/paypal/config";
 
@@ -129,9 +129,10 @@ const aged = await api("POST", "/v2/checkout/orders", {
   payment_source: { paypal: { vault_id: vault.id } },
 });
 const agedAuth = aged.purchase_units?.[0]?.payments?.authorizations?.[0];
-const file = "private/aged-holds.json";
+const file = ".data/sandbox/aged-holds.json";
+mkdirSync(".data/sandbox", { recursive: true });
 const holds = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
 holds.push({ purpose: "reauthorize a PayPal-wallet hold on day 4", fundedBy: "paypal-vault", vaultId: vault.id, orderId: aged.id, authorizationId: agedAuth?.id, createdAt: agedAuth?.create_time, amount: "300.00" });
 writeFileSync(file, JSON.stringify(holds, null, 2));
 console.log("seeded wallet hold:", agedAuth?.id);
-writeFileSync("private/spike-vault.json", JSON.stringify({ vaultId: vault.id, customer: vault.customer, at: new Date().toISOString() }, null, 2));
+writeFileSync(".data/sandbox/spike-vault.json", JSON.stringify({ vaultId: vault.id, customer: vault.customer, at: new Date().toISOString() }, null, 2));

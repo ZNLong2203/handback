@@ -15,7 +15,7 @@
  *            PayPal-Request-Id, to see whether the Disputes API deduplicates
  *
  * Every phase logs the dispute as PayPal reports it (status, links, requested
- * evidence, fund movements). State is kept in private/spike-dispute.json so a
+ * evidence, fund movements). State is kept in .data/sandbox/spike-dispute.json so a
  * phase can be rerun on its own. Needs the dev server running in sandbox mode
  * and the sandbox buyer login in .env.local:
  *
@@ -33,7 +33,7 @@ import { bookAndSettle, sandboxBuyer, signInAsBuyer, step } from "./lib/sandbox-
 
 const BASE = process.env.SPIKE_URL ?? "http://localhost:3000";
 const OUT = process.env.SPIKE_SHOTS;
-const STATE_FILE = "private/spike-dispute.json";
+const STATE_FILE = ".data/sandbox/spike-dispute.json";
 /** What the customer says the lens hood should have cost, in the case they file. */
 const CLAIMED_RIGHT_AMOUNT = "15.00";
 const BUYER_NOTE = "I returned the camera kit and the shop charged 35 USD for a lens hood. I think 15 USD was the right amount.";
@@ -45,7 +45,7 @@ if (cfg.mode !== "sandbox") throw new Error("Run this against the PayPal sandbox
 const api = new PayPalDisputeApi("sandbox");
 const load = (): State => (existsSync(STATE_FILE) ? (JSON.parse(readFileSync(STATE_FILE, "utf8")) as State) : {});
 const save = (s: State) => {
-  mkdirSync("private", { recursive: true });
+  mkdirSync(".data/sandbox", { recursive: true });
   writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
 };
 const shot = async (page: Page, name: string) => {

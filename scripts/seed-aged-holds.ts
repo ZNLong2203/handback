@@ -1,8 +1,8 @@
 // Places a few sandbox authorizations now so that reauthorization (allowed
 // only from day 4) and late captures can be tested against real aged holds.
-// Writes the ids to private/aged-holds.json. Run: npm run seed:aged-holds
+// Writes the ids to .data/sandbox/aged-holds.json (git ignores .data/). Run: npm run seed:aged-holds
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { paypalConfig } from "@/lib/paypal/config";
 
 const cfg = paypalConfig();
@@ -15,7 +15,8 @@ const token = await fetch(`${cfg.apiBase}/v1/oauth2/token`, {
 }).then((r) => r.json() as Promise<{ access_token: string }>);
 
 const card = { number: "4032039317984658", expiry: "2030-01", security_code: "123", name: "Aged Hold" };
-const file = "private/aged-holds.json";
+const file = ".data/sandbox/aged-holds.json";
+mkdirSync(".data/sandbox", { recursive: true });
 const holds: unknown[] = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
 
 for (const [purpose, value] of [
@@ -34,4 +35,3 @@ for (const [purpose, value] of [
   console.log(purpose.padEnd(48), auth.id, auth.create_time);
 }
 writeFileSync(file, JSON.stringify(holds, null, 2));
-appendFileSync("private/01-TRANG-THAI-VA-VIEC-CAN-LAM.md", `\n- ${new Date().toISOString().slice(0, 10)}: seeded ${3} aged card holds into ${file} (test reauthorize from day 4).\n`);

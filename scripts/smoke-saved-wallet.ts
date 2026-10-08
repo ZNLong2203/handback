@@ -1,6 +1,6 @@
 // Holds a deposit and charges an overage on a saved sandbox wallet through the
 // real gateway (merchant-initiated, with stored_credential), then settles.
-// Needs a vault id from scripts/spike-vault.ts (private/spike-vault.json).
+// Needs a vault id from scripts/spike-vault.ts (.data/sandbox/spike-vault.json).
 // Run: npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/smoke-saved-wallet.ts
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { PayPalDepositGateway } from "@/lib/paypal/paypal-gateway";
 
 const cfg = paypalConfig();
 if (cfg.mode === "demo") throw new Error("Needs sandbox credentials");
-const { vaultId } = JSON.parse(readFileSync("private/spike-vault.json", "utf8")) as { vaultId: string };
+const { vaultId } = JSON.parse(readFileSync(".data/sandbox/spike-vault.json", "utf8")) as { vaultId: string };
 const gw = new PayPalDepositGateway(cfg.mode);
 const rentalId = `R-SMOKE-${Date.now().toString(36).toUpperCase()}`;
 
