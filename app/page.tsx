@@ -74,22 +74,36 @@ export default function Home() {
           </div>
 
           <Card className="animate-rise overflow-hidden p-4 [animation-delay:120ms]">
+            {/* The demo story: a city bike back without its phone holder and rear light. The photos keep their own
+                1280x956 shape, so the boxes, where the recorded Gemini looks placed the two parts, land on them. */}
             <div className="grid grid-cols-2 gap-3">
               <figure>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/api/samples/camera-kit/before" alt="Camera kit at pickup" className="aspect-[4/3] w-full rounded-xl object-cover" />
+                <img
+                  src="/api/samples/city-bike/before"
+                  alt="City bike at pickup, with a phone holder on the handlebar and a rear light under the saddle"
+                  className="aspect-[1280/956] w-full rounded-xl object-cover"
+                />
                 <figcaption className="mt-1.5 text-xs font-medium text-muted">At pickup</figcaption>
               </figure>
-              <figure className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/api/samples/camera-kit/after__missing-hood" alt="Camera kit at return, lens hood missing" className="aspect-[4/3] w-full rounded-xl object-cover" />
-                <span className="absolute left-[3%] top-[41%] h-[30%] w-[22%] rounded-lg border-[3px] border-dashed border-charged" aria-hidden />
-                <figcaption className="mt-1.5 text-xs font-medium text-muted">At return: lens hood missing</figcaption>
+              <figure>
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/api/samples/city-bike/after__missing-holder-rear-light"
+                    alt="City bike at return, the phone holder and the rear light gone"
+                    className="aspect-[1280/956] w-full rounded-xl object-cover"
+                  />
+                  <span className="absolute left-[41.5%] top-[10.5%] h-[16%] w-[9%] rounded-[3px] border-2 border-dashed border-charged" aria-hidden />
+                  <span className="absolute left-[63.5%] top-[33%] h-[8.5%] w-[7.5%] rounded-[3px] border-2 border-dashed border-note" aria-hidden />
+                </div>
+                <figcaption className="mt-1.5 text-xs font-medium text-muted">At return: phone holder and rear light missing</figcaption>
               </figure>
             </div>
             <div className="mt-4 rounded-2xl bg-paper p-4">
-              <p className="mb-3 text-sm font-semibold">$300 deposit, settled in one tap</p>
-              <MoneyBar state="settled" authorizedCents={30000} capturedCents={3500} releasedCents={26500} size="lg" />
+              <p className="text-sm font-semibold">$150 deposit, settled in one tap</p>
+              <p className="mb-3 mt-0.5 text-xs text-muted">The renter accepted the $12 phone holder and questioned the rear light, which the counter waived.</p>
+              <MoneyBar state="settled" authorizedCents={15000} capturedCents={1200} releasedCents={13800} size="lg" />
             </div>
             <p className="mt-3 text-center text-[11px] text-muted">Sample photos are AI-generated for the demo.</p>
           </Card>
@@ -182,7 +196,7 @@ export default function Home() {
         </section>
       </main>
       <footer className="mx-auto max-w-6xl px-5 py-8 text-sm text-muted">
-        Handback is a hackathon project. Kestrel Camera Rentals is a fictional demo shop. Open source under the MIT license.
+        Handback is a hackathon project. Kestrel Rentals is a fictional demo shop. Open source under the MIT license.
       </footer>
     </>
   );

@@ -5,7 +5,7 @@
  * capture run (manifest facts), README.md, eval/README.md or
  * docs/paypal-sandbox-notes.md; the comments say which.
  */
-import { anchor, browserFrame, C, chip, footer, frameLabel, logoMark, pageHtml, phoneFrame, windowAt, type Crop } from "./frames";
+import { anchor, browserFrame, C, chip, esc, footer, frameLabel, logoMark, pageHtml, phoneFrame, windowAt, type Crop } from "./frames";
 import type { Manifest, Shot } from "./shots";
 
 export type Slide = { file: string; title: string; caption: string; html: string };
@@ -83,6 +83,23 @@ export function buildSlides(m: Manifest): Slide[] {
   const liveHost = host(fact("liveBase"));
   const demoHost = host(fact("demoBase"));
   const counterUrl = `${liveHost}/shop/rentals/${rental}`;
+  /**
+   * Where the schedule or dashboard slide was captured (capture-shop.ts): a
+   * demo-mode server, or with --shop-pages live the sandbox target the
+   * sandbox seed filled. Manifests from before that option are demo mode.
+   */
+  const shopPage = (kind: "schedule" | "insights") => {
+    const live = m.facts[`${kind}From`] === "live";
+    const strip = m.facts[`${kind}Strip`] ?? "";
+    const when = m.facts[`${kind}Date`] ? fmtDate(m.facts[`${kind}Date`]) : date;
+    const looks = /Gemini, live/.test(strip) ? "<b>Gemini, live</b>" : "photo check: <b>recorded Gemini run</b>";
+    return {
+      live,
+      host: host(m.facts[`${kind}Base`] ?? fact("demoBase")),
+      source: live ? `Captured ${when} · <b>PayPal sandbox</b>, real API calls${kind === "schedule" ? ` · ${looks}` : ""} · sample rentals paid by the sandbox seed` : demoSource,
+      geminiLive: /Gemini, live/.test(strip),
+    };
+  };
 
   const slides: Slide[] = [];
 
@@ -383,9 +400,11 @@ export function buildSlides(m: Manifest): Slide[] {
     });
   }
 
-  // ── 9. Schedule (demo) ─────────────────────────────────────────────────────
+  // ── 9. Schedule (demo mode, or the live sandbox target) ────────────────────
   {
     const s = shot("schedule");
+    const from = shopPage("schedule");
+    const moveTo = m.facts.scheduleMoveTo || "Projector B";
     const tl = anchor(s, "timeline");
     const pr = anchor(s, "proposals");
     const legend = s.anchors.legend;
@@ -397,22 +416,26 @@ export function buildSlides(m: Manifest): Slide[] {
       file: "09-schedule.png",
       title: "Schedule: a damaged return re-plans the units",
       caption:
-        "Every booking gets a physical unit on a Bryntum Scheduler timeline. When a return is settled with damage, the unit is blocked for its repair and an agent suggests a fix for each booking that now clashes: another unit, later dates, or a call. Staff approve each one, and the server checks every move. Demo mode with sample bookings; the faint pattern is the Bryntum trial watermark.",
+        "Every booking gets a physical unit on a Bryntum Scheduler timeline. When a return is settled with damage, the unit is blocked for its repair and an agent suggests a fix for each booking that now clashes: another unit, later dates, or a call. Staff approve each one, and the server checks every move. " +
+        (from.live
+          ? `Captured in the PayPal sandbox: the sample bookings were paid with real sandbox payments by the sandbox seed, and settling the damaged projector was one real capture after ${from.geminiLive ? "two live Gemini looks" : "two recorded Gemini looks"}. The faint pattern is the Bryntum trial watermark.`
+          : "Demo mode with sample bookings; the faint pattern is the Bryntum trial watermark."),
       html: pageHtml(`
         ${headerBlock(
           "Running the shop · <b>Schedule</b>",
           "A damaged return re-plans the schedule",
-          "A charged repair blocks the unit on the Bryntum timeline. An agent suggests a fix for each clash, like <strong>moving Priya to Projector B</strong> (the dashed bar); staff approve, and the server checks every move.",
+          `A charged repair blocks the unit on the Bryntum timeline. An agent suggests a fix for each clash, like <strong>moving Priya to ${esc(moveTo)}</strong> (the dashed bar); staff approve, and the server checks every move.`,
         )}
-        <div class="abs" style="left:${Math.round((2400 - w) / 2)}px;top:${B_TOP}px">${browserFrame(s, crop, w, `${demoHost}/shop/schedule`)}</div>
-        ${footer(`${demoSource} · Bryntum trial watermark`)}
+        <div class="abs" style="left:${Math.round((2400 - w) / 2)}px;top:${B_TOP}px">${browserFrame(s, crop, w, `${from.host}/shop/schedule`)}</div>
+        ${footer(`${from.source} · Bryntum trial watermark`)}
       `),
     });
   }
 
-  // ── 10. Owner's dashboard (demo) ───────────────────────────────────────────
+  // ── 10. Owner's dashboard (demo mode, or the live sandbox target) ──────────
   {
     const s = shot("insights");
+    const from = shopPage("insights");
     const head = anchor(s, "heading");
     const clock = anchor(s, "clock");
     const cropTop = head.y + 200;
@@ -422,15 +445,18 @@ export function buildSlides(m: Manifest): Slide[] {
       file: "10-dashboard.png",
       title: "Dashboard: where every deposit dollar went",
       caption:
-        "The owner's dashboard, built with AG Studio: what was held, kept, released and refunded from every PayPal movement, open disputes, and each running hold on PayPal's 29-day clock with the 72-hour honor period we measured in the sandbox. A deposit-desk agent answers from the record and drafts refunds that a person sends. Demo mode with six weeks of sample rentals.",
+        "The owner's dashboard, built with AG Studio: what was held, kept, released and refunded from every PayPal movement, open disputes, and each running hold on PayPal's 29-day clock with the 72-hour honor period we measured in the sandbox. A deposit-desk agent answers from the record and drafts refunds that a person sends. " +
+        (from.live
+          ? "Captured in the PayPal sandbox: the real movements of the sample rentals the sandbox seed paid for that day; no history is moved back in time there."
+          : "Demo mode with six weeks of sample rentals."),
       html: pageHtml(`
         ${headerBlock(
           "Running the shop · <b>Dashboard</b>",
           "See where every deposit dollar went",
           "Built with AG Studio: kept, released and refunded money from every PayPal movement, and each hold on PayPal's <strong>29-day clock</strong>, with the <strong>72-hour</strong> honor period we measured in the sandbox.",
         )}
-        <div class="abs" style="left:${Math.round((2400 - w) / 2)}px;top:${B_TOP}px">${browserFrame(s, crop, w, `${demoHost}/shop/insights`)}</div>
-        ${footer(demoSource)}
+        <div class="abs" style="left:${Math.round((2400 - w) / 2)}px;top:${B_TOP}px">${browserFrame(s, crop, w, `${from.host}/shop/insights`)}</div>
+        ${footer(from.source)}
       `),
     });
   }

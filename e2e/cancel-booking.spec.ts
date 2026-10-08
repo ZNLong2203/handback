@@ -95,7 +95,7 @@ test("the counter cancels with a refund it chooses and a reason, and the renter'
   await shot(counter, "x04-counter-cancelled-by-shop");
 
   // The renter's page shows the shop's cancellation, the reason and the refund without a reload.
-  await expect(phone.getByRole("heading", { name: "Kestrel Camera Rentals cancelled this booking" })).toBeVisible();
+  await expect(phone.getByRole("heading", { name: "Kestrel Rentals cancelled this booking" })).toBeVisible();
   await expect(phone.getByText(/The camera failed its check before your rental/)).toBeVisible();
   await expect(phone.getByText("−$30.00")).toBeVisible();
   await expect(phone.getByText("The shop keeps").locator("..")).toContainText("$8.00");

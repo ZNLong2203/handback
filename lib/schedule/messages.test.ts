@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkMessage, draftMessage, templateMessage, type MessageFacts } from "./messages";
 
 const reassign: MessageFacts = {
-  shopName: "Kestrel Camera Rentals",
+  shopName: "Kestrel Rentals",
   customerName: "Priya Patel",
   itemName: "Portable projector",
   kind: "reassign",
@@ -20,7 +20,7 @@ describe("customer messages", () => {
       }
     }
     expect(templateMessage(reschedule)).toBe(
-      "Hi Diego, this is Kestrel Camera Rentals. The Portable projector you booked for Oct 7–9 needs a repair, and no other one is free on those dates. The earliest we can offer is Oct 8–10. We will call you to check whether that works for you.",
+      "Hi Diego, this is Kestrel Rentals. The Portable projector you booked for Oct 7–9 needs a repair, and no other one is free on those dates. The earliest we can offer is Oct 8–10. We will call you to check whether that works for you.",
     );
   });
 

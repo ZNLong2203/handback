@@ -20,6 +20,7 @@ const drone: RentalItem = {
 const input: MandateInput = {
   rentalId: "R-TEST01",
   item: drone,
+  // The demo shop's name when the hashes below were pinned; it has been "Kestrel Rentals" since. Keep it.
   shop: { name: "Kestrel Camera Rentals", city: "Austin, TX" },
   renter: { name: "Sam Rivera", email: "sam@example.com" },
   issuer: { party: "assistant", assistant: "Claude" },

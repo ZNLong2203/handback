@@ -132,7 +132,7 @@ Every booking, from an assistant or from the website, gets a deposit mandate. It
 | `createdAt` | When it was issued |
 | `cancellation` | Version 2 only. `feeRefund`: the share of the fee (`percent`) refunded when the renter cancels `before` each moment, earliest first, fixed from the shop's policy (`CANCELLATION_POLICY` in `lib/shop.ts`) to this booking's pickup day in UTC. From the last moment, the start of the pickup day, nothing. Cancelling uses these terms, so a later change to the policy does not reach the booking |
 
-Bookings made since the cancellation terms were added get version 2; earlier ones keep version 1, which has no `cancellation` field. Their stored text is never rewritten and still verifies against its hash, and cancelling one applies the shop's policy as it is now to its pickup day. Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is shorter than a real one):
+Bookings made since the cancellation terms were added get version 2; earlier ones keep version 1, which has no `cancellation` field. Their stored text is never rewritten and still verifies against its hash, and cancelling one applies the shop's policy as it is now to its pickup day. Here is the test fixture from `lib/rentals/mandate.test.ts` (its price list is shorter than a real one, and it keeps the demo shop's earlier name, Kestrel Camera Rentals, because the test pins its hash):
 
 ```json
 {

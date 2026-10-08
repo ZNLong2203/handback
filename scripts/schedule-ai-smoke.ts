@@ -6,6 +6,7 @@ import { addDaysIso, todayIso } from "@/lib/dates";
 import { COMMAND_TOOLS, commandPrompt, toCommandCall, type CommandContext } from "@/lib/schedule/commands";
 import { callOneTool, scheduleModel } from "@/lib/schedule/gemini";
 import { checkMessage, draftMessage, type MessageFacts } from "@/lib/schedule/messages";
+import { SHOP } from "@/lib/shop";
 
 if (!process.env.GEMINI_API_KEY) throw new Error("Set GEMINI_API_KEY in .env.local first");
 // The app never calls Gemini in demo mode; this script is the one place that does on purpose.
@@ -15,7 +16,7 @@ const today = todayIso();
 const day = (n: number) => addDaysIso(today, n);
 
 const facts: MessageFacts = {
-  shopName: "Kestrel Camera Rentals",
+  shopName: SHOP.name,
   customerName: "Diego Alvarez",
   itemName: "Portable projector",
   kind: "reschedule",

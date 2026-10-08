@@ -63,6 +63,11 @@ const tag = arg("tag");
 const passes = Number(arg("passes") ?? "1");
 /** Send the photos as the app stores them instead of the files as they are. */
 const appEncoding = process.argv.includes("--app-encoding");
+/**
+ * The shop name the prompt carried in every published run (eval/runs, eval/real/runs,
+ * eval/samples/runs). The demo shop has since been renamed (SHOP.name in lib/shop.ts);
+ * the eval keeps the historical name so a rerun sends the prompt those runs measured.
+ */
 const SHOP = "Kestrel Camera Rentals";
 
 const COMPATIBLE: Record<Change["kind"], string[]> = {

@@ -22,6 +22,13 @@ export type SeedScenario = {
   /** Bundled sample photo for the return, from eval/images. */
   returnSample: string | null;
   target: SeedTarget;
+  /**
+   * The unit the rental should sit on, for plans that draw a schedule
+   * (lib/schedule/seed.ts). It is booked there when that unit is free as the
+   * timeline draws it, else on the first unit that is, and not at all when
+   * none is; the check runs before PayPal is called.
+   */
+  unit?: string;
 };
 
 export const SCENARIOS: SeedScenario[] = [

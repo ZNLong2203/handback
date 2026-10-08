@@ -63,12 +63,12 @@ With no keys set, PayPal (including its Disputes API) is replaced by a local sta
 
 Open http://localhost:3000 and use two tabs, one as the renter and one as the counter:
 
-1. Renter: **Rent something**, pick the mirrorless camera kit, enter a name and email, and press **Pay $87.00 (demo PayPal)**.
-2. Counter: open http://localhost:3000/shop, pick the rental, choose the **Pickup photo** sample, then **Hold $300.00 deposit**.
+1. Renter: **Rent something**, pick the city bike, enter a name and email, and press **Pay $45.00 (demo PayPal)**.
+2. Counter: open http://localhost:3000/shop, pick the rental, choose the **Pickup photo** sample, then **Hold $150.00 deposit**.
 3. Renter: **Yes, this is how I received it**.
-4. Counter: choose the **Hood removed** return sample, then **Compare the photos**, then **Send 1 item to** the renter.
-5. Renter: **That's fair** (or **I question this** with a reason), then **Send my answers**.
-6. Counter: **Keep $35.00, release $265.00**. Both pages update without a reload.
+4. Counter: choose the **Phone holder removed, rear light removed** return sample, then **Compare the photos**, then **Send 2 items to** the renter.
+5. Renter: **That's fair** for the phone holder, **I question this** for the rear light with a reason ("It's in my backpack"), then **Send my answers**.
+6. Counter: **Waive it** for the rear light, then **Keep $12.00, release $138.00**. Both pages update without a reload.
 
 Then, still in demo mode:
 
@@ -301,7 +301,7 @@ Known limits of this build:
   - Counter access ([`lib/staff-access.test.ts`](lib/staff-access.test.ts), [`app/staff-access.test.ts`](app/staff-access.test.ts)): the cookie (valid, forged, expired, missing, signed under an old code or secret), codes that are too short closing the counter, the wrong-code limits and the address they are keyed on, `signInAction` (where it sends you back, the cookie's flags, refusals), every staff server action refusing without the cookie when `SHOP_ACCESS_CODE` is set, the shop's live channel and evidence PDFs closed, the renter's side open, and nothing read or changed when it is unset.
   - Disputes (`lib/disputes/*.test.ts`): byte-identical PDFs, the summary's fact check and template fallback, the fee-based recommendation, dispute records and webhooks, and the desk against a mocked PayPal REST API, including a reply that was lost and a retry PayPal refused; and a dispute on a cancelled booking's fee ([`lib/disputes/cancelled.test.ts`](lib/disputes/cancelled.test.ts)): a one-page pack about the booking, the terms in the mandate and the cancellation, with no pickup or return, notes for PayPal to match, the pack sent without photos, and advice from the fee math.
   - MCP ([`lib/mcp/server.test.ts`](lib/mcp/server.test.ts)): the SDK client against the HTTP handler: tool annotations, a booking that moves no money, status only by status token, and the `Origin` check.
-  - Schedule (`lib/schedule/*.test.ts`): overlaps and unit search, assignment at booking, the agent's repair blocks and suggestions, handover warnings, message checks and typed commands.
+  - Schedule (`lib/schedule/*.test.ts`): overlaps and unit search, assignment at booking, the agent's repair blocks and suggestions, handover warnings, message checks and typed commands, and the sandbox seed against the PayPal stand-in posing as the sandbox, with every PayPal call it makes counted.
   - Owner's dashboard (`lib/insights/*.test.ts`, [`app/api/insights/routes.test.ts`](app/api/insights/routes.test.ts)): the money adds up for rentals walked through the service (a hold is what was captured plus what was released; kept plus refunds plus dispute returns is what was captured; no refund above its capture; the ledger's signed sum; money conserved through the deposit flow), cancelled and disputed rentals, the hold clock, the Sankey layout, the mapping between AG Studio's turns and Gemini, both routes staff only with no key in any reply, the turn limit, and the agent's tools reading only, with refund drafts held to what is left to refund.
   - Render and operations: where jobs run and their idempotency keys (`lib/workflows/*.test.ts`), the two tasks ([`workflows/tasks.test.ts`](workflows/tasks.test.ts)), the cron script and route ([`scripts/cron/renew-holds.test.ts`](scripts/cron/renew-holds.test.ts), [`app/api/jobs/renew-holds/route.test.ts`](app/api/jobs/renew-holds/route.test.ts)), `/api/health` ([`lib/health.test.ts`](lib/health.test.ts)), the demo seed (`lib/seed/*.test.ts`) and the Postgres driver's JSON handling ([`lib/db/client.test.ts`](lib/db/client.test.ts)).
   - Eval tooling (`scripts/eval/*.test.ts`): lining up the image model's edits, and a check that `eval/README.md` matches the saved runs.
@@ -421,4 +421,4 @@ Handback's code is [MIT](LICENSE). Some things in or used by this repository are
 - AG Studio (`ag-studio`, `ag-studio-react`) is commercial software. npm installs it, with the AG Grid and AG Charts Enterprise packages it depends on, when the project is installed; the repository contains no AG Studio code. Without a licence key it runs as a trial, and a key is set on the host as `AG_STUDIO_LICENSE_KEY`, never committed. Handback's custom widgets draw their own SVG and use no AG Grid or AG Charts package of their own.
 - Bryntum Scheduler is commercial software. npm installs its trial package when the project is installed; the repository contains no Bryntum code, and the trial is not covered by the MIT license.
 
-Kestrel Camera Rentals is a fictional demo shop.
+Kestrel Rentals is a fictional demo shop.
