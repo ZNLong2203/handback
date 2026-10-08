@@ -237,6 +237,8 @@ On Oct 8, 2026, on Render, from this Blueprint (web `0.5c-512mb`, Postgres 18 `0
 | The skip path end to end | Cron job → web service → workflow run skipped → the web service swept the holds itself and answered `HTTP 200 {"ranOn":"web",...}` → the cron job exited 1, so Render flagged the run, as designed |
 | Client address behind Render's proxies | Without `TRUSTED_PROXY_HOPS`, `staffAccess.countedAs` was a Cloudflare address (`172.68.x.x`); with `TRUSTED_PROXY_HOPS=1` it was the caller's own public address. `render.yaml` now sets 1 |
 | Counter gate | `/shop` and `/shop/insights` answer 307 to `/shop/sign-in`; `/api/live/shop` answers 401 |
+| A whole rental on the deployed copy (`scripts/sandbox-walkthrough.ts` flow after signing in to the counter) | Rental `R-ANSFGK`, 62 seconds from the v6 button to settlement: order `66M88302L4338524N`, fee capture `3MP95756KD2660548`, deposit authorization `5FW74241NC712303M` ($300.00 on the saved wallet), two live Gemini looks in 6.6 s run by Render Workflows, settlement capture `51H54429UU584601C` ($35.00 kept, $265.00 released). PayPal's webhooks reached `/api/paypal/webhooks`, passed verification and show three times on the rental as "PayPal confirmed by webhook"; the audit chain verified (15 entries) |
+| The hourly renewal after the workflow's rebuild | `HTTP 200 {"ranOn":"render-workflows",...}` and the cron run finished successfully |
 
 On Oct 2, 2026, on a development machine, not yet on Render:
 
