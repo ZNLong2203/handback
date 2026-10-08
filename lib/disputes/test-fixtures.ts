@@ -11,7 +11,7 @@ export const returned = photo("camera-kit/after__missing-hood.jpg");
 export const sampleFacts: EvidenceFacts = {
   version: 1,
   asOf: "2026-10-05T16:42:10.123Z",
-  shop: "Kestrel Camera Rentals, Austin, TX",
+  shop: "Kestrel Rentals, Austin, TX",
   rental: { id: "R-7KQ2MX", item: "Mirrorless camera kit", customer: "Maya Chen", startDate: "2026-10-02", endDate: "2026-10-05", days: 3 },
   dispute: { id: "PP-R-CHU-10190215", reason: "INCORRECT_AMOUNT", amountCents: 2000, transactionId: "8JN17439E0980024P", openedAt: "2026-10-05T16:40:28.346Z" },
   paypal: {

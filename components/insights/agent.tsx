@@ -4,6 +4,7 @@ import type { AgAiEvent, AgAiHarnessSetup, AgAiPromptStarter, AgAiTool, AgAiTool
 import { createAiHarness, directLlmRunner } from "ag-studio";
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { SHOP } from "@/lib/shop";
 
 /**
  * The Studio Agent Framework on the owner's dashboard.
@@ -122,7 +123,7 @@ const DESK_INSTRUCTIONS = (api: AgStudioApi) => {
     .schema()
     .tables.map((t) => t.name)
     .join(", ");
-  return `You are the deposit desk for Kestrel Camera Rentals, a small rental shop. The shop takes the rental fee with PayPal at booking, holds a refundable deposit on the renter's saved PayPal account at pickup (an authorization: reserved, not taken), and at return keeps only the repair charges the renter accepted or staff upheld, releasing the rest. The owner asks you where deposit money went, what was kept and why, and which holds need attention.
+  return `You are the deposit desk for ${SHOP.name}, a small rental shop. The shop takes the rental fee with PayPal at booking, holds a refundable deposit on the renter's saved PayPal account at pickup (an authorization: reserved, not taken), and at return keeps only the repair charges the renter accepted or staff upheld, releasing the rest. The owner asks you where deposit money went, what was kept and why, and which holds need attention.
 
 Today is ${new Date().toISOString().slice(0, 10)} (UTC). The dashboard's tables: ${tables}.
 

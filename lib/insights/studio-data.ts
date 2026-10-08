@@ -1,4 +1,5 @@
 import type { AgDataRelationDefinition, AgFieldDefinition } from "ag-studio";
+import { SHOP } from "@/lib/shop";
 import { LEDGER_KIND_LABEL, type InsightsData } from "./model";
 
 /**
@@ -57,7 +58,7 @@ export function studioData(d: InsightsData): StudioDataSpec {
   const kinds = Object.values(LEDGER_KIND_LABEL).join("; ");
   return {
     description:
-      "Deposits and payments of one small rental shop (Kestrel Camera Rentals) that takes the rental fee with PayPal at booking, holds a refundable deposit on the renter's saved PayPal account at pickup, and at return keeps only the repair charges the renter accepted or staff upheld, releasing the rest of the hold. Every amount comes from PayPal movements the app recorded; nothing here is an estimate. Dollar fields are for display; the ledger also carries exact integer cents. Renters appear by first name only. Times are UTC.",
+      `Deposits and payments of one small rental shop (${SHOP.name}) that takes the rental fee with PayPal at booking, holds a refundable deposit on the renter's saved PayPal account at pickup, and at return keeps only the repair charges the renter accepted or staff upheld, releasing the rest of the hold. Every amount comes from PayPal movements the app recorded; nothing here is an estimate. Dollar fields are for display; the ledger also carries exact integer cents. Renters appear by first name only. Times are UTC.`,
     relationships: [rel("ledger", "many-to-one"), rel("findings", "many-to-one"), rel("holds", "one-to-one"), rel("timings", "one-to-one"), rel("flows", "many-to-one")],
     sources: [
       {

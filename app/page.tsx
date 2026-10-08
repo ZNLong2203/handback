@@ -182,7 +182,7 @@ export default function Home() {
         </section>
       </main>
       <footer className="mx-auto max-w-6xl px-5 py-8 text-sm text-muted">
-        Handback is a hackathon project. Kestrel Camera Rentals is a fictional demo shop. Open source under the MIT license.
+        Handback is a hackathon project. Kestrel Rentals is a fictional demo shop. Open source under the MIT license.
       </footer>
     </>
   );

@@ -421,4 +421,4 @@ Handback's code is [MIT](LICENSE). Some things in or used by this repository are
 - AG Studio (`ag-studio`, `ag-studio-react`) is commercial software. npm installs it, with the AG Grid and AG Charts Enterprise packages it depends on, when the project is installed; the repository contains no AG Studio code. Without a licence key it runs as a trial, and a key is set on the host as `AG_STUDIO_LICENSE_KEY`, never committed. Handback's custom widgets draw their own SVG and use no AG Grid or AG Charts package of their own.
 - Bryntum Scheduler is commercial software. npm installs its trial package when the project is installed; the repository contains no Bryntum code, and the trial is not covered by the MIT license.
 
-Kestrel Camera Rentals is a fictional demo shop.
+Kestrel Rentals is a fictional demo shop.

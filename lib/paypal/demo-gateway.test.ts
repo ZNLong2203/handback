@@ -11,7 +11,7 @@ const hold: HoldRequest = {
   rentalDays: 3,
   feeCents: 8000,
   depositCents: 30000,
-  shopName: "Kestrel Camera Rentals",
+  shopName: "Kestrel Rentals",
   returnUrl: "http://localhost:3000/return",
   cancelUrl: "http://localhost:3000/cancel",
   savePayPal: true,
@@ -119,7 +119,7 @@ describe("DemoDepositGateway booking flow", () => {
     rentalDays: 3,
     feeCents: 8700,
     depositCents: 30000,
-    shopName: "Kestrel Camera Rentals",
+    shopName: "Kestrel Rentals",
     returnUrl: "http://localhost:3000/r/x",
     cancelUrl: "http://localhost:3000/rent/camera-kit",
   };
