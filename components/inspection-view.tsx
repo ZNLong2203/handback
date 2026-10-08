@@ -70,9 +70,10 @@ function Photo({
                 on ? "shadow-[0_0_0_4px_rgb(255_255_255/0.85)]" : active ? "opacity-40" : "",
               )}
             >
+              {/* The number sits off the box's corner, so it does not cover a small box such as a rear light. */}
               <span
                 className={cx(
-                  "absolute -left-3 -top-3 grid h-6 w-6 place-items-center rounded-full text-xs font-bold text-white shadow",
+                  "absolute -left-5 -top-5 grid h-6 w-6 place-items-center rounded-full text-xs font-bold text-white shadow",
                   charge ? "bg-charged" : f.kind === "pre_existing" ? "bg-held" : "bg-note",
                 )}
               >
