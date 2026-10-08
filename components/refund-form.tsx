@@ -98,7 +98,7 @@ export function RefundForm({
             name="reason"
             maxLength={200}
             autoComplete="off"
-            placeholder="The lens hood turned up in the case"
+            placeholder="The missing part turned up after all"
             value={reason}
             onChange={(e) => (setReason(e.target.value), setAsking(false))}
             className="mt-1 h-11 w-full rounded-xl border border-line-strong bg-card px-3 outline-none focus:border-ink/50"

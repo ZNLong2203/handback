@@ -218,8 +218,8 @@ function DemoPay({ booking }: { booking: Booking }) {
         {pending || starting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
         Pay {formatUsd(booking.feeCents)} (demo PayPal)
       </Button>
-      <p className="text-xs text-muted">Demo mode: no PayPal keys are set, so a stand-in that follows PayPal&apos;s sandbox rules approves the payment.</p>
       {booking.problem && <p className="text-sm text-muted">{booking.problem}</p>}
+      <p className="text-xs text-muted">Demo mode: no PayPal keys are set, so a stand-in that follows PayPal&apos;s sandbox rules approves the payment.</p>
       {error && (
         <p role="alert" className="text-sm font-medium text-charged">
           {error}
