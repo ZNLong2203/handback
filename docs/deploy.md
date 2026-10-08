@@ -239,6 +239,9 @@ On Oct 8, 2026, on Render, from this Blueprint (web `0.5c-512mb`, Postgres 18 `0
 | Counter gate | `/shop` and `/shop/insights` answer 307 to `/shop/sign-in`; `/api/live/shop` answers 401 |
 | A whole rental on the deployed copy (`scripts/sandbox-walkthrough.ts` flow after signing in to the counter) | Rental `R-ANSFGK`, 62 seconds from the v6 button to settlement: order `66M88302L4338524N`, fee capture `3MP95756KD2660548`, deposit authorization `5FW74241NC712303M` ($300.00 on the saved wallet), two live Gemini looks in 6.6 s run by Render Workflows, settlement capture `51H54429UU584601C` ($35.00 kept, $265.00 released). PayPal's webhooks reached `/api/paypal/webhooks`, passed verification and show three times on the rental as "PayPal confirmed by webhook"; the audit chain verified (15 entries) |
 | The hourly renewal after the workflow's rebuild | `HTTP 200 {"ranOn":"render-workflows",...}` and the cron run finished successfully |
+| A counter refund on the deployed copy | $5.00 of `R-ANSFGK`'s settlement capture: "Refunded $5.00", and PayPal's `PAYMENT.CAPTURE.REFUNDED` webhook arrived within 20 seconds (webhook entries on the rental went from 4 to 5) |
+| A renter's cancellation on the deployed copy | `R-2K9CYJ`, action camera kit booked three days ahead with the v6 button and cancelled from the renter's page: 100% of the $38.00 fee back under the policy, refund `7EJ11269LK1019126`, confirmed by webhook; audit chain intact (7 entries) |
+| The daily reset, called once by hand with `CRON_SECRET` | `{"status":"reset","mode":"sandbox","deletedRentals":2,"released":[],"seeded":{"counter":6,...}}`: with `SEED_VAULT_ID` set to the sandbox buyer's saved wallet, the six counter scenarios were paid for again in the sandbox, and `/shop` and `/shop/insights` show them. The demo schedule and the dashboard's sample history seed only in demo mode |
 
 On Oct 2, 2026, on a development machine, not yet on Render:
 
