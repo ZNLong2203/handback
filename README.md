@@ -63,12 +63,12 @@ With no keys set, PayPal (including its Disputes API) is replaced by a local sta
 
 Open http://localhost:3000 and use two tabs, one as the renter and one as the counter:
 
-1. Renter: **Rent something**, pick the mirrorless camera kit, enter a name and email, and press **Pay $87.00 (demo PayPal)**.
-2. Counter: open http://localhost:3000/shop, pick the rental, choose the **Pickup photo** sample, then **Hold $300.00 deposit**.
+1. Renter: **Rent something**, pick the city bike, enter a name and email, and press **Pay $45.00 (demo PayPal)**.
+2. Counter: open http://localhost:3000/shop, pick the rental, choose the **Pickup photo** sample, then **Hold $150.00 deposit**.
 3. Renter: **Yes, this is how I received it**.
-4. Counter: choose the **Hood removed** return sample, then **Compare the photos**, then **Send 1 item to** the renter.
-5. Renter: **That's fair** (or **I question this** with a reason), then **Send my answers**.
-6. Counter: **Keep $35.00, release $265.00**. Both pages update without a reload.
+4. Counter: choose the **Phone holder removed, rear light removed** return sample, then **Compare the photos**, then **Send 2 items to** the renter.
+5. Renter: **That's fair** for the phone holder, **I question this** for the rear light with a reason ("It's in my backpack"), then **Send my answers**.
+6. Counter: **Waive it** for the rear light, then **Keep $12.00, release $138.00**. Both pages update without a reload.
 
 Then, still in demo mode:
 
