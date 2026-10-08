@@ -146,8 +146,10 @@ export function InspectionView({
             return (
               <li
                 key={f.id}
-                onMouseEnter={() => setActive(f.id)}
-                onMouseLeave={() => setActive(null)}
+                // Hovering a finding highlights its boxes with a mouse. On a touch screen a tap on
+                // an answer would leave the other boxes faded, so there only a tap on a box picks one.
+                onPointerEnter={(e) => e.pointerType === "mouse" && setActive(f.id)}
+                onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
                 className={cx(
                   "rounded-2xl border p-4 transition",
                   active === f.id ? "border-ink/30 shadow-[var(--shadow-card)]" : "border-line",
