@@ -100,7 +100,7 @@ Sandbox buyer passwords often contain `#`. In `.env.local`, wrap such a value in
 - `npx tsx --conditions=react-server --env-file-if-exists=.env.local scripts/schedule-ai-smoke.ts` sends the schedule's prompts to the real Gemini API once.
 - `npm run seed:demo` walks six rentals to six different steps of the counter, comparing returns with the recorded Gemini replies. In sandbox mode it needs `SEED_VAULT_ID`, and then also books the schedule's two weeks from today on with real sandbox payments; see [docs/deploy.md](docs/deploy.md#the-schedule-and-the-dashboard-in-the-sandbox).
 - PayPal only delivers webhooks to public HTTPS URLs on port 443. To receive them, deploy the app, then register its URL with `npm run paypal:webhook -- https://<your-host>` and put the printed id in `PAYPAL_WEBHOOK_ID`. Run it again after this list of events grows (it now includes `CHECKOUT.ORDER.APPROVED`): for a URL already registered it adds the missing event types.
-- The scripts that drive the counter in a browser (`sandbox-walkthrough.ts`, `sandbox-agent-booking.ts --settle`, `spike-dispute.ts`) expect a server without `SHOP_ACCESS_CODE`.
+- The scripts that drive the counter in a browser (`sandbox-walkthrough.ts`, `sandbox-agent-booking.ts --settle`, `spike-dispute.ts`) expect a server without `SHOP_ACCESS_CODE`. The Devpost gallery generator (`scripts/gallery/generate.ts`, usage in its header) signs in to a counter that has one with the code in `GALLERY_STAFF_CODE`, which it never prints.
 
 ### Daily demo reset
 

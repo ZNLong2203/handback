@@ -8,6 +8,7 @@
 import type { Browser, Page } from "@playwright/test";
 import { fillPayPalLogin, type Buyer } from "../lib/sandbox-browser";
 import { log, maskPage, type Manifest, type ShotTaker } from "./shots";
+import { counterContext } from "./staff";
 
 const RENTER = { name: "An Nguyen", email: "an.nguyen@example.com" };
 
@@ -70,7 +71,7 @@ export async function modeStrip(page: Page): Promise<string> {
 }
 
 /** PayPal ids from the counter page: each audit entry names the id it recorded. */
-async function idsFromCounter(counter: Page) {
+export async function idsFromCounter(counter: Page) {
   const text = await counter.locator("body").innerText();
   const after = (label: RegExp, kind: string) => new RegExp(`${label.source}[\\s\\S]*?${kind} ([0-9A-Z]{17})`).exec(text)?.[1] ?? "";
   return {
@@ -105,7 +106,8 @@ export async function captureLive(browser: Browser, base: string, buyer: Buyer, 
 }
 
 async function runStory(browser: Browser, base: string, buyer: Buyer, taker: ShotTaker, manifest: Manifest) {
-  const desk = await browser.newContext({ locale: "en-US", viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+  // Signed in to the counter when the target asks for SHOP_ACCESS_CODE (GALLERY_STAFF_CODE), so the frames can show its own URL.
+  const desk = await counterContext(browser, base, { locale: "en-US", viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
   const mobile = await browser.newContext({ locale: "en-US", viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   try {
     const health = (await (await desk.request.get(`${base}/api/health`)).json()) as { paypal?: { mode?: string }; ai?: { mode?: string; model?: string } };
