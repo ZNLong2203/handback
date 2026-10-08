@@ -1,17 +1,21 @@
 import "server-only";
 import { addDaysIso, todayIso } from "@/lib/dates";
 import { getDb } from "@/lib/db/client";
+import { depositGateway } from "@/lib/paypal";
 import { paypalConfig } from "@/lib/paypal/config";
 import { latestAssessment, rentalById } from "@/lib/rentals/repo";
 import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
+import type { SeedScenario } from "@/lib/seed/plan";
+import { convergeScenario, type SeedReport } from "@/lib/seed/run";
 import { freeUnitFor } from "./place";
 
 // Two weeks of bookings for demo mode, so the schedule has something to show
 // the first time it opens. Every rental goes through the same service calls a
 // real one does (booking, PayPal stand-in, photos, inspection, settlement);
 // the only shortcut is moving a few of them back in time afterwards, because
-// a real booking can never start in the past.
+// a real booking can never start in the past. A deployment on the PayPal
+// sandbox books a version of it with real sandbox payments instead (below).
 
 export type SeedPlan = {
   name: string;
@@ -140,4 +144,84 @@ export async function seedDemoSchedule(now = new Date()): Promise<string[]> {
     }
   }
   return ids;
+}
+
+// ─── Sandbox ────────────────────────────────────────────────
+
+/** A plan for the sandbox: from today on, and only booked or out, since nothing there can be moved back in time. */
+export type SandboxSeedPlan = Omit<SeedPlan, "state" | "checkin"> & { state: "booked" | "out" };
+
+/**
+ * The schedule on a deployment that runs against the PayPal sandbox. Every
+ * PayPal id behind it is real, so nothing starts in the past and nothing is
+ * moved there: the plan is the demo fortnight from today on. Each booking
+ * costs two sandbox calls (the booking order startBooking creates, left
+ * unapproved, and the fee charged to the saved wallet); only the two rentals
+ * that are out hold a deposit, one call more each. Jordan's projector carries
+ * the repair story here too: it is out today, due back today, with Priya's
+ * and Diego's bookings after it on the same unit and Hannah's on the other.
+ *
+ * The units are planned for a counter that the counter seed has just filled
+ * (lib/seed/plan.ts), which runs first on the nightly reset and in
+ * `npm run seed:demo`: its projector came back today and is drawn on
+ * Projector A, so the story runs on Projector B. The same layout comes out
+ * without the counter seed. Names the counter seed also uses are left out,
+ * except Jordan's and Maya's, and every email here differs from the
+ * counter's, so neither seed ever walks the other's rental.
+ */
+export const SANDBOX_SEED_PLAN: SandboxSeedPlan[] = [
+  { name: "Jordan Lee", itemId: "projector", from: 0, to: 0, state: "out", unit: "projector-b" },
+  { name: "Liam Walsh", itemId: "ebike", from: 0, to: 3, state: "out", unit: "ebike-a" },
+  { name: "Kai Tanaka", itemId: "drone-kit", from: 1, to: 2, state: "booked", unit: "drone-kit-b" },
+  { name: "Leo Garcia", itemId: "action-cam-kit", from: 1, to: 3, state: "booked", unit: "action-cam-kit-a" },
+  { name: "Grace Liu", itemId: "camera-kit", from: 1, to: 3, state: "booked", unit: "camera-kit-b" },
+  { name: "Priya Patel", itemId: "projector", from: 2, to: 4, state: "booked", unit: "projector-b" },
+  { name: "Isaac Moore", itemId: "camera-body", from: 2, to: 6, state: "booked", unit: "camera-body-a" },
+  { name: "Ethan Brooks", itemId: "tele-lens", from: 2, to: 5, state: "booked", unit: "tele-lens-b" },
+  { name: "Minh Pham", itemId: "city-bike", from: 3, to: 5, state: "booked", unit: "city-bike-a" },
+  { name: "Diego Alvarez", itemId: "projector", from: 5, to: 7, state: "booked", unit: "projector-b" },
+  { name: "Zoe Adams", itemId: "pa-speaker", from: 5, to: 6, state: "booked", unit: "pa-speaker-a" },
+  { name: "Hannah Wright", itemId: "projector", from: 6, to: 9, state: "booked", unit: "projector-a" },
+  { name: "Mia Rossi", itemId: "ebike", from: 7, to: 9, state: "booked", unit: "ebike-a" },
+  // The schedule's command box suggests "Move Maya's drone booking to the other unit"; Drone kit A is free then.
+  { name: "Maya Chen", itemId: "drone-kit", from: 7, to: 10, state: "booked", unit: "drone-kit-b" },
+  { name: "Chloe Martin", itemId: "tele-lens", from: 8, to: 10, state: "booked", unit: "tele-lens-a" },
+  { name: "Ella Novak", itemId: "camera-kit", from: 9, to: 11, state: "booked", unit: "camera-kit-a" },
+];
+
+/** The sandbox plan's renters, at addresses no other seed or test uses (example.com is reserved, RFC 2606). */
+export const sandboxSeedEmail = (name: string) => `${name.toLowerCase().replace(/[^a-z]+/g, ".")}+schedule@example.com`;
+
+const sandboxScenario = (p: SandboxSeedPlan): SeedScenario => ({
+  name: p.name,
+  email: sandboxSeedEmail(p.name),
+  itemId: p.itemId,
+  startsInDays: p.from,
+  days: p.to - p.from,
+  returnSample: null,
+  target: p.state,
+  unit: p.unit,
+});
+
+/**
+ * Books SANDBOX_SEED_PLAN through the real rental service against the PayPal
+ * sandbox, paying each fee with the saved wallet `vaultId`, as the counter
+ * seed does there (lib/seed/run.ts). It converges like that seed: each
+ * rental is found by its renter's email and only its missing steps run, so a
+ * second run the same day books and charges nothing, and an interrupted one
+ * picks up where it stopped. The nightly reset wipes the rentals, so it
+ * books the plan again once per reset day. It does nothing in demo mode,
+ * which has its own fortnight (seedDemoSchedule), refuses live PayPal, and
+ * needs a saved wallet.
+ */
+export async function seedSandboxSchedule(opts: { vaultId?: string } = {}): Promise<SeedReport> {
+  const mode = depositGateway().mode;
+  if (mode === "live") return { mode, skipped: "PayPal is live. The schedule seed moves money, so it only runs against the sandbox.", lines: [] };
+  if (mode === "demo") return { mode, skipped: "Demo mode books its own two weeks the first time the schedule opens (seedDemoSchedule).", lines: [] };
+  if (!opts.vaultId) {
+    return { mode, skipped: "PayPal is in sandbox mode and SEED_VAULT_ID is not set, so no booking fee can be paid. Nothing was booked on the schedule.", lines: [] };
+  }
+  const lines = [];
+  for (const p of SANDBOX_SEED_PLAN) lines.push(await convergeScenario(sandboxScenario(p), opts.vaultId));
+  return { mode, lines };
 }

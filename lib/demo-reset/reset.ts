@@ -4,7 +4,7 @@ import { publish } from "@/lib/live";
 import { depositGateway, dropDemoStandIns, PayPalError, type DepositGateway } from "@/lib/paypal";
 import type { PayPalMode } from "@/lib/paypal/config";
 import { seedInsightsHistory } from "@/lib/insights/seed";
-import { seedDemoSchedule } from "@/lib/schedule/seed";
+import { seedDemoSchedule, seedSandboxSchedule } from "@/lib/schedule/seed";
 import { seedCounter } from "@/lib/seed/run";
 import { demoResetConfig, liveRefusal, resetDayOf, resetSeedWallet, type Env } from "./config";
 
@@ -57,7 +57,11 @@ export type ResetSummary = {
   deletedRentals: number;
   /** Sandbox only: the open deposit holds voided (or not) before the wipe. */
   released: HoldRelease[];
-  /** Rentals booked again by the counter seed, the demo schedule seed and the owner's dashboard's sample history, in that order. */
+  /**
+   * Rentals booked again by the counter seed, the schedule seed (the demo
+   * fortnight, or in the sandbox its version from today on) and the owner's
+   * dashboard's sample history (demo mode only), in that order.
+   */
   seeded: { counter: number; schedule: number; insights: number; note?: string };
 };
 
@@ -73,12 +77,16 @@ const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
  * Deletes every rental and everything recorded about it, then seeds the
  * counter the way a fresh deployment is seeded: `npm run seed:demo`'s
  * scenarios for the current PayPal mode and, in demo mode, the two-week
- * demo schedule and then the owner's dashboard's sample history, in that order. In the sandbox it first voids the deposit holds that are
- * still open, so visitors' sandbox money is not left on hold; it never
- * captures or refunds a visitor's payment. (With SEED_VAULT_ID set, the
- * sandbox seed afterwards makes new sandbox payments for the sample
- * rentals, as `npm run seed:demo` does.) At most once per reset day (see
- * resetDayOf); a second call that day returns "already-done".
+ * demo schedule and then the owner's dashboard's sample history, in that
+ * order. In the sandbox it first voids the deposit holds that are still
+ * open, so visitors' sandbox money is not left on hold; it never captures or
+ * refunds a visitor's payment. (With SEED_VAULT_ID set, the sandbox seeds
+ * afterwards make new sandbox payments with that wallet for the counter's
+ * sample rentals and the schedule's fortnight, as `npm run seed:demo` does.
+ * The dashboard's history is not seeded there: it needs holds and
+ * settlements moved back in time, which only the stand-in can do.) At most
+ * once per reset day (see resetDayOf); a second call that day returns
+ * "already-done".
  */
 export async function resetDemo(opts: { now?: Date; env?: Env } = {}): Promise<ResetResult> {
   const now = opts.now ?? new Date();
@@ -139,7 +147,13 @@ async function wipeAndSeed(gateway: DepositGateway, now: Date, env: Env): Promis
   }
   const counter = await seedCounter({ vaultId });
   for (const line of counter.lines.filter((l) => l.stopped)) console.error(`Demo reset: the seed stopped ${line.scenario.name}: ${line.stopped}`);
-  const schedule = mode === "demo" ? await seedDemoSchedule(now) : [];
+  let schedule = 0;
+  if (mode === "demo") schedule = (await seedDemoSchedule(now)).length;
+  else if (vaultId) {
+    const sandbox = await seedSandboxSchedule({ vaultId });
+    for (const line of sandbox.lines.filter((l) => l.stopped)) console.error(`Demo reset: the schedule seed stopped ${line.scenario.name}: ${line.stopped}`);
+    schedule = sandbox.lines.filter((l) => l.rentalId).length;
+  }
   const insights = mode === "demo" ? await seedInsightsHistory(now) : [];
   publish("demo-reset", "demo.reset");
   return {
@@ -148,7 +162,7 @@ async function wipeAndSeed(gateway: DepositGateway, now: Date, env: Env): Promis
     released,
     seeded: {
       counter: counter.lines.filter((l) => l.rentalId).length,
-      schedule: schedule.length,
+      schedule,
       insights: insights.length,
       ...(counter.skipped ? { note: counter.skipped } : {}),
     },

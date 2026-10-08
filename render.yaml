@@ -34,7 +34,8 @@ services:
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     # Once, after the first successful deploy. In demo mode it seeds a lived-in
-    # counter; in sandbox mode it needs SEED_VAULT_ID and otherwise does nothing.
+    # counter; in sandbox mode it needs SEED_VAULT_ID (then it also books the
+    # schedule's two weeks) and otherwise does nothing.
     initialDeployHook: npm run seed:demo
     envVars:
       - key: NODE_VERSION

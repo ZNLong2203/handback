@@ -91,16 +91,32 @@ It prints `PAYPAL_WEBHOOK_ID=...` (or finds the webhook already registered for t
 
 ### Seed the counter
 
-`scripts/seed-demo.ts` walks six rentals through the real rental service to six different steps: booked, out, needs review, with the customer, settled with nothing kept, and settled with an accepted $55 charge. Each rental is found by its customer's `@example.com` address and only the missing steps run, so running it again changes nothing.
+`scripts/seed-demo.ts` walks six rentals through the real rental service to six different steps: booked, out, needs review, with the customer, settled with nothing kept, and settled with an accepted $55 charge. Each rental is found by its customer's `@example.com` address and only the missing steps run, so running it again changes nothing. Returns are compared with the recorded Gemini replies for the sample photos even when `GEMINI_API_KEY` is set, so seeding never waits on or pays for a live model call.
 
-- **Demo mode:** the first-deploy hook already did it. The stand-in plays the customer.
+- **Demo mode:** the first-deploy hook already did it. The stand-in plays the customer. The schedule's two weeks and the dashboard's six weeks of history are booked the first time those pages open.
 - **Sandbox:** a script cannot approve a PayPal checkout, so the seed pays each booking fee with a wallet saved at a real booking, and the audit log says so. Book one rental through the site with your sandbox buyer (the PayPal button saves the wallet), then run this in the `handback` Shell tab:
 
   ```bash
   SEED_VAULT_ID=latest npm run seed:demo
   ```
 
-  Without `SEED_VAULT_ID` the seed creates nothing and explains why. It refuses live PayPal.
+  Without `SEED_VAULT_ID` the seed creates nothing and explains why. It refuses live PayPal. With it, the same run then books the schedule's two weeks from today on ([below](#the-schedule-and-the-dashboard-in-the-sandbox)).
+
+### The schedule and the dashboard in the sandbox
+
+In demo mode the schedule and the owner's dashboard book sample rentals the first time they open, and move some of them back in time, with the PayPal stand-in's holds moved back alongside. Real PayPal ids cannot be moved back, so a sandbox copy does this instead:
+
+- **Schedule: seeded with real sandbox payments.** `seedSandboxSchedule` (`lib/schedule/seed.ts`) books `SANDBOX_SEED_PLAN` through the real rental service after the counter seed, on the nightly reset and in `npm run seed:demo`, paying each fee with the same saved wallet: sixteen rentals from today on, fourteen booked and two out with a deposit hold. Nothing starts in the past. Jordan's projector is out and due back today on Projector B, with Priya's and Diego's bookings after it on the same unit, so the repair story runs as in demo mode ([docs/bryntum.md](bryntum.md#demo-data)). Each rental is found by its renter's `+schedule@example.com` address and only its missing steps run, so a second run the same day books nothing, and each one is placed on a unit that is free as the timeline draws it before PayPal is called. It never runs in demo mode or against live PayPal, and never from a page visit.
+- **Dashboard: real data only.** Its sample history needs holds and settlements up to six weeks old, which in the sandbox would mean faking PayPal state, so it is not seeded there. The dashboard shows what the counter and schedule seeds really did: twenty-two fees, five running holds on the hold clock (all placed at the reset), and the counter's two settlements ($120.00 released, and $55.00 kept with $95.00 released). Everything a visitor or the video does adds to it until the next reset.
+
+PayPal sandbox calls the seeds make (each gateway call is one HTTP request; the cached OAuth token is fetched again when it expires, and the SDK retries a 429 or 5xx):
+
+| Run | Calls |
+|---|---|
+| Counter seed | 19: six booking orders (`startBooking` creates one per booking, left unapproved), six fees charged to the saved wallet, five deposit holds, one settlement capture ($55.00) and one void |
+| Schedule seed | 34: sixteen booking orders, sixteen fees charged to the saved wallet, two deposit holds |
+| Nightly reset, from the second night on | 58: the five seeded holds still open voided first (one more for each hold a visitor left open), then 19 and 34 |
+| A second run the same day | 0: the reset answers `already-done`, and `npm run seed:demo` finds every rental at its step |
 
 In demo mode the stand-in caches its state in the web process: if you seed after the web service has already booked or held something, restart it.
 
@@ -126,7 +142,7 @@ On the cron job's run in the `DEMO_RESET_HOUR` (UTC, default `20`: 3:00 in Vietn
 1. After renewing holds, the cron job calls `POST /api/jobs/reset-demo` with the same `CRON_SECRET`. The web service decides. It answers `"status":"off"` unless its own `DEMO_RESET` is `true`, refuses with 403 when `PAYPAL_ENVIRONMENT` is `live`, and resets at most once per reset day: a day starts at the reset hour, and a second call that day answers `"status":"already-done"`. The days are kept in the `demo_resets` table.
 2. Sandbox only: each deposit hold that is still open (a rental out, being compared, with the customer or answered) is voided on PayPal with `PayPal-Request-Id` `reset-void:<rental id>:<authorization id>`, and the log says which. This is best effort: a refusal is logged and the reset goes on, since an unused hold expires on its own. Nothing is captured or refunded. Booking fees and settled charges stay where they are in the sandbox, and PayPal keeps its own records (orders, captures, disputes).
 3. In one transaction it empties every table that holds rentals or what happened to them: rentals, the audit log, photos, inspections, assessments, refunds, disputes, dispute actions, evidence packs, schedule blocks and proposals (including moves), webhook events, the PayPal stand-in's state and the demo seed markers. The units and the schema stay. A test fails when a new table is in neither the wiped nor the kept list (`lib/demo-reset/reset.ts`).
-4. It seeds the counter as a fresh deployment is seeded. Demo mode: the six `seed:demo` rentals, the two-week demo schedule and the owner's dashboard's sample history, in that order. Sandbox: the six rentals only when `SEED_VAULT_ID` is a saved wallet's id; the seed then makes new sandbox payments with that wallet, as `npm run seed:demo` does. `latest` is not used here, because on a public demo the newest saved wallet may be a visitor's. Without an id the counter stays empty until someone books.
+4. It seeds the counter as a fresh deployment is seeded. Demo mode: the six `seed:demo` rentals, the two-week demo schedule and the owner's dashboard's sample history, in that order. Sandbox: the six rentals and then the schedule's two weeks from today on, only when `SEED_VAULT_ID` is a saved wallet's id; the seeds then make new sandbox payments with that wallet, as `npm run seed:demo` does (58 sandbox calls a night, [counted above](#the-schedule-and-the-dashboard-in-the-sandbox)). The dashboard's sample history is not seeded in the sandbox. `latest` is not used here, because on a public demo the newest saved wallet may be a visitor's. Without an id the counter stays empty until someone books.
 5. Open counter pages refresh. While the reset is on, the counter and the booking page say when the next one is, and `/api/health` shows `demoReset` with `enabled`, `hourUtc` and `lastResetAt`.
 
 To turn it on, set `DEMO_RESET=true` on `handback` under **Environment**; to move it, change `DEMO_RESET_HOUR` there (the cron job reads the web service's value). To turn it off, clear `DEMO_RESET`.
@@ -223,6 +239,7 @@ The button creates the same paid services in the account of whoever clicks it. L
 | Cron run fails with "The demo reset did not run: PAYPAL_ENVIRONMENT is live" | `DEMO_RESET=true` on a live deployment. Clear it |
 | Cron run fails with "The demo reset did not run" and another reason | The web service's log has the error. The day is marked failed; call the route by hand to retry ([Daily demo reset](#daily-demo-reset)) |
 | The counter is empty after a reset in sandbox mode | `SEED_VAULT_ID` is unset or `latest`; set it to a saved wallet's id |
+| The schedule has fewer sample bookings than planned after a sandbox reset | The web service's log says `Demo reset: the schedule seed stopped <name>: <reason>`: PayPal refused a payment, or no unit of that item was free on those days. Run `npm run seed:demo` with the same `SEED_VAULT_ID` from the Shell tab to book only what is missing |
 
 ## What has been verified
 

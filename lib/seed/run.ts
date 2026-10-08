@@ -10,7 +10,7 @@ import * as svc from "@/lib/rentals/service";
 import { awaitingCustomer } from "@/lib/rentals/settlement";
 import { UserError, type Rental, type RentalStatus } from "@/lib/rentals/types";
 import { samplesFor } from "@/lib/samples";
-import { runInspection } from "@/lib/workflows/dispatch";
+import { freeUnitFor } from "@/lib/schedule/place";
 import { nextSeedStep, SCENARIOS, type SeedScenario, type SeedState, type SeedStep } from "./plan";
 
 export type SeedLine = {
@@ -30,7 +30,9 @@ export type SeedReport = { mode: PayPalMode; skipped?: string; lines: SeedLine[]
  * mode every payment is a real sandbox payment, and since a script cannot
  * approve a PayPal checkout, bookings are paid with a wallet a customer
  * saved at an earlier sandbox booking (`vaultId`); without one nothing is
- * created. Live PayPal is refused outright.
+ * created. Live PayPal is refused outright. Returns are compared with the
+ * recorded Gemini replies for the bundled sample photos, even when a Gemini
+ * key is set: seeding never waits on or pays for a live model call.
  */
 export async function seedCounter(opts: { vaultId?: string } = {}): Promise<SeedReport> {
   const mode = depositGateway().mode;
@@ -46,7 +48,7 @@ export async function seedCounter(opts: { vaultId?: string } = {}): Promise<Seed
     };
   }
   const lines: SeedLine[] = [];
-  for (const scenario of SCENARIOS) lines.push(await converge(scenario, opts.vaultId));
+  for (const scenario of SCENARIOS) lines.push(await convergeScenario(scenario, opts.vaultId));
   return { mode, lines };
 }
 
@@ -80,7 +82,12 @@ async function stateOf(rental: Rental | null): Promise<SeedState> {
   };
 }
 
-async function converge(scenario: SeedScenario, vaultId: string | undefined): Promise<SeedLine> {
+/**
+ * Runs the steps a scenario's rental still misses, found by its customer's
+ * email, and stops at its target, at the first refusal, or when a step
+ * changes nothing. Running it again on a rental that got there does nothing.
+ */
+export async function convergeScenario(scenario: SeedScenario, vaultId: string | undefined): Promise<SeedLine> {
   let rental = await findRental(scenario.email);
   const ran: SeedStep[] = [];
   for (;;) {
@@ -103,18 +110,20 @@ async function converge(scenario: SeedScenario, vaultId: string | undefined): Pr
 async function runStep(step: SeedStep, scenario: SeedScenario, rental: Rental | null, vaultId: string | undefined): Promise<Rental> {
   if (step === "book") {
     const startDate = addDaysIso(todayIso(), scenario.startsInDays);
-    const { rentalId } = await svc.startBooking({
-      itemId: scenario.itemId,
-      name: scenario.name,
-      email: scenario.email,
-      startDate,
-      endDate: addDaysIso(startDate, scenario.days),
-    });
+    const endDate = addDaysIso(startDate, scenario.days);
+    // Look before PayPal is called: a plan that cannot sit on the timeline is not booked at all.
+    if (scenario.unit && !(await freeOnTimeline(scenario, { start: startDate, end: endDate }))) {
+      throw new UserError(`No ${scenario.itemId} unit is free on the schedule from ${startDate} to ${endDate}, so it was not booked.`);
+    }
+    const { rentalId } = await svc.startBooking({ itemId: scenario.itemId, name: scenario.name, email: scenario.email, startDate, endDate });
+    if (scenario.unit) await keepOnTimeline(scenario, await reload(rentalId));
     return reload(rentalId);
   }
   const r = rental!;
   switch (step) {
     case "pay":
+      // The draft held its unit for a few minutes only; check again before money moves.
+      if (scenario.unit) await keepOnTimeline(scenario, r);
       if (depositGateway().mode === "demo") await svc.confirmBooking(r.bookingOrderId!);
       else await payWithSavedWallet(r, vaultId!);
       break;
@@ -132,7 +141,7 @@ async function runStep(step: SeedStep, scenario: SeedScenario, rental: Rental | 
       await svc.addPhoto(r.id, "checkin", { sample: scenario.returnSample });
       break;
     case "inspect":
-      await runInspection(r.id);
+      await svc.inspect(r.id, undefined, { recordedOnly: true });
       break;
     case "send":
       await svc.sendToCustomer(r.id);
@@ -148,6 +157,24 @@ async function runStep(step: SeedStep, scenario: SeedScenario, rental: Rental | 
       break;
   }
   return reload(r.id);
+}
+
+/**
+ * The scenario's planned unit, or else the first unit of its item, that is
+ * free for these days as the timeline draws them: nothing booked or out
+ * there, and no rental that came back, repair block or pending suggestion
+ * drawn on those days either. A booking only has to avoid what holds a unit,
+ * which would let a seeded bar overlap a return drawn on the same day.
+ */
+async function freeOnTimeline(scenario: SeedScenario, span: { start: string; end: string }, exceptRentalId?: string): Promise<string | null> {
+  return freeUnitFor(await getDb(), scenario.itemId, [span], { now: new Date(), exceptRentalId, prefer: scenario.unit });
+}
+
+/** Puts a booked draft on its planned unit, or on another free one; refuses, before any payment, when none is free. */
+async function keepOnTimeline(scenario: SeedScenario, rental: Rental): Promise<void> {
+  const unitId = await freeOnTimeline(scenario, { start: rental.startDate, end: rental.endDate }, rental.id);
+  if (!unitId) throw new UserError(`No ${scenario.itemId} unit is free on the schedule for ${rental.id} any more; it was left unpaid.`);
+  if (unitId !== rental.unitId) await updateRental(await getDb(), rental.id, { unit_id: unitId });
 }
 
 async function reload(rentalId: string): Promise<Rental> {
