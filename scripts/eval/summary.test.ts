@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { headline, loadSets, looksAgreed, promptComparison, readme, ROOT, type Finding, type Result, type Run } from "./summary";
+import { PROMPT_VERSION } from "@/lib/inspection/prompt";
+import { encodingComparison, headline, loadSets, looksAgreed, promptComparison, readme, resultsTable, ROOT, twoLookByPrompt, type Finding, type Result, type Run } from "./summary";
 
 /** One look that reported one finding: high-confidence new damage with no price-list entry, unless overridden. */
 const look = (f: Partial<Finding> = {}) => ({
@@ -66,6 +67,22 @@ describe("promptComparison", () => {
 
   it("refuses to compare prompts across different models", () => {
     expect(() => promptComparison([run(1, [], "a"), run(2, [], "b")])).toThrow(/more than one model setup/);
+  });
+});
+
+describe("runs on the photos as the app stores them", () => {
+  const files = run(PROMPT_VERSION, [unchanged("bike", look(), look())]);
+  const app: Run = { ...run(PROMPT_VERSION, [unchanged("bike")]), file: "app.json" };
+  app.metrics.photos = "app";
+
+  it("get a row of their own and stay out of the prompt comparison and the homepage figures", () => {
+    expect(resultsTable([files, app])).toContain(`| gemini-test, thinking low, 2 looks, prompt v${PROMPT_VERSION}, photos as the app stores them | 1 |`);
+    expect(twoLookByPrompt([files, app]).get(PROMPT_VERSION)).toEqual([files]);
+  });
+
+  it("are compared with the runs on the files of the same prompt", () => {
+    expect(encodingComparison([files, app])).toContain("| Unchanged pairs with any finding (charged or noted) | 1/1 | 0/1 |");
+    expect(encodingComparison([files])).toMatch(/^No two-look run/);
   });
 });
 

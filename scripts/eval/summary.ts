@@ -22,6 +22,8 @@ export type Metrics = {
   model: string;
   thinking: string;
   passes?: number;
+  /** "app": photos re-encoded as the app stores them (run-eval --app-encoding); missing or "original": the files as they are. */
+  photos?: "original" | "app";
   pairs: number;
   realChanges: number;
   caughtAny: number;
@@ -76,7 +78,9 @@ export async function loadSets(): Promise<Sets> {
 
 const passes = (m: Metrics) => m.passes ?? 1;
 const promptOf = (m: Metrics) => m.prompt ?? 1;
-const setup = (m: Metrics) => `${m.model}, thinking ${m.thinking}, ${passes(m)} look${passes(m) > 1 ? "s" : ""}, prompt v${promptOf(m)}`;
+const appStored = (m: Metrics) => m.photos === "app";
+const setup = (m: Metrics) =>
+  `${m.model}, thinking ${m.thinking}, ${passes(m)} look${passes(m) > 1 ? "s" : ""}, prompt v${promptOf(m)}${appStored(m) ? ", photos as the app stores them" : ""}`;
 const looks = (r: Result) => r.outputs ?? (r.output ? [r.output] : []);
 
 /** Kinds the policy can charge for. Wear and marks already there at check-out are always notes. */
@@ -119,9 +123,14 @@ function bySetup(runs: Run[]) {
   return new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
-/** Two-look runs by prompt version, oldest first. Comparing prompts only makes sense on one model setup. */
+/**
+ * Two-look runs on the photo files as they are, by prompt version, oldest
+ * first. Comparing prompts only makes sense on one model setup and one photo
+ * encoding; runs on the photos as the app stores them are compared on their
+ * own (encodingComparison).
+ */
 export function twoLookByPrompt(runs: Run[]) {
-  const twoLook = runs.filter((r) => passes(r.metrics) === 2);
+  const twoLook = runs.filter((r) => passes(r.metrics) === 2 && !appStored(r.metrics));
   const models = new Set(twoLook.map((r) => `${r.metrics.model}, thinking ${r.metrics.thinking}`));
   if (models.size > 1) throw new Error(`two-look runs use more than one model setup (${[...models].join("; ")}): compare prompts per model`);
   const versions = [...new Set(twoLook.map((r) => promptOf(r.metrics)))].sort((a, b) => a - b);
@@ -177,6 +186,28 @@ export function promptComparison(runs: Run[]) {
         return `${p.withFinding} of ${p.runs}${p.agreed ? `, both looks agreed in ${p.agreed}` : ""}`;
       }),
     ),
+  ].join("\n");
+}
+
+/**
+ * Two-look runs of the current prompt on the photo files as they are, next to
+ * the same setup on the photos re-encoded as the app stores them.
+ */
+export function encodingComparison(runs: Run[]) {
+  const current = runs.filter((r) => passes(r.metrics) === 2 && promptOf(r.metrics) === PROMPT_VERSION);
+  const columns = [current.filter((r) => !appStored(r.metrics)), current.filter((r) => appStored(r.metrics))];
+  if (columns.some((rs) => rs.length === 0)) return "No two-look run of the current prompt on both kinds of photo yet.";
+  const row = (label: string, cell: (rs: Run[]) => string) => `| ${label} | ${columns.map(cell).join(" | ")} |`;
+  return [
+    `| Two looks, prompt v${PROMPT_VERSION} | Photo files as they are | Photos as the app stores them |`,
+    "|---|---|---|",
+    row("Runs", (rs) => String(rs.length)),
+    row("Real changes proposed as a charge", (rs) => `${sum(rs, "caughtCharged")}/${sum(rs, "realChanges")}`),
+    row("Right price-list entry", (rs) => `${sum(rs, "pricedRight")}/${sum(rs, "caughtCharged")}`),
+    row("Unchanged pairs charged", (rs) => `${sum(rs, "unchangedWithFalseCharge")}/${sum(rs, "unchangedPairs")}`),
+    row("Unchanged pairs with any finding (charged or noted)", (rs) => `${count(rs, noted)}/${sum(rs, "unchangedPairs")}`),
+    row("Extra charges on changed pairs", (rs) => String(sum(rs, "falseChargesOnChangedPairs"))),
+    row("Errors", (rs) => String(sum(rs, "errors"))),
   ].join("\n");
 }
 
@@ -273,6 +304,9 @@ export function readme(sets: Sets) {
   const [sony1, sony2] = [v1, v2].map((rs) => pairRuns(rs, "sony-100-400__same-dust-glare"));
   const share = (rs: Run[], test: (r: Result) => boolean) => `${count(rs, test)}/${sum(rs, "unchangedPairs")}`;
   const [syn1, syn2] = [syntheticByPrompt.get(1) ?? [], syntheticByPrompt.get(2) ?? []];
+  const appRuns = (s: EvalSet) => s.runs.filter((r) => appStored(r.metrics) && passes(r.metrics) === 2 && promptOf(r.metrics) === PROMPT_VERSION);
+  const [realFiles, realApp, syntheticApp] = [realByPrompt.get(PROMPT_VERSION) ?? [], appRuns(sets.real), appRuns(sets.synthetic)];
+  const hoodChargedIn = (rs: Run[]) => rs.filter((run) => run.results.some((r) => r.id === "sigma-150-600__missing-hood" && r.caught.every((c) => c.charged))).length;
 
   return `# Condition-check eval
 
@@ -331,7 +365,7 @@ ${resultsTable(sets.real.runs)}
 ### What the real photos showed
 
 - **Charges.** In every run on the real photos, with one look or two and with either prompt, no unchanged pair was charged and every charged change got the right price-list entry.
-- **What two looks cost.** The one real change missed is the removed Sigma lens hood (\`sigma-150-600__missing-hood\`). Without it the lens ends in a front barrel almost as wide and just as black, and in every two-look run at least one look did not see the hood was gone, so consensus kept it off the bill. With one look it was charged in ${hoodCharged} of ${oneLookReal.length} runs. Two looks trade a little recall for safety, which is the trade the app makes.
+- **What two looks cost.** The one real change missed is the removed Sigma lens hood (\`sigma-150-600__missing-hood\`). Without it the lens ends in a front barrel almost as wide and just as black, and in every two-look run on the photo files at least one look did not see the hood was gone, so consensus kept it off the bill. With one look it was charged in ${hoodCharged} of ${oneLookReal.length} runs. Two looks trade a little recall for safety, which is the trade the app makes. (On the photos as the app stores them, two looks charged it in ${hoodChargedIn(realApp)} of ${realApp.length} runs; see below.)
 - **Findings on unchanged items.** With prompt v1, two unchanged pairs drew high-confidence findings in almost every run. None was charged, because the second look disagreed or no price-list entry fit, but uncharged findings still reach staff and the customer as notes:
   - After a 3° turn of the Nikon photo the model said the "Z 6II" badge was now upside down. It is not: apart from the 3° turn and the crop, the two photos are the same pixels. In one two-look run one look also priced "inverted" lens and mode-dial markings at $120 + $60; the other look disagreed.
   - A glare spot over a textured or painted part was read as damage: the ribbed zoom ring of the Sony lens "worn smooth", and once the e-bike's seat tube "scuffed". The spot also lightens the background around it, which a person would take as a sign of light, not wear.
@@ -357,6 +391,23 @@ Prompt v2 is what the app now sends, because it removes the text mistake; the gl
 
 **Proposed fix for glare (not built yet).** Glare is a photo problem more than a wording problem, so the fix belongs before the model: \`lib/photos.ts\` already rejects blurry, dark and washed-out photos in code. A local check could compare the check-in photo with the check-out photo and flag a region where brightness rises while contrast and colour drop across both the item and its background, and ask staff to retake the photo away from the light before the condition check runs.
 
+### Photos as the app stores them
+
+The runs above send the model the photo files as they are, except those marked "photos as the app stores them". The app compares the photos it stored, not the files: each upload is turned upright by its EXIF orientation, stripped of metadata, capped at 1600 px and saved as a new JPEG (\`lib/photo-encoding.ts\`). Until 2026-10-08 it saved JPEG quality 85 with colour at half resolution, and on those bytes the model did not see the city bike sample's missing rear light in any of 6 looks, though it saw it in 12 of 12 on the original files. The app now saves quality 95 with colour at full resolution, where the model saw the rear light in 12 of 12 looks (the measurement is in [\`docs/ai-build-log.md\`](../docs/ai-build-log.md)). The marked runs (\`npm run eval -- --app-encoding\`) send every photo through that same encoding first, to see what the change does on these sets.
+
+Real-photo set:
+
+${encodingComparison(sets.real.runs)}
+
+Synthetic set:
+
+${encodingComparison(sets.synthetic.runs)}
+
+- **Nothing got worse.** On the stored photos no unchanged pair was charged in any run, and every charged change got the right price-list entry. Unchanged pairs with any finding: ${share(realApp, noted)} on the real set (${share(realFiles, noted)} on the files) and ${share(syntheticApp, noted)} on the synthetic set (${share(syn2, noted)} on the files), the same glare and light mistakes listed below.
+- **The Sigma lens hood.** Two looks charged the removed hood in ${hoodChargedIn(realApp)} of ${realApp.length} runs on the stored photos and ${hoodChargedIn(realFiles)} of ${realFiles.length} on the files, in line with the single looks measured for the build log. It is one pair, and it is not why the encoding was chosen.
+- **Too few runs to claim a gain.** ${realApp.length} runs of each set cannot tell a small gain from the variation between runs; the reason for the change is the bike. The homepage figures and the prompt comparison above still come from the runs on the photo files.
+- **Slower that day, but not because of the photos.** The marked runs' worst p95 latency is about twice the published runs'. The model gets the same number of input tokens per pair either way, and a two-look run of the synthetic set on the photo files the same day (not saved) took 8.7 s p50 and 17.9 s p95, about what the stored photos took.
+
 ### What went wrong, pair by pair
 
 Synthetic set:
@@ -367,6 +418,6 @@ Real-photo set:
 
 ${misses(sets.real.runs)}
 
-Per-pair results and the model's raw replies are in \`runs/\` and \`real/runs/\`. Reproduce with \`npm run eval:pairs -- --set real\`, then \`npm run eval -- --set real --passes 2 --tag r1\`, then \`npm run eval:summary\` (leave out \`--set real\` for the synthetic set).
+Per-pair results and the model's raw replies are in \`runs/\` and \`real/runs/\`. Reproduce with \`npm run eval:pairs -- --set real\`, then \`npm run eval -- --set real --passes 2 --tag r1\` (add \`--app-encoding\` to send the photos as the app stores them), then \`npm run eval:summary\` (leave out \`--set real\` for the synthetic set).
 `;
 }
