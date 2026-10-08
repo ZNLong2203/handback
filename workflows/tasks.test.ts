@@ -37,6 +37,20 @@ const assessments = async (rentalId: string) =>
   (await (await getDb()).query<{ id: string }>("select id from assessments where rental_id = $1", [rentalId])).length;
 
 describe("inspect-return task", () => {
+  it("does nothing on Render when the workflow service has no DATABASE_URL", async () => {
+    const saved = { socket: process.env.RENDER_SDK_SOCKET_PATH, url: process.env.DATABASE_URL };
+    process.env.RENDER_SDK_SOCKET_PATH = "/tmp/render-sdk.sock";
+    process.env.DATABASE_URL = "";
+    try {
+      expect(await inspectReturn.func(ctx("run-no-db"), "R-ANYTHING")).toMatchObject({ status: "skipped", reason: expect.stringMatching(/DATABASE_URL/) });
+      expect(await renewHolds.func(ctx("run-no-db-2"))).toMatchObject({ status: "skipped" });
+    } finally {
+      if (saved.socket === undefined) delete process.env.RENDER_SDK_SOCKET_PATH;
+      else process.env.RENDER_SDK_SOCKET_PATH = saved.socket;
+      process.env.DATABASE_URL = saved.url;
+    }
+  });
+
   it("compares once, records the run, and a retry returns the saved result", async () => {
     const rentalId = await returnedRental();
     const first = await inspectReturn.func(ctx("trn-first"), rentalId);

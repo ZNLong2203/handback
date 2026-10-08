@@ -6,7 +6,7 @@ import { renewDueHolds, type RenewalOutcome } from "@/lib/rentals/jobs";
 import { latestAssessment, rentalById } from "@/lib/rentals/repo";
 import { inspect } from "@/lib/rentals/service";
 import { UserError } from "@/lib/rentals/types";
-import { modeMismatch, type JobModes } from "./config";
+import { databaseMissing, modeMismatch, type JobModes } from "./config";
 
 // The bodies of the Render Workflows tasks in workflows/tasks.ts. They only call
 // the rental service; the business rules stay in lib/rentals and lib/inspection.
@@ -39,12 +39,15 @@ async function finishedInspection(rentalId: string): Promise<string | null> {
  * already saved returns it instead of asking Gemini again. Problems a person
  * has to fix come back as `refused` rather than as an error, so Render does
  * not retry them. Anything else (Gemini down, a reply that failed validation
- * twice, the database unreachable) is thrown and retried. When the web
+ * twice, the database unreachable) is thrown and retried. A run with no
+ * DATABASE_URL on the workflow service compares nothing (databaseMissing). When the web
  * service's AI mode (`web`) differs from this process's, the task compares
  * nothing: a workflow without the Gemini key would quietly save recorded
  * replies, or none, for photos the web service expects Gemini to look at.
  */
 export async function inspectReturnJob(rentalId: string, taskRunId: string | null, web?: unknown): Promise<InspectionJobResult> {
+  const noDatabase = databaseMissing();
+  if (noDatabase) return { status: "skipped", reason: noDatabase };
   const mismatch = modeMismatch(web, jobModes(), "ai");
   if (mismatch) return { status: "skipped", reason: mismatch };
   const done = await finishedInspection(rentalId);
@@ -73,6 +76,8 @@ export type RenewalJobResult = { status: "swept"; results: RenewalOutcome[] } | 
  * from this process's, or when this process has only the demo stand-in.
  */
 export async function renewHoldsJob(now = new Date(), web?: unknown): Promise<RenewalJobResult> {
+  const noDatabase = databaseMissing();
+  if (noDatabase) return { status: "skipped", reason: noDatabase };
   const mismatch = modeMismatch(web, jobModes(), "paypal");
   if (mismatch) return { status: "skipped", reason: mismatch };
   if (paypalConfig().mode === "demo") {

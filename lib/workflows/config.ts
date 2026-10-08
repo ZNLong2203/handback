@@ -85,6 +85,16 @@ export function modeMismatch(web: unknown, own: JobModes, key: keyof JobModes): 
   return `The web service runs in ${what} "${expected}", but the workflow service runs in "${own[key]}". ${MODE_FIX[key]}`;
 }
 
+/**
+ * Why a task must not run here: it is a Render Workflows run (the SDK's
+ * socket is set) with no DATABASE_URL, so it would open a throwaway local
+ * database the web service never reads. Null otherwise.
+ */
+export function databaseMissing(env: Record<string, string | undefined> = process.env): string | null {
+  if (!env.RENDER_SDK_SOCKET_PATH || env.DATABASE_URL?.trim()) return null;
+  return "The workflow service has no DATABASE_URL, so it would write to a local database the web service never reads. Set DATABASE_URL on handback-workflows to handback-db's Internal Database URL.";
+}
+
 export type SkippedRun = { task: TaskName; taskRunId: string; reason: string; at: string };
 
 const globalForRuns = globalThis as unknown as { handbackSkippedRun?: SkippedRun };

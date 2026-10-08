@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inspectionRunKey, lastSkippedRun, modeMismatch, noteSkippedRun, renewalRunKey, runOutcome, taskIdentifier, workflowsConfig } from "./config";
+import { databaseMissing, inspectionRunKey, lastSkippedRun, modeMismatch, noteSkippedRun, renewalRunKey, runOutcome, taskIdentifier, workflowsConfig } from "./config";
 
 describe("workflowsConfig", () => {
   it("runs inline until the Blueprint slug and an API key are both there", () => {
@@ -87,5 +87,14 @@ describe("skipped runs", () => {
     noteSkippedRun({ task: "renew-holds", taskRunId: "trn-1", reason: "first" }, new Date("2026-11-20T09:17:00Z"));
     noteSkippedRun({ task: "inspect-return", taskRunId: "trn-2", reason: "second" }, new Date("2026-11-20T10:02:00Z"));
     expect(lastSkippedRun()).toEqual({ task: "inspect-return", taskRunId: "trn-2", reason: "second", at: "2026-11-20T10:02:00.000Z" });
+  });
+});
+
+describe("databaseMissing", () => {
+  it("stops a Render task run that has no DATABASE_URL, and nothing else", () => {
+    expect(databaseMissing({ RENDER_SDK_SOCKET_PATH: "/tmp/sdk.sock" })).toMatch(/no DATABASE_URL/);
+    expect(databaseMissing({ RENDER_SDK_SOCKET_PATH: "/tmp/sdk.sock", DATABASE_URL: "  " })).toMatch(/no DATABASE_URL/);
+    expect(databaseMissing({ RENDER_SDK_SOCKET_PATH: "/tmp/sdk.sock", DATABASE_URL: "postgres://db/handback" })).toBeNull();
+    expect(databaseMissing({})).toBeNull();
   });
 });
