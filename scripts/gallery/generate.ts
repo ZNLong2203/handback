@@ -9,13 +9,15 @@
  *   # PayPal sandbox (keys from .env.local) on a throwaway in-memory database
  *   APP_URL=http://localhost:3390 DATABASE_URL=memory GEMINI_API_KEY= npx next start -p 3390
  *
- * GEMINI_API_KEY is emptied there on purpose: on Oct 8, 2026, live Gemini
- * looking at the city bike photos as the app stores them (re-encoded JPEG)
- * did not report the missing rear light in any of 4 runs, so the story could
- * not be told. Without a key the app replays the recorded two-look Gemini run
- * of the same sample photos, its strip says so, and so do the captions. Keep
- * the key to try live Gemini: the run starts a new rental once if the two
- * looks do not both propose the phone holder and the rear light, then stops.
+ * GEMINI_API_KEY is emptied there so the gallery does not depend on a live
+ * model run. On Oct 8, 2026, live Gemini looking at the city bike photos as
+ * the app then stored them (JPEG quality 85) did not report the missing rear
+ * light in any of 4 runs; since they are stored at quality 95
+ * (lib/photo-encoding.ts) it reported both changes in 5 of 5 local runs.
+ * Without a key the app replays the recorded two-look Gemini run of the same
+ * sample photos, its strip says so, and so do the captions. Keep the key to
+ * use live Gemini: the run starts a new rental once if the two looks do not
+ * both propose the phone holder and the rear light, then stops.
  *   # demo mode for the schedule, the dashboard and the dispute desk
  *   DEMO_MODE=true DATABASE_URL=memory APP_URL=http://localhost:3391 npx next start -p 3391
  *

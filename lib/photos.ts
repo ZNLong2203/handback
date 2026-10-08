@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { getDb } from "@/lib/db/client";
+import { encodePhoto } from "@/lib/photo-encoding";
 
 export type PhotoQuality = {
   brightness: number;
@@ -11,8 +12,6 @@ export type PhotoQuality = {
 };
 
 export type StoredPhoto = { sha256: string; width: number; height: number; quality: PhotoQuality };
-
-const MAX_EDGE = 1600;
 
 /**
  * Deterministic checks before any model sees the photo: a blurry or badly
@@ -42,23 +41,20 @@ export async function measureQuality(bytes: Buffer): Promise<PhotoQuality> {
 }
 
 /**
- * Normalises the image (EXIF orientation, at most 1600 px, JPEG) and stores
- * it under the SHA-256 of the stored bytes: the hash a customer acknowledges
- * always refers to exactly this image.
+ * Normalises the image (lib/photo-encoding.ts: EXIF orientation, at most
+ * 1600 px, JPEG) and stores it under the SHA-256 of the stored bytes: the
+ * hash a customer acknowledges always refers to exactly this image, and these
+ * are the bytes the condition check sends to the model.
  */
 export async function storePhoto(input: Buffer): Promise<StoredPhoto> {
-  const { data, info } = await sharp(input)
-    .rotate()
-    .resize({ width: MAX_EDGE, height: MAX_EDGE, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 85, mozjpeg: true })
-    .toBuffer({ resolveWithObject: true });
+  const { data, width, height } = await encodePhoto(input);
   const sha256 = createHash("sha256").update(data).digest("hex");
   const db = await getDb();
   await db.query(
     "insert into photos (sha256, mime_type, bytes, width, height) values ($1, 'image/jpeg', $2, $3, $4) on conflict (sha256) do nothing",
-    [sha256, data, info.width, info.height],
+    [sha256, data, width, height],
   );
-  return { sha256, width: info.width, height: info.height, quality: await measureQuality(data) };
+  return { sha256, width, height, quality: await measureQuality(data) };
 }
 
 export async function loadPhoto(sha256: string): Promise<{ bytes: Buffer; mimeType: string } | null> {
