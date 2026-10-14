@@ -89,10 +89,12 @@ services:
       # Leave it empty anywhere else. docs/deploy.md, "Daily demo reset".
       - key: DEMO_RESET
         sync: false
-      # The reset's hour in UTC, 0 to 23: 20 is 3:00 in Vietnam and noon or
-      # 1 p.m. in California. The cron job reads this same value.
+      # The reset's hour in UTC, 0 to 23: 8 is midnight in California in winter
+      # (1 a.m. in summer) and 15:00 in Vietnam, outside US daytime, and the
+      # seeded rental due back today stays due until 00:00 UTC. The cron job
+      # reads this same value. Changing it: docs/deploy.md, "Daily demo reset".
       - key: DEMO_RESET_HOUR
-        value: "20"
+        value: "8"
       # Render Workflows: the slug comes from the workflow service below. Jobs run
       # in the web process until a Render API key is added.
       - key: RENDER_WORKFLOW_SLUG

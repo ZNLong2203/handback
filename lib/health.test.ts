@@ -74,7 +74,7 @@ describe("checkHealth", () => {
     Object.assign(process.env, { DATABASE_URL: "memory", DEMO_RESET: "", DEMO_RESET_HOUR: "", PAYPAL_ENVIRONMENT: "sandbox" });
     let asked = 0;
     const lastReset = async () => (asked++, "2026-11-20T20:17:42.000Z");
-    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: false, hourUtc: 20, refused: null, lastResetAt: null });
+    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: false, hourUtc: 8, refused: null, lastResetAt: null });
     expect(asked).toBe(0);
 
     Object.assign(process.env, { DEMO_RESET: "true", DEMO_RESET_HOUR: "3" });

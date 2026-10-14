@@ -50,13 +50,19 @@ export function nextResetAt(now: Date, hourUtc: number): Date {
   return today > now ? today : new Date(today.getTime() + 86_400_000);
 }
 
-const pacific = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour: "numeric" });
+const pacificHour = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour: "numeric" });
+const HOUR_WORDS: Record<string, string> = { "12 AM": "midnight", "12 PM": "noon" };
+/** "midnight", "noon" or "7 PM": 12 AM and 12 PM are easy to misread. */
+const pacific = (at: Date) => {
+  const hour = pacificHour.format(at).replace(/\s+/g, " ");
+  return HOUR_WORDS[hour] ?? hour;
+};
 
 /**
- * The reset time in words: "20:00 UTC", the same moment in California (where
- * it moves with daylight saving time), and how long until the next one. The
- * cron job runs at 17 minutes past the hour, so the reset lands a little
- * after the hour.
+ * The reset time in words: "08:00 UTC", the same moment in California (where
+ * it moves with daylight saving time: midnight in winter, 1 AM in summer), and
+ * how long until the next one. The cron job runs at 17 minutes past the hour,
+ * so the reset lands a little after the hour.
  */
 export function resetTimeLabel(hourUtc: number, now: Date): { utc: string; pacific: string; until: string } {
   const next = nextResetAt(now, hourUtc);
@@ -64,7 +70,7 @@ export function resetTimeLabel(hourUtc: number, now: Date): { utc: string; pacif
   const rounded = Math.round(hours);
   return {
     utc: `${String(hourUtc).padStart(2, "0")}:00 UTC`,
-    pacific: `${pacific.format(next)} Pacific`,
+    pacific: `${pacific(next)} Pacific`,
     until: hours < 1 ? "next in under an hour" : `next in about ${rounded} ${rounded === 1 ? "hour" : "hours"}`,
   };
 }
