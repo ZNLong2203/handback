@@ -80,6 +80,7 @@ To try a whole rental, follow the six steps under [Run it in two minutes](README
    | `TEST_DATABASE_URL` | A Postgres to round-trip JSON through in the database client test; skipped when unset. | `lib/db/client.test.ts` |
    | `EVIDENCE_PDF_OUT` | Path where the evidence test writes a sample PDF to look at. | `lib/disputes/evidence.test.ts` |
    | `E2E_PORT`, `E2E_BASE_URL`, `E2E_SCREENSHOTS` | Playwright options; see [Tests](#tests). | `playwright.config.ts`, `e2e/*.spec.ts` |
+| `INSIGHTS_FORCE_SIMPLE_VIEW` | `1` draws the owner's dashboard's simple view (the fallback when AG Studio does not load) without trying AG Studio. For tests: the end-to-end staff-access server sets it; leave it unset on a deployment. | `app/shop/insights/page.tsx`, `playwright.config.ts` |
 | `INSIGHTS_AGENT_SCRIPT` | `e2e` makes the owner's dashboard agent answer every turn from a fixed script instead of Gemini, and turns it on without a key. Only the end-to-end server sets it; never set it on a deployment. | `lib/insights/llm.ts`, `playwright.config.ts` |
 
    Set by the platform, never by hand: `RENDER_EXTERNAL_URL` (the fallback for `APP_URL`), `RENDER_GIT_COMMIT` and `RENDER_GIT_BRANCH` (shown by `/api/health`), `RENDER_SDK_SOCKET_PATH` (present in a Render Workflows task run; `workflows/main.ts` stops without it) and `CI` (GitHub Actions).

@@ -6,6 +6,7 @@ import { renewalDueAt } from "@/lib/rentals/hold-clock";
 import { isCharged } from "@/lib/rentals/settlement";
 import { STATUS } from "@/lib/rentals/status";
 import type { Rental, RentalStatus, ReviewedFinding } from "@/lib/rentals/types";
+import { FLOW } from "./flow";
 
 /**
  * The owner's dashboard data, built from what the database recorded. Pure:
@@ -224,17 +225,7 @@ export type FlowRow = {
   amount_usd: number;
 };
 
-export const FLOW = {
-  held: "Deposits held",
-  above: "Charged above the deposit",
-  released: "Released to renters",
-  kept: "Captured for repairs",
-  stillHeld: "Still held",
-  refunded: "Refunded later",
-  disputed: "Returned in a dispute",
-  openDispute: "In an open dispute",
-  keptForGood: "Kept by the shop",
-} as const;
+export { FLOW } from "./flow";
 
 export type Summary = {
   generated_at: string;

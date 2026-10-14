@@ -6,6 +6,7 @@ import { agStudioLicense, licenseDateLabel, warnIfExpired } from "@/lib/insights
 import { agentRefusal, scriptedAgent } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
 import { seedInsightsHistoryOnce } from "@/lib/insights/seed";
+import { simpleKpis } from "@/lib/insights/simple-view";
 import { studioData } from "@/lib/insights/studio-data";
 import { paypalConfig } from "@/lib/paypal/config";
 import { clientAddress, requireStaffPage } from "@/lib/staff-access";
@@ -28,6 +29,8 @@ export default async function InsightsPage() {
   const license = agStudioLicense(process.env, now);
   warnIfExpired(license);
   const licenseKey = license.state === "valid" ? license.key : null;
+  // For tests only: draws the simple view AG Studio falls back to, without trying AG Studio.
+  const forceSimple = process.env.INSIGHTS_FORCE_SIMPLE_VIEW === "1";
 
   return (
     <>
@@ -51,7 +54,7 @@ export default async function InsightsPage() {
             </Badge>
           </div>
         </div>
-        <InsightsBoard spec={spec} month={now.toISOString().slice(0, 7)} licenseKey={licenseKey} ai={ai} />
+        <InsightsBoard spec={spec} kpis={simpleKpis(data.summary)} month={now.toISOString().slice(0, 7)} licenseKey={licenseKey} ai={ai} forceSimple={forceSimple} />
         <div className="space-y-1 text-xs text-muted">
           {agentOff && <p>{agentOff}</p>}
           <p className="flex items-start gap-1.5">
