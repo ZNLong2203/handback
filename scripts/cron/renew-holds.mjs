@@ -3,7 +3,7 @@
 // sweep as a Render Workflows task when it is set up for one, and in its own
 // process otherwise (Render Workflows has no scheduler of its own yet).
 //
-// Once a day, on the run in the DEMO_RESET_HOUR (UTC, default 20), it also
+// Once a day, on the run in the DEMO_RESET_HOUR (UTC, default 8), it also
 // asks the web service to reset the demo (POST /api/jobs/reset-demo). The web
 // service only resets when its own DEMO_RESET is "true", at most once a day,
 // and never with live PayPal; otherwise it answers that the reset is off.

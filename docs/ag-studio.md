@@ -98,6 +98,18 @@ flowchart LR
 - **Money moves only through the counter.** No tool can refund, capture, void or cancel. The draft is checked on the server and again, in full, by `refundCharge` when a person sends it.
 - **Personal data.** Tool outputs name the renter by first name only and carry no email, link token or text someone typed.
 
+## When AG Studio does not load
+
+AG Studio is the one part of the page Handback does not control, so the page does not depend on it. `components/insights/insights-board.tsx` wraps it in an error boundary (Next's `catchError`, `components/load-guard.tsx`) and gives it 15 seconds to draw (AG Studio's `onApiReady`), counting only the time the tab is visible, since a background tab may not draw at all. If it throws, its code fails to load (the dynamic import rejects inside the boundary), or the 15 seconds pass, the page shows a **simple view** instead (`components/insights/simple-view.tsx`), from the data the page already loaded:
+
+- a note that says what happened ("Simple view: the AG Studio dashboard did not load", and why), with **Try AG Studio again**, which reloads the page;
+- the Overview's KPIs, from the server's own sums in integer cents (`simpleKpis`, the same sums AG Studio's value widgets take; `lib/insights/model.test.ts` checks that they agree);
+- the two custom widgets, drawn by the same SVG components outside AG Studio (`DepositFlowChart` and `HoldClockChart`, which the Studio widgets now wrap), without the cross-filter;
+- the ledger as a plain table, newest first, times in UTC;
+- a line saying the deposit desk is unavailable: its chat runs inside AG Studio.
+
+The simple view imports nothing from AG Studio at run time, so it draws whatever happened to Studio's code. `INSIGHTS_FORCE_SIMPLE_VIEW=1` on the server shows it without trying AG Studio. It is a switch for tests; leave it unset on a deployment.
+
 ## Demo data
 
 In demo mode, the first visit books twelve sample rentals through the real service, once per database (`lib/insights/seed.ts`): returns settled with damage, two clean returns, a charge the renter questioned and staff waived, a partial refund, a PayPal dispute the shop lost and one still open, a booking cancelled and refunded in full, a renter who answered and can be settled, and three holds still running, one of them renewed. The nightly demo reset seeds the counter, the schedule's two weeks, then this history, in that order.
@@ -115,6 +127,8 @@ A copy on the PayPal sandbox gets no sample history. Moving holds and settlement
 - `lib/insights/seed.test.ts`, `lib/insights/seed-failure.test.ts`: the dashboard's seed before the schedule's (alone and after the counter's) and after it (the nightly reset), with all twelve plans seeded, the schedule's count unchanged and no unit shared on a day; the stand-in's clock and the renewal; recorded replies with a key; a failed plan undone.
 - `lib/insights/draft-link.test.ts`, `components/refund-form.test.ts`, `lib/insights/agent-tools.test.ts`: signed draft links, the refund form filled in from a draft, and `explain_rental` agreeing with the dashboard.
 - `e2e/insights.spec.ts` (demo mode): the KPIs and both custom widgets draw, a click on the deposit flow filters the page, and the Ledger and Holds pages open.
+- `e2e/insights.spec.ts` also blocks every script that carries AG Studio's code: the page shows the simple view and says it stopped with an error, and **Try AG Studio again** brings the dashboard back once the scripts load.
+- `e2e/fallbacks.spec.ts`, on the end-to-end server with `INSIGHTS_FORCE_SIMPLE_VIEW=1` and an access code: the simple view's note, the deposit desk line, the KPIs (Held on PayPal now equals the holds on the clock), both custom widgets and the ledger. `lib/insights/simple-view.test.ts` checks how the data sources become the simple view's flows, holds and ledger.
 - `e2e/insights-agent.spec.ts` (demo mode): the deposit desk in the browser, through Studio's chat panel and harness, the adapter, the turn route and `holds_needing_attention` on the server, ending on an answer that read the tool's result. The end-to-end server sets `INSIGHTS_AGENT_SCRIPT=e2e`, which answers each turn from a fixed script (`scriptedTurn`) instead of Gemini; it is for that server only.
 
 The agent itself was run by hand against Gemini in demo mode: the three tools, the delegation above, and a refund draft opened on the rental page with the form filled in.
@@ -125,12 +139,13 @@ Handback's code stays MIT. AG Studio is commercial software (`ag-studio` and `ag
 
 - **Without a licence key**, AG Studio runs as a trial: it shows a "For Trial Use Only" watermark (it hides it on localhost) and logs a licence notice in the browser console. The page says so under the dashboard.
 - **With a key**, set `AG_STUDIO_LICENSE_KEY` on the host. The page reads it on the server and passes it to `AgStudioProvider`. A front-end licence key reaches the browser by design, so it is not a secret, but it is never committed. With the agent on, the key must include AG Studio's AI features.
+- **An evaluation key that has run out** is not passed on. An evaluation key says in its own text when it stops working (`This_key_will_deactivate_on_{28 November 2026}`); `lib/insights/license.ts` reads that date on the server (as "28 November 2026", "28_Nov_2026", "November 28, 2026" or "2026-11-28"). From that day (UTC, the way AG Studio's check counts it: the date encoded in the key is midnight UTC), the page leaves the key out, so AG Studio runs as the keyless trial described above, logs one server warning per process, and the note under the dashboard says the key expired on that date and the dashboard runs as a trial. A key whose date cannot be read is passed on as before. `/api/health` shows the state under `insights.agStudioLicense`: `{"state": "valid", "until": "2026-11-28"}`, `{"state": "expired", "expiredOn": "2026-11-28"}` or `{"state": "none"}`, never the key. What AG Studio 3.0.0 itself does with an expired evaluation key was read from its licence code, not run: it shows a "Trial Period Expired" watermark off localhost and logs a notice; holding the key back keeps the page on the documented trial path.
 - Anyone running Handback beyond evaluation needs their own AG Studio licence.
 
 ## Files
 
 - `app/shop/insights/page.tsx`: the page, staff only; seeds demo data, builds the data, passes the licence key.
-- `components/insights/insights-board.tsx`: page tabs, edit and colour-mode buttons; loads Studio with `next/dynamic` and `ssr: false`, so its code ships with this page only.
+- `components/insights/insights-board.tsx`: page tabs, edit and colour-mode buttons; loads Studio with `next/dynamic` and `ssr: false`, so its code ships with this page only, and falls back to the simple view (`components/insights/simple-view.tsx`, `lib/insights/simple-view.ts`, `components/load-guard.tsx`).
 - `components/insights/studio.tsx`: `AgStudioProvider`, `AgStudio`, the custom widget definitions, panels.
 - `components/insights/theme.ts`, `components/insights/insights.css`: the theme in two colour modes.
 - `components/insights/deposit-flow-widget.tsx`, `components/insights/hold-clock-widget.tsx`: the custom widgets.

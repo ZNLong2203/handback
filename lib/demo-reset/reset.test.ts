@@ -19,6 +19,7 @@ const { INSIGHTS_PLAN, INSIGHTS_SEED } = await import("@/lib/insights/seed");
 const { SCENARIOS } = await import("@/lib/seed/plan");
 const { spacedDates } = await import("@/test/dates");
 const { KEPT_TABLES, lastDemoReset, resetDemo, WIPED_TABLES } = await import("./reset");
+const { resetDueAt } = await import("@/scripts/cron/demo-reset-hour.mjs");
 
 const ON = { DEMO_RESET: "true" };
 const slot = globalThis as { depositGateway?: unknown };
@@ -119,20 +120,50 @@ describe("resetDemo", () => {
     const at = (when: string, env: Record<string, string> = ON) => resetDemo({ now: new Date(when), env });
 
     expect(await at("2026-01-01T23:59:00Z")).toMatchObject({ status: "already-done", day: "2026-01-01", state: "done" });
-    // 19:59 UTC on Jan 2 is still the reset day that began at 20:00 on Jan 1.
-    expect(await at("2026-01-02T19:59:00Z")).toMatchObject({ status: "already-done", day: "2026-01-01" });
-    expect(await at("2026-01-02T20:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
-    expect(await at("2026-01-02T20:45:00Z")).toMatchObject({ status: "already-done", day: "2026-01-02" });
+    // 07:59 UTC on Jan 2 is still the reset day that began at 08:00 on Jan 1.
+    expect(await at("2026-01-02T07:59:00Z")).toMatchObject({ status: "already-done", day: "2026-01-01" });
+    expect(await at("2026-01-02T08:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
+    expect(await at("2026-01-02T08:45:00Z")).toMatchObject({ status: "already-done", day: "2026-01-02" });
     // With DEMO_RESET_HOUR=3, 02:00 belongs to the day before.
     expect(await at("2026-01-05T02:00:00Z", { ...ON, DEMO_RESET_HOUR: "3" })).toMatchObject({ status: "reset", day: "2026-01-04" });
 
     const db = await getDb();
     await db.query("update demo_resets set status = 'failed' where day = '2026-01-02'");
-    expect(await at("2026-01-02T21:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
+    expect(await at("2026-01-02T09:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
     await db.query("update demo_resets set status = 'running', started_at = now() - interval '5 minutes' where day = '2026-01-02'");
-    expect(await at("2026-01-02T21:20:00Z")).toMatchObject({ status: "already-done", state: "running" });
+    expect(await at("2026-01-02T09:20:00Z")).toMatchObject({ status: "already-done", state: "running" });
     await db.query("update demo_resets set status = 'running', started_at = now() - interval '2 hours' where day = '2026-01-02'");
-    expect(await at("2026-01-02T22:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
+    expect(await at("2026-01-02T10:17:00Z")).toMatchObject({ status: "reset", day: "2026-01-02" });
+  });
+
+  it("moving DEMO_RESET_HOUR from 20 to 8 brings at most one early reset or one longer wait, never two resets on one day", async () => {
+    const { gateway } = sandboxGateway();
+    slot.depositGateway = gateway;
+    const OLD = { ...ON, DEMO_RESET_HOUR: "20" };
+    const NEW = { ...ON, DEMO_RESET_HOUR: "8" };
+    const at = (when: string, env: Record<string, string>) => resetDemo({ now: new Date(when), env });
+
+    // Switched overnight: the morning run is the next reset day, 12 hours after the last reset.
+    expect(await at("2026-03-10T20:17:00Z", OLD)).toMatchObject({ status: "reset", day: "2026-03-10" });
+    expect(await at("2026-03-11T08:17:00Z", NEW)).toMatchObject({ status: "reset", day: "2026-03-11" });
+    // A cron run still on the old hour that evening finds that day done.
+    expect(await at("2026-03-11T20:17:00Z", NEW)).toMatchObject({ status: "already-done", day: "2026-03-11" });
+    expect(await at("2026-03-12T08:17:00Z", NEW)).toMatchObject({ status: "reset", day: "2026-03-12" });
+
+    // Switched during the day: a morning run on the new hour while the web service still counts on the old one is
+    // the old day, already done, and the evening run no longer asks, so the next reset comes 36 hours after the last.
+    expect(await at("2026-03-20T20:17:00Z", OLD)).toMatchObject({ status: "reset", day: "2026-03-20" });
+    expect(await at("2026-03-21T08:17:00Z", OLD)).toMatchObject({ status: "already-done", day: "2026-03-20" });
+    expect(resetDueAt(new Date("2026-03-21T20:17:00Z"), 8)).toBe(false);
+    expect(await at("2026-03-22T08:17:00Z", NEW)).toMatchObject({ status: "reset", day: "2026-03-22" });
+
+    expect((await resetRows()).filter((r) => r.day.startsWith("2026-03"))).toEqual([
+      { day: "2026-03-10", status: "done" },
+      { day: "2026-03-11", status: "done" },
+      { day: "2026-03-12", status: "done" },
+      { day: "2026-03-20", status: "done" },
+      { day: "2026-03-22", status: "done" },
+    ]);
   });
 
   it("in demo mode, deletes every rental and seeds the counter, the demo schedule and the dashboard history again", async () => {

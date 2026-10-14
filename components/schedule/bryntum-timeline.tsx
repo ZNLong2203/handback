@@ -27,7 +27,21 @@ export type TimelineProps = {
   focus: string | null;
   onPick: (proposalId: string | null, rentalId: string | null) => void;
   onNotice: (notice: { tone: "ok" | "error"; text: string }) => void;
+  /** The timeline has drawn for the first time. */
+  onReady?: () => void;
+  /** Bryntum refused to run here; the page then shows its simple schedule. */
+  onRefused?: (detail: string) => void;
 };
+
+/**
+ * Once its 45-day trial has run out in a browser (the start is kept in that
+ * browser's localStorage), Bryntum throws nothing: it draws no bars and masks
+ * the timeline with "Trial expired, click here to buy a license", plus a
+ * toast. Checked by setting the start 60 days back: no error, no bars, the
+ * mask. So the page looks for that text for a while after the timeline mounts.
+ */
+const TRIAL_EXPIRED = /trial\s+(?:version\s+)?(?:has\s+)?expired/i;
+const TRIAL_WATCH_MS = 20_000;
 
 const get = <T,>(record: Model, field: string) => record.get(field) as T;
 const range = (start: string, end: string) => spanLabel({ start, end });
@@ -107,10 +121,26 @@ function tooltip(record: EventModel): DomConfig {
   return { class: "hb-tip-body", children: children.filter(Boolean) as DomConfig[] };
 }
 
-export default function BryntumTimeline({ view, focus, onPick, onNotice }: TimelineProps) {
+export default function BryntumTimeline({ view, focus, onPick, onNotice, onReady, onRefused }: TimelineProps) {
   const router = useRouter();
   const ref = useRef<BryntumScheduler>(null);
   const scheduler = () => ref.current?.instance as Scheduler | undefined;
+
+  const refused = useRef(onRefused);
+  useEffect(() => {
+    refused.current = onRefused;
+  }, [onRefused]);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const text = [...document.querySelectorAll(".b-mask, .b-toast")].map((el) => el.textContent ?? "").join(" ");
+      if (TRIAL_EXPIRED.test(text)) {
+        clearInterval(timer);
+        refused.current?.("Bryntum's trial has expired in this browser.");
+      } else if (Date.now() - started > TRIAL_WATCH_MS) clearInterval(timer);
+    }, 300);
+    return () => clearInterval(timer);
+  }, []);
 
   // The agent's pending suggestions are drawn on the timeline too: a dashed
   // bar where the booking would go, linked to it by a dashed arrow.
@@ -296,6 +326,9 @@ export default function BryntumTimeline({ view, focus, onPick, onNotice }: Timel
         { tag: "span", class: "hb-ev-meta", text: eventLine(eventRecord) },
         get<string | null>(eventRecord, "conflict") ? { tag: "i", class: "hb-ev-flag fa fa-triangle-exclamation", "aria-hidden": "true" } : null,
       ].filter(Boolean) as DomConfig[]}
+      onPaint={({ firstPaint }) => {
+        if (firstPaint) onReady?.();
+      }}
       onEventClick={({ eventRecord }) => {
         const ghost = get<boolean>(eventRecord, "ghost");
         onPick(ghost ? get<string>(eventRecord, "proposalId") : get<string | null>(eventRecord, "proposalId"), ghost ? get<string>(eventRecord, "rentalId") : String(eventRecord.id));

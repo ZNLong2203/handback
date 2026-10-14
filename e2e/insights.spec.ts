@@ -51,3 +51,36 @@ test("the insights dashboard shows where the deposits went, the hold clock, and 
   await page.getByRole("button", { name: "Holds", exact: true }).click();
   await expect(page.getByText("Running holds", { exact: true })).toBeVisible();
 });
+
+test("when AG Studio's code does not load, the page falls back to the simple view and says why", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Every script that carries AG Studio's code fails to load, as on a flaky network or a deploy that removed the chunks.
+  let blocked = 0;
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    if (body.includes("ag-studio-watermark")) {
+      blocked++;
+      return route.abort();
+    }
+    return route.fulfill({ response, body });
+  });
+  await page.goto("/shop/insights");
+  const view = page.getByTestId("insights-simple-view");
+  await expect(view.getByText("Simple view: the AG Studio dashboard did not load")).toBeVisible();
+  await expect(view.getByText(/It stopped with an error in this browser\./)).toBeVisible();
+  await expect(view.getByText("The deposit desk is unavailable in the simple view: its chat runs inside AG Studio.")).toBeVisible();
+  expect(blocked).toBeGreaterThan(0);
+  await expect(view.getByTestId("simple-kpi")).toHaveCount(7);
+  await expect(view.getByTestId("deposit-flow").getByText("Deposits held", { exact: true })).toBeVisible();
+  await expect(view.getByTestId("hold-clock").getByText("72 h", { exact: true })).toBeVisible();
+  await expect(view.getByTestId("simple-ledger").getByRole("cell", { name: "Rental fee captured" }).first()).toBeVisible();
+  await shot(page, "insights-simple-view-load-failed");
+
+  // Trying again reloads the page; with the network back, AG Studio draws.
+  await page.unroute("**/_next/static/**/*.js");
+  await view.getByRole("button", { name: "Try AG Studio again" }).click();
+  await expect(page.getByTestId("insights-simple-view")).toHaveCount(0);
+  await expect(page.getByText("Held on PayPal now", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("deposit-flow").getByRole("button", { name: /^Deposits held → / }).first()).toBeVisible();
+});

@@ -17,6 +17,8 @@ const { cancelAtCounter } = await import("@/lib/rentals/cancel");
 const desk = await import("@/lib/disputes/service");
 const { loadInsights } = await import("./load");
 const { buildInsights, FLOW, holdRow, renterFirstName } = await import("./model");
+const { studioData } = await import("./studio-data");
+const { simpleKpis, simpleViewData } = await import("./simple-view");
 type InsightsData = import("./model").InsightsData;
 type Rental = import("@/lib/rentals/types").Rental;
 
@@ -172,6 +174,32 @@ describe("the money adds up (demo mode)", () => {
     expect(t.minutes_return_to_settled).not.toBeNull();
     expect(t.minutes_return_to_settled!).toBeGreaterThanOrEqual(0);
     expect(data.summary.median_minutes_return_to_settled).not.toBeNull();
+  });
+
+  it("the simple view (AG Studio did not load) shows the sums AG Studio's KPI widgets take, and the same flows, holds and ledger", () => {
+    const spec = studioData(data);
+    const rows = (id: string) => spec.sources.find((s) => s.id === id)!.data;
+    const sum = (id: string, field: string, keep: (r: Record<string, unknown>) => boolean = () => true) =>
+      rows(id)
+        .filter(keep)
+        .reduce((total, r) => total + Number(r[field] ?? 0), 0);
+    const month = data.summary.generated_at.slice(0, 7);
+    // The Overview's value widgets (lib/insights/report.ts), in cents.
+    expect(simpleKpis(data.summary)).toMatchObject({
+      heldNowCents: sum("holds", "amount_cents"),
+      keptThisMonthCents: sum("rentals", "kept_cents", (r) => r.settled_month === month),
+      releasedCents: sum("rentals", "released_cents"),
+      refundedCents: sum("rentals", "refunded_cents"),
+      openDisputes: sum("rentals", "open_disputes"),
+      pickupsPhotographedShare: 1,
+    });
+    const view = simpleViewData(spec);
+    expect(view.holds.map((h) => [h.id, h.amount])).toEqual([[ids.active, 300]]);
+    expect(view.holds[0].heldAt).toBe(Date.parse(data.holds[0].held_at));
+    expect(view.flows.reduce((t, f) => t + f.value, 0)).toBeCloseTo(data.flows.reduce((t, f) => t + f.amount_usd, 0), 6);
+    expect(view.ledger).toHaveLength(data.ledger.length);
+    expect(view.ledger.reduce((t, l) => t + l.netCents, 0)).toBe(data.ledger.reduce((t, l) => t + l.shop_net_cents, 0));
+    expect(view.ledger.find((l) => l.rentalId === ids.damage)?.item).toBe(row(ids.damage).item);
   });
 
   it("names renters by first name only and carries no email address or link token", async () => {

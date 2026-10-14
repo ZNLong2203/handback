@@ -148,11 +148,11 @@ describe("the daily demo reset", () => {
     expect(result.code).toBe(1);
   });
 
-  it("uses 20 UTC when DEMO_RESET_HOUR is not an hour, and says so", async () => {
+  it("uses 8 UTC when DEMO_RESET_HOUR is not an hour, and says so", async () => {
     resetAnswer = { status: 200, body: done };
     const hour = await thisHour();
     const result = await reset({ DEMO_RESET_HOUR: "8pm" });
-    expect(result.stderr).toContain('DEMO_RESET_HOUR="8pm" is not an hour from 0 to 23; using 20.');
-    expect(resets).toHaveLength(hour === 20 ? 1 : 0);
+    expect(result.stderr).toContain('DEMO_RESET_HOUR="8pm" is not an hour from 0 to 23; using 8.');
+    expect(resets).toHaveLength(hour === 8 ? 1 : 0);
   });
 });

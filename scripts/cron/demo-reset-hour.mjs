@@ -3,8 +3,13 @@
 // the same functions (lib/demo-reset/config.ts), so the two never disagree on
 // the hour.
 
-/** 20:00 UTC: 3:00 in Vietnam, noon or 1 p.m. in California. */
-export const DEFAULT_RESET_HOUR = 20;
+/**
+ * 08:00 UTC: midnight in California in winter (1 a.m. in summer), 15:00 in
+ * Vietnam. Late enough that the seeded "due back today" rental stays due
+ * today until 00:00 UTC (late afternoon in California), and outside US
+ * daytime, so a reset does not wipe a judge's rental mid-session.
+ */
+export const DEFAULT_RESET_HOUR = 8;
 
 /**
  * The reset hour in UTC from DEMO_RESET_HOUR: a whole number from 0 to 23.
@@ -33,6 +38,12 @@ export function resetDueAt(now, hour) {
  * The day a reset belongs to, as YYYY-MM-DD. A reset day starts at the reset
  * hour, so a second call in the same 24 hours (the cron job retried, or someone
  * pressed Trigger Run) finds the day already done.
+ *
+ * Moving the hour earlier (20 to 8) makes the first new reset day start 12
+ * hours after the last old one, so the switch can bring one extra reset; done
+ * after that day's new hour has passed, it waits up to 36 hours instead. The
+ * web service decides the day with its own hour, so a cron run still on the
+ * old hour never resets a day twice (lib/demo-reset/reset.test.ts).
  *
  * @param {Date} now
  * @param {number} hour

@@ -2,9 +2,11 @@ import { Bot, KeyRound, ShieldCheck } from "lucide-react";
 import { ShopHeader } from "@/components/headers";
 import { InsightsBoard } from "@/components/insights/insights-board";
 import { Badge, Eyebrow } from "@/components/ui";
+import { agStudioLicense, licenseDateLabel, warnIfExpired } from "@/lib/insights/license";
 import { agentRefusal, scriptedAgent } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
 import { seedInsightsHistoryOnce } from "@/lib/insights/seed";
+import { simpleKpis } from "@/lib/insights/simple-view";
 import { studioData } from "@/lib/insights/studio-data";
 import { paypalConfig } from "@/lib/paypal/config";
 import { clientAddress, requireStaffPage } from "@/lib/staff-access";
@@ -23,7 +25,12 @@ export default async function InsightsPage() {
   const agentOff = agentRefusal(await clientAddress());
   const ai = agentOff === null;
   // A front-end licence key reaches the browser by design; it is set on the host, never in the repository.
-  const licenseKey = process.env.AG_STUDIO_LICENSE_KEY?.trim() || null;
+  // An evaluation key that has deactivated is held back, so AG Studio runs as the keyless trial (lib/insights/license.ts).
+  const license = agStudioLicense(process.env, now);
+  warnIfExpired(license);
+  const licenseKey = license.state === "valid" ? license.key : null;
+  // For tests only: draws the simple view AG Studio falls back to, without trying AG Studio.
+  const forceSimple = process.env.INSIGHTS_FORCE_SIMPLE_VIEW === "1";
 
   return (
     <>
@@ -47,16 +54,18 @@ export default async function InsightsPage() {
             </Badge>
           </div>
         </div>
-        <InsightsBoard spec={spec} month={now.toISOString().slice(0, 7)} licenseKey={licenseKey} ai={ai} />
+        <InsightsBoard spec={spec} kpis={simpleKpis(data.summary)} month={now.toISOString().slice(0, 7)} licenseKey={licenseKey} ai={ai} forceSimple={forceSimple} />
         <div className="space-y-1 text-xs text-muted">
           {agentOff && <p>{agentOff}</p>}
           <p className="flex items-start gap-1.5">
             <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>
               Dashboard by AG Studio, a commercial component.{" "}
-              {licenseKey
-                ? "Licensed with the key set on this server."
-                : "No licence key is set on this server, so AG Studio runs as a trial: it shows a “For Trial Use Only” watermark (not on localhost) and logs a licence notice in the browser console."}{" "}
+              {license.state === "valid"
+                ? license.until
+                  ? `Licensed with the key set on this server, until ${licenseDateLabel(license.until)}.`
+                  : "Licensed with the key set on this server."
+                : `${license.state === "expired" ? `The licence key set on this server expired on ${licenseDateLabel(license.expiredOn)}, so the dashboard runs as a trial` : "No licence key is set on this server, so AG Studio runs as a trial"}: it shows a “For Trial Use Only” watermark (not on localhost) and logs a licence notice in the browser console.`}{" "}
               The two custom widgets draw their own SVG; they use no AG Grid or AG Charts package of their own.
             </span>
           </p>

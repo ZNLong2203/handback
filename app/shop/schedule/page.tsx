@@ -41,7 +41,7 @@ export default async function SchedulePage() {
             </Badge>
           </div>
         </div>
-        <ScheduleBoard view={view} />
+        <ScheduleBoard view={view} forceSimple={process.env.SCHEDULE_FORCE_SIMPLE_VIEW === "1"} />
         <p className="text-xs text-muted">
           Timeline by Bryntum Scheduler on its 45-day trial package; the faint &ldquo;Bryntum Trial Version&rdquo; pattern behind the rows is the trial&rsquo;s watermark.
           {view.demo ? " Demo mode: the bookings are sample data booked through the PayPal stand-in." : ""}

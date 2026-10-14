@@ -17,6 +17,8 @@ const SECRETS = {
   SHOP_ACCESS_CODE: "shop-access-code-value",
   STAFF_COOKIE_SECRET: "staff-cookie-secret-value",
   DATABASE_URL: "postgresql://handback:db-password-value@dpg-example-a/handback",
+  // The shape of an AG evaluation key with made-up letters; not a real key.
+  AG_STUDIO_LICENSE_KEY: "[TRIAL]_this_{AG_Studio}_key_{AG-000000}_is_granted_for_evaluation_only___This_key_will_deactivate_on_{28 November 2099}____[v3]_[0102]_WFhYWFhY0123456789abcdef0123456789abcdef",
 };
 
 describe("checkHealth", () => {
@@ -35,6 +37,7 @@ describe("checkHealth", () => {
       database: { ok: true, driver: "postgres" },
       paypal: { mode: "sandbox", webhookConfigured: true },
       ai: { mode: "gemini", model: "gemini-3.8-flash" },
+      insights: { agStudioLicense: { state: "valid", until: "2099-11-28" } },
       jobs: { runner: "render-workflows", slug: "handback-workflows", lastSkippedRun: null },
       build: { commit: "0123456789abcdef0123456789abcdef01234567", branch: "main" },
       staffAccess: { mode: "code", signInLocked: false },
@@ -71,7 +74,7 @@ describe("checkHealth", () => {
     Object.assign(process.env, { DATABASE_URL: "memory", DEMO_RESET: "", DEMO_RESET_HOUR: "", PAYPAL_ENVIRONMENT: "sandbox" });
     let asked = 0;
     const lastReset = async () => (asked++, "2026-11-20T20:17:42.000Z");
-    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: false, hourUtc: 20, refused: null, lastResetAt: null });
+    expect((await checkHealth(async () => {}, lastReset)).demoReset).toEqual({ enabled: false, hourUtc: 8, refused: null, lastResetAt: null });
     expect(asked).toBe(0);
 
     Object.assign(process.env, { DEMO_RESET: "true", DEMO_RESET_HOUR: "3" });
@@ -82,6 +85,16 @@ describe("checkHealth", () => {
 
     process.env.PAYPAL_ENVIRONMENT = "live";
     expect((await checkHealth(async () => {}, lastReset)).demoReset.refused).toMatch(/live PayPal/);
+  });
+
+  it("says whether the AG Studio key is valid, expired or missing, without the key", async () => {
+    const expired = SECRETS.AG_STUDIO_LICENSE_KEY.replace("2099", "2020");
+    Object.assign(process.env, { DATABASE_URL: "memory", AG_STUDIO_LICENSE_KEY: expired });
+    const health = await checkHealth(async () => {});
+    expect(health.insights).toEqual({ agStudioLicense: { state: "expired", expiredOn: "2020-11-28" } });
+    expect(JSON.stringify(health)).not.toContain("AG-000000");
+    process.env.AG_STUDIO_LICENSE_KEY = "";
+    expect((await checkHealth(async () => {})).insights).toEqual({ agStudioLicense: { state: "none" } });
   });
 
   it("says whether the counter needs a code, and closes it when the code is too short", async () => {
