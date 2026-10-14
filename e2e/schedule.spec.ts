@@ -196,3 +196,44 @@ test("a busy item opens the booking form on its first free dates, and those date
     await expect(phone.getByText("Paid $87.00 with PayPal")).toBeVisible();
   }
 });
+
+test("when Bryntum's trial has expired in this browser, the page shows the simple schedule", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  // The trial build keeps its start per browser; 60 days back is past its 45 days.
+  await context.addInitScript((start) => localStorage.setItem("b-scheduler-trial-start", start), String(Date.now() - 60 * 86_400_000));
+  const counter = await context.newPage();
+  await counter.goto("/shop/schedule");
+  const view = counter.getByTestId("schedule-simple-view");
+  await expect(view.getByText("Simple schedule: the Bryntum timeline did not load")).toBeVisible();
+  await expect(view.getByText(/Bryntum's 45-day trial has expired in this browser, so it refused to draw the timeline\./)).toBeVisible();
+  await expect(counter.locator(".b-scheduler")).toHaveCount(0);
+  await expect(view.locator('[data-testid="simple-unit-row"][data-unit-id="projector-b"]').getByTestId("simple-bar").filter({ hasText: "Priya Patel" })).toBeVisible();
+  await expect(view.locator('[data-testid="simple-unit-row"][data-unit-id="projector-a"] [data-kind="block"]')).toContainText("Replace projector lens");
+  await shot(counter, "s08-trial-expired-simple-schedule");
+});
+
+test("when Bryntum's code does not load, the page shows the simple schedule, and the timeline comes back on a retry", async ({ browser }) => {
+  const counter = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
+  const scripts = "**/_next/static/**/*.js";
+  let blocked = 0;
+  await counter.route(scripts, async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    if (body.includes("b-sch-event-wrap")) {
+      blocked++;
+      return route.abort();
+    }
+    return route.fulfill({ response, body });
+  });
+  await counter.goto("/shop/schedule");
+  const view = counter.getByTestId("schedule-simple-view");
+  await expect(view.getByText(/It stopped with an error in this browser\./)).toBeVisible();
+  expect(blocked).toBeGreaterThan(0);
+  await expect(view.getByTestId("simple-bar").filter({ hasText: "Grace Liu" })).toBeVisible();
+
+  await counter.unroute(scripts);
+  await view.getByRole("button", { name: "Try the timeline again" }).click();
+  await expect(counter.getByTestId("schedule-simple-view")).toHaveCount(0);
+  // Bryntum draws only the rows in view; Grace's camera kit is at the top.
+  await expect(bar(counter, "Grace Liu")).toBeVisible();
+});

@@ -34,8 +34,14 @@ export default defineConfig({
   projects: [
     { name: "chromium", testIgnore: /(schedule|staff-access|fallbacks)\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     { name: "schedule", testMatch: /schedule\.spec\.ts/, use: { ...devices["Desktop Chrome"], baseURL: scheduleURL } },
-    // Need their own server with SHOP_ACCESS_CODE and the simple-view switches set, so they do not run against E2E_BASE_URL.
-    ...(process.env.E2E_BASE_URL ? [] : [{ name: "staff-access", testMatch: /(staff-access|fallbacks)\.spec\.ts/, use: { ...devices["Desktop Chrome"], baseURL: staffURL } }]),
+    // Need their own server with SHOP_ACCESS_CODE (and the simple-view switches) set, so they do not run against E2E_BASE_URL.
+    // The fallbacks spec runs after the staff-access spec: its settlement's live events would refresh the page that spec leaves open without a cookie.
+    ...(process.env.E2E_BASE_URL
+      ? []
+      : [
+          { name: "staff-access", testMatch: /staff-access\.spec\.ts/, use: { ...devices["Desktop Chrome"], baseURL: staffURL } },
+          { name: "fallbacks", testMatch: /fallbacks\.spec\.ts/, dependencies: ["staff-access"], use: { ...devices["Desktop Chrome"], baseURL: staffURL } },
+        ]),
   ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
@@ -61,8 +67,8 @@ export default defineConfig({
           url: staffURL,
           timeout: 240_000,
           reuseExistingServer: false,
-          // The test-only switches draw the dashboard's simple view without trying AG Studio (e2e/fallbacks.spec.ts); the staff-access spec opens neither page.
-          env: { ...demo(staffURL), SHOP_ACCESS_CODE: E2E_SHOP_ACCESS_CODE, PUBLIC_DEMO: "true", INSIGHTS_FORCE_SIMPLE_VIEW: "1" },
+          // The test-only switches draw the simple views without trying AG Studio or Bryntum (e2e/fallbacks.spec.ts); the staff-access spec opens neither page.
+          env: { ...demo(staffURL), SHOP_ACCESS_CODE: E2E_SHOP_ACCESS_CODE, PUBLIC_DEMO: "true", INSIGHTS_FORCE_SIMPLE_VIEW: "1", SCHEDULE_FORCE_SIMPLE_VIEW: "1" },
         },
       ],
 });

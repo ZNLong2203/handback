@@ -3,13 +3,18 @@
 import { CalendarRange, CheckCircle2, TriangleAlert } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useState } from "react";
+import { LoadBoundary, reloadPage, useLoadGuard } from "@/components/load-guard";
 import { cx } from "@/components/ui";
 import type { ScheduleProposal, ScheduleView } from "@/lib/schedule/view";
 import { CommandBox } from "./command-box";
 import { ProposalsPanel } from "./proposals-panel";
+import { SimpleSchedule } from "./simple-schedule";
 
 // Bryntum touches the DOM when it loads, so the timeline is loaded in the
-// browser only, after the rest of the page has rendered on the server.
+// browser only, after the rest of the page has rendered on the server. If it
+// throws, its code fails to load, it has not drawn within TIMELINE_DEADLINE_MS
+// of visible time, or its trial refuses to run in this browser, the page
+// shows the simple schedule instead (simple-schedule.tsx), from the same data.
 const Timeline = dynamic(() => import("./bryntum-timeline"), {
   ssr: false,
   loading: () => (
@@ -31,7 +36,11 @@ const LEGEND = [
   { label: "Agent's suggestion", swatch: "border-[1.5px] border-dashed border-brand bg-brand-soft/50" },
 ];
 
-export function ScheduleBoard({ view }: { view: ScheduleView }) {
+const TIMELINE_DEADLINE_MS = 15_000;
+
+/** `forceSimple`: SCHEDULE_FORCE_SIMPLE_VIEW=1 on the server, a switch for tests. */
+export function ScheduleBoard({ view, forceSimple = false }: { view: ScheduleView; forceSimple?: boolean }) {
+  const timeline = useLoadGuard(TIMELINE_DEADLINE_MS, forceSimple);
   const [focus, setFocus] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -59,16 +68,24 @@ export function ScheduleBoard({ view }: { view: ScheduleView }) {
             {notice.text}
           </p>
         )}
-        <Timeline
-          view={view}
-          focus={focus}
-          onNotice={setNotice}
-          onPick={(proposalId, rentalId) => {
-            setSelected(proposalId);
-            setFocus(rentalId);
-            if (proposalId) document.getElementById(`proposal-${proposalId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          }}
-        />
+        {timeline.state.phase === "failed" ? (
+          <SimpleSchedule view={view} failure={timeline.state} focus={focus} onRetry={reloadPage} />
+        ) : (
+          <LoadBoundary onError={timeline.onError}>
+            <Timeline
+              view={view}
+              focus={focus}
+              onNotice={setNotice}
+              onPick={(proposalId, rentalId) => {
+                setSelected(proposalId);
+                setFocus(rentalId);
+                if (proposalId) document.getElementById(`proposal-${proposalId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }}
+              onReady={timeline.ready}
+              onRefused={(detail) => timeline.fail({ reason: "refused", detail })}
+            />
+          </LoadBoundary>
+        )}
         <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink-soft" aria-label="Legend">
           {LEGEND.map((l) => (
             <li key={l.label} className="flex items-center gap-2">
