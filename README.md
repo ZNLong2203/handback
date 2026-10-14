@@ -288,7 +288,7 @@ Known limits of this build:
 - Live page updates use an in-process event bus, so the app is meant to run as a single server instance.
 - A fee capture that PayPal leaves pending is resolved only by webhooks, so without `PAYPAL_WEBHOOK_ID` the rental stays unpaid. Likewise a renter who approves and closes the window is booked only through the `CHECKOUT.ORDER.APPROVED` webhook, which has not yet been delivered to a deployment (only PayPal's simulated payload was checked).
 - When PayPal asks for proof of shipment, of a refund or of a delivery signature, the evidence pack is filed as `OTHER`, because it is none of those.
-- Without `AG_STUDIO_LICENSE_KEY`, AG Studio runs as a trial: a "For Trial Use Only" watermark (not on localhost) and a licence notice in the browser console. The dashboard's layout is not saved, and its data loads when the page renders, not live ([docs/ag-studio.md](docs/ag-studio.md#known-limits)).
+- Without `AG_STUDIO_LICENSE_KEY`, AG Studio runs as a trial: a "For Trial Use Only" watermark (not on localhost) and a licence notice in the browser console. An evaluation key is not passed on from the day it says it deactivates, so the dashboard falls back to that trial (`/api/health` shows `insights.agStudioLicense`). The dashboard's layout is not saved, and its data loads when the page renders, not live ([docs/ag-studio.md](docs/ag-studio.md#known-limits)).
 - The Bryntum Scheduler trial shows a watermark and runs for 45 days per browser. Using Handback beyond evaluation needs a Bryntum licence ([docs/bryntum.md](docs/bryntum.md#licensing)).
 - Dates are whole days in UTC.
 

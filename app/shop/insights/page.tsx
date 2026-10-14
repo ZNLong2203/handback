@@ -2,6 +2,7 @@ import { Bot, KeyRound, ShieldCheck } from "lucide-react";
 import { ShopHeader } from "@/components/headers";
 import { InsightsBoard } from "@/components/insights/insights-board";
 import { Badge, Eyebrow } from "@/components/ui";
+import { agStudioLicense, licenseDateLabel, warnIfExpired } from "@/lib/insights/license";
 import { agentRefusal, scriptedAgent } from "@/lib/insights/llm";
 import { loadInsights } from "@/lib/insights/load";
 import { seedInsightsHistoryOnce } from "@/lib/insights/seed";
@@ -23,7 +24,10 @@ export default async function InsightsPage() {
   const agentOff = agentRefusal(await clientAddress());
   const ai = agentOff === null;
   // A front-end licence key reaches the browser by design; it is set on the host, never in the repository.
-  const licenseKey = process.env.AG_STUDIO_LICENSE_KEY?.trim() || null;
+  // An evaluation key that has deactivated is held back, so AG Studio runs as the keyless trial (lib/insights/license.ts).
+  const license = agStudioLicense(process.env, now);
+  warnIfExpired(license);
+  const licenseKey = license.state === "valid" ? license.key : null;
 
   return (
     <>
@@ -54,9 +58,11 @@ export default async function InsightsPage() {
             <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>
               Dashboard by AG Studio, a commercial component.{" "}
-              {licenseKey
-                ? "Licensed with the key set on this server."
-                : "No licence key is set on this server, so AG Studio runs as a trial: it shows a “For Trial Use Only” watermark (not on localhost) and logs a licence notice in the browser console."}{" "}
+              {license.state === "valid"
+                ? license.until
+                  ? `Licensed with the key set on this server, until ${licenseDateLabel(license.until)}.`
+                  : "Licensed with the key set on this server."
+                : `${license.state === "expired" ? `The licence key set on this server expired on ${licenseDateLabel(license.expiredOn)}, so the dashboard runs as a trial` : "No licence key is set on this server, so AG Studio runs as a trial"}: it shows a “For Trial Use Only” watermark (not on localhost) and logs a licence notice in the browser console.`}{" "}
               The two custom widgets draw their own SVG; they use no AG Grid or AG Charts package of their own.
             </span>
           </p>
