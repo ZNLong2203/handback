@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.ts"],
-    exclude: ["node_modules/**", ".next/**", ".claude/**"],
+    exclude: ["node_modules/**", ".next/**", ".claude/**", "private/**"],
     testTimeout: 30_000,
     // Several files seed a database in beforeAll, which takes longer on CI runners.
     hookTimeout: 60_000,

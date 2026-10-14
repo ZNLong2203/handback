@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Local agent worktrees and the PGlite data directory.
     ".claude/**",
+    // Personal notes and tools, never committed.
+    "private/**",
     ".data/**",
   ]),
 ]);
